@@ -5,6 +5,7 @@ node_modules/
 # ---------- 构建产物 ----------
 app/dist/
 dist/
+dist-old*/
 src-tauri/target/
 src-tauri/gen/
 src-tauri/.tauri/
