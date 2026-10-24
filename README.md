@@ -42,16 +42,25 @@
 
 ## 下载
 
-从 [Releases](../../releases) 获取构建好的安装包：
+前往 [**Releases**](https://github.com/myxiaolizi/neomd/releases/latest) 获取安装包：
 
 | 文件 | 平台 | 说明 |
 |---|---|---|
-| `neomd-*-x64-setup.exe` | Windows x64 | 安装包，可选关联 `.md` 文件 |
-| `neomd-*-portable.exe` | Windows x64 | 便携版，免安装 |
-| `neomd-*-arm64.apk` | Android arm64 | 主流手机与平板 |
-| `neomd-*-universal.apk` | Android 全架构 | 含 arm64 / armv7 / x86 / x86_64 |
+| `neomd-1.0.0-x64-setup.exe` | Windows x64 | 安装包，可选关联 `.md` 文件 |
+| `neomd-1.0.0-x64-portable.exe` | Windows x64 | 便携版，免安装 |
+| `neomd-1.0.0-arm64.apk` | Android arm64 | 主流手机与平板，体积小 |
+| `neomd-1.0.0-universal.apk` | Android 全架构 | 含 arm64 / armv7 / x86 / x86_64 |
+| `WebView2Loader.dll` | Windows x64 | 便携版必需，与 exe 放同一目录 |
 
-> Windows 11 已内置 WebView2 运行时；Windows 10 若缺失会自动提示安装。
+**安装提示**
+
+- Windows 11 已内置 WebView2；Windows 10 若缺失会提示安装
+- 便携版需与 `WebView2Loader.dll` 同目录
+- APK 使用自签名证书构建，安装时需允许「安装未知来源应用」
+- 首次启动点击「选择仓库文件夹」指定笔记目录
+
+> 应用内部标识为 `mdnote`（二进制名 `mdnote.exe`、包名 `com.mdnote.desktop`），
+> 与仓库名 `neomd` 并存，不影响使用。
 
 ---
 
