@@ -1,0 +1,26 @@
+{
+  "name": "mdnote-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Markdown 笔记 —— 前端与 Tauri 原生壳的构建入口",
+  "scripts": {
+    "dev": "npm --prefix app run dev",
+    "build": "npm --prefix app run build",
+    "build:only": "npm --prefix app run build:only",
+    "typecheck": "npm --prefix app run typecheck",
+    "install:app": "npm --prefix app install",
+    "tauri": "tauri",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build --target x86_64-pc-windows-msvc",
+    "android:init": "tauri android init",
+    "android:dev": "tauri android dev",
+    "android:build": "tauri android build --apk",
+    "icons": "python tools/make_tauri_icons.py src-tauri/icons && python tools/make_icons.py app/public/icons"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.1.0"
+  },
+  "dependencies": {
+    "playwright-core": "^1.64.1"
+  }
+}

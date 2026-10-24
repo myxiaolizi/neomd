@@ -1,0 +1,16 @@
+{
+  "name": "neomd-verify",
+  "private": true,
+  "version": "1.0.0",
+  "description": "自动化验证脚本：渲染回归、S3 同步、签名校验",
+  "scripts": {
+    "render": "node render-e2e.cjs",
+    "prod": "node prod-e2e.cjs",
+    "sync": "node sync-e2e.cjs",
+    "sig": "node sig-test.cjs",
+    "all": "node sig-test.cjs && node render-e2e.cjs && node prod-e2e.cjs && node sync-e2e.cjs"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}

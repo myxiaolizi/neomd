@@ -1,0 +1,52 @@
+[package]
+name = "mdnote"
+version = "1.0.0"
+description = "轻量快速的 Markdown 笔记编辑器"
+authors = ["mdnote"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "mdnote_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# 发布构建时把前端资源编译进二进制（而不是走 devUrl）。
+# `tauri build` / `tauri android build` 会自动带上这个 feature；
+# 直接调用 `cargo build` 时必须显式开启，否则产物是空壳、界面白屏。
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
+sha2 = "0.10"
+walkdir = "2"
+thiserror = "2"
+tauri-plugin-dialog = "2"
+
+# 桌面平台：rfd 提供原生文件/文件夹对话框（Android 不支持）。
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+rfd = "0.15"
+tauri-plugin-single-instance = "2"
+
+# HTTP 后端按平台选择：
+#   Windows → schannel（系统自带 TLS，无需编译 C 依赖，GNU 工具链友好）
+#   其他    → rustls（纯 Rust，安卓可交叉编译）
+[target.'cfg(windows)'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["native-tls", "gzip", "brotli"] }
+
+[target.'cfg(not(windows))'.dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "gzip", "brotli"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

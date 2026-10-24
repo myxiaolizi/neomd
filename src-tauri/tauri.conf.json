@@ -1,0 +1,69 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Markdown 笔记",
+  "version": "1.0.0",
+  "identifier": "com.mdnote.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5280",
+    "beforeBuildCommand": "npm run build:only",
+    "frontendDist": "../app/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Markdown 笔记",
+        "width": 1280,
+        "height": 840,
+        "minWidth": 520,
+        "minHeight": 420,
+        "resizable": true,
+        "fullscreen": false,
+        "center": true,
+        "decorations": true,
+        "transparent": false,
+        "theme": null,
+        "dragDropEnabled": true,
+        "visible": true
+      }
+    ],
+    "security": {
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "publisher": "mdnote",
+    "copyright": "Copyright © 2025",
+    "category": "Productivity",
+    "shortDescription": "轻量快速的 Markdown 笔记编辑器",
+    "longDescription": "本地明文存储、支持 S3 同步与历史版本的 Markdown 笔记编辑器",
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["SimpChinese", "English"],
+        "displayLanguageSelector": false
+      }
+    },
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Markdown 文档",
+        "description": "Markdown 文本文件",
+        "role": "Editor",
+        "mimeType": "text/markdown"
+      }
+    ]
+  }
+}

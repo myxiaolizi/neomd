@@ -1,0 +1,47 @@
+# ---------- 依赖 ----------
+node_modules/
+.pnpm-store/
+
+# ---------- 构建产物 ----------
+app/dist/
+dist/
+src-tauri/target/
+src-tauri/gen/
+src-tauri/.tauri/
+
+# ---------- 便携工具链（体积巨大，不入库） ----------
+toolchain/
+
+# ---------- 密钥与签名材料 ----------
+*.jks
+*.keystore
+*.p12
+*.pfx
+*.idsig
+local.properties
+
+# ---------- 系统与编辑器 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# ---------- 日志与临时文件 ----------
+*.log
+npm-debug.log*
+*.tmp
+*.tmpdir/
+.tmp/
+
+# ---------- 本地验证产物 ----------
+tools/verify/node_modules/
+tools/verify/out/
+tools/verify/package-lock.json
+
+# ---------- 环境与本地配置 ----------
+.env
+.env.*
+!.env.example

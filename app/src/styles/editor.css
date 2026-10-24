@@ -1,0 +1,453 @@
+/* ===========================================================
+   CodeMirror 6 —— 所见即所得 Live Preview
+   =========================================================== */
+.editor-host .cm-editor {
+  background: transparent;
+  color: var(--c-text);
+  font-size: var(--doc-font-size, 15.5px);
+  line-height: var(--doc-line-height, 1.72);
+}
+.editor-host .cm-editor.cm-focused { outline: none; }
+.editor-host .cm-scroller {
+  font-family: var(--font-read);
+  padding: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.editor-host .cm-content {
+  padding: 26px 0 45vh;
+  max-width: var(--doc-max-width, 780px);
+  margin: 0 auto;
+  width: 100%;
+  caret-color: var(--c-primary);
+  font-variant-ligatures: none;
+  /* 长段落必须换行，否则移动端会横向溢出 */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.editor-host .cm-line {
+  padding: 1.5px var(--doc-pad-x, 30px);
+  word-break: break-word;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.editor-host .cm-editor .cm-cursor,
+.editor-host .cm-editor .cm-dropCursor {
+  border-left: 2px solid var(--c-primary);
+}
+.editor-host .cm-editor .cm-selectionBackground,
+.editor-host .cm-editor.cm-focused .cm-selectionBackground,
+.editor-host .cm-editor ::selection {
+  background: color-mix(in srgb, var(--c-primary) 20%, transparent) !important;
+}
+.editor-host .cm-editor .cm-activeLine {
+  background: color-mix(in srgb, var(--c-primary) 3.5%, transparent);
+}
+.editor-host .cm-editor .cm-matchingBracket {
+  background: color-mix(in srgb, var(--c-primary) 22%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--c-primary) 45%, transparent);
+}
+
+/* ---------- 标题 ---------- */
+.editor-host .cm-line.md-h1 {
+  font-size: 1.86em;
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: -.021em;
+  padding-top: .62em;
+  padding-bottom: .2em;
+}
+.editor-host .cm-line.md-h2 {
+  font-size: 1.46em;
+  font-weight: 680;
+  line-height: 1.35;
+  letter-spacing: -.016em;
+  padding-top: .58em;
+  padding-bottom: .16em;
+}
+.editor-host .cm-line.md-h3 {
+  font-size: 1.2em;
+  font-weight: 660;
+  padding-top: .5em;
+  padding-bottom: .1em;
+}
+.editor-host .cm-line.md-h4 {
+  font-size: 1.06em;
+  font-weight: 660;
+  padding-top: .4em;
+}
+.editor-host .cm-line.md-h5 {
+  font-size: 1em;
+  font-weight: 650;
+  color: var(--c-text-2);
+  padding-top: .35em;
+}
+.editor-host .cm-line.md-h6 {
+  font-size: .94em;
+  font-weight: 650;
+  color: var(--c-text-3);
+  padding-top: .35em;
+}
+
+/* 标题行首锚点装饰 */
+.editor-host .cm-line.md-h1::before,
+.editor-host .cm-line.md-h2::before,
+.editor-host .cm-line.md-h3::before {
+  content: "";
+  display: block;
+  height: 0;
+}
+
+/* ---------- 段落与引用 ---------- */
+
+/* ---------- 代码 ---------- */
+.editor-host .cm-line.md-codeblock,
+.editor-host .cm-line.md-codeblock-start,
+.editor-host .cm-line.md-codeblock-end {
+  background: var(--c-surface-3);
+  font-family: var(--font-mono);
+  font-size: .885em;
+  line-height: 1.62;
+}
+.editor-host .cm-line.md-codeblock-start {
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+  padding-top: 7px;
+  color: var(--c-text-3);
+  font-size: .78em;
+}
+.editor-host .cm-line.md-codeblock-end {
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  padding-bottom: 7px;
+}
+.editor-host .cm-line.md-codeblock:last-of-type { border-radius: 0 0 var(--r-sm) var(--r-sm); }
+.editor-host .cm-line.md-inline-code {
+  font-family: var(--font-mono);
+}
+
+/* ---------- 表格 ---------- */
+.editor-host .cm-line.md-table {
+  font-family: var(--font-mono);
+  font-size: .88em;
+  line-height: 1.6;
+  color: var(--c-text-2);
+}
+.editor-host .cm-line.md-table-header {
+  font-weight: 700;
+  color: var(--c-text);
+}
+.editor-host .cm-line.md-table-sep { color: var(--c-text-3); }
+
+/* ---------- 列表 ---------- */
+.editor-host .cm-line.md-list {
+  padding-left: 30px;
+  position: relative;
+}
+
+/* 列表符号渲染为项目符号 */
+.editor-host .cm-line .md-bullet {
+  color: var(--c-primary);
+  font-weight: 700;
+  opacity: .7;
+}
+
+/* 代码围栏标记弱化 */
+.editor-host .cm-line .md-fence-mark {
+  color: var(--c-text-3);
+  opacity: .45;
+  font-size: .9em;
+}
+.editor-host .cm-line .md-code-info {
+  color: var(--c-primary);
+  opacity: .8;
+  font-size: .78em;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+/* 引用：整行左侧竖线 */
+.editor-host .cm-line.md-quote {
+  border-left: 3px solid var(--c-primary);
+  color: var(--c-text-2);
+  padding-left: 16px;
+  margin: 2px 0;
+  background: var(--c-primary-softer);
+}
+.editor-host .cm-line.md-quote:first-of-type {
+  border-top-left-radius: 0;
+  border-top-right-radius: var(--r-sm);
+}
+.editor-host .cm-line.md-quote:last-of-type {
+  border-bottom-right-radius: var(--r-sm);
+}
+
+/* 表格：渲染为真实表格 */
+.md-table-wrap {
+  margin: 12px 0;
+  overflow-x: auto;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+}
+.md-table-el {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: .92em;
+  font-family: var(--font-ui);
+}
+.md-table-el th,
+.md-table-el td {
+  padding: 8px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--c-line);
+  border-right: 1px solid var(--c-line);
+  min-width: 80px;
+}
+.md-table-el th:last-child,
+.md-table-el td:last-child { border-right: none; }
+.md-table-el thead th {
+  background: var(--c-primary-softer);
+  font-weight: 650;
+  color: var(--c-text);
+  white-space: nowrap;
+}
+.md-table-el tbody tr:last-child td { border-bottom: none; }
+.md-table-el tbody tr:hover { background: var(--c-surface-2); }
+
+/* ---------- 任务列表勾选框 ---------- */
+.md-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin: 0 6px 0 0;
+  border-radius: 4px;
+  border: 1.6px solid var(--c-line-strong);
+  background: var(--c-surface);
+  cursor: pointer;
+  vertical-align: -2px;
+  transition: background 120ms var(--ease), border-color 120ms var(--ease);
+  flex: none;
+  user-select: none;
+}
+.md-checkbox:hover { border-color: var(--c-primary); }
+.md-checkbox.checked {
+  background: var(--c-primary);
+  border-color: var(--c-primary);
+  color: #fff;
+}
+.md-checkbox.checked::after {
+  content: "";
+  width: 8px; height: 4.5px;
+  border-left: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(-45deg) translate(0.5px, -1px);
+}
+.md-list-done { color: var(--c-text-3); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* ---------- 链接 ---------- */
+.md-link {
+  color: var(--c-primary);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--c-primary) 32%, transparent);
+  cursor: pointer;
+  transition: border-color 120ms var(--ease), background 120ms var(--ease);
+}
+.md-link:hover {
+  border-bottom-color: var(--c-primary);
+  background: var(--c-primary-soft);
+}
+.md-wikilink {
+  color: var(--c-primary);
+  background: var(--c-primary-soft);
+  border-radius: 4px;
+  padding: 0 3px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.md-wikilink:hover { background: color-mix(in srgb, var(--c-primary) 22%, transparent); }
+.md-wikilink.missing { color: var(--c-text-3); background: var(--c-surface-3); }
+
+/* ---------- 图片 ---------- */
+.md-image {
+  display: block;
+  max-width: 100%;
+  border-radius: var(--r-md);
+  margin: 8px 0;
+  box-shadow: var(--sh-1);
+}
+.md-image-loading {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--c-surface-3);
+  color: var(--c-text-3);
+  font-size: .85em;
+}
+
+/* ---------- 分隔线 ---------- */
+.md-hr {
+  display: block;
+  height: 1px;
+  background: var(--c-line-strong);
+  margin: 14px 0;
+  border-radius: 1px;
+}
+
+/* ---------- 语法标记（折叠/淡出） ---------- */
+.md-mark {
+  color: var(--c-text-3);
+  opacity: .45;
+  transition: opacity 120ms var(--ease);
+}
+.md-mark-revealed { opacity: 1; color: var(--c-text-3); }
+
+/* 强调 */
+.md-strong { font-weight: 680; color: var(--c-text); }
+.md-em { font-style: italic; }
+.md-strike { text-decoration: line-through; color: var(--c-text-3); }
+.md-highlight {
+  background: color-mix(in srgb, var(--c-orange) 34%, transparent);
+  border-radius: 3px;
+  padding: 0 2px;
+}
+
+/* 行内代码 */
+.md-inline-code-span {
+  font-family: var(--font-mono);
+  font-size: .88em;
+  background: var(--c-surface-3);
+  border-radius: 4px;
+  padding: 1.5px 5px;
+  color: var(--c-primary-active);
+  border: 1px solid var(--c-line);
+}
+[data-theme="dark"] .md-inline-code-span { color: var(--c-orange); }
+
+/* 脚注 */
+.md-footnote { color: var(--c-primary); font-size: .85em; vertical-align: super; }
+
+/* 搜索高亮 */
+.editor-host .cm-searchMatch {
+  background: color-mix(in srgb, var(--c-orange) 38%, transparent);
+  border-radius: 2px;
+}
+.editor-host .cm-searchMatch.cm-searchMatch-selected {
+  background: color-mix(in srgb, var(--c-orange) 62%, transparent);
+}
+
+/* 搜索面板 */
+.editor-host .cm-panels {
+  background: var(--c-surface-2);
+  color: var(--c-text);
+  border-bottom: 1px solid var(--c-line) !important;
+  border-top: none;
+}
+.editor-host .cm-panels.cm-panels-bottom { border-top: 1px solid var(--c-line) !important; border-bottom: none !important; }
+.editor-host .cm-panel.cm-search {
+  padding: 6px 10px;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+.editor-host .cm-panel.cm-search input,
+.editor-host .cm-panel.cm-search button {
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  border-radius: 5px;
+  border: 1px solid var(--c-line-strong);
+  background: var(--c-surface);
+  color: var(--c-text);
+  padding: 3px 7px;
+  margin: 2px;
+}
+.editor-host .cm-panel.cm-search button:hover { background: var(--c-surface-3); }
+.editor-host .cm-panel.cm-search button[name=close] { border: none; background: none; }
+.editor-host .cm-button {
+  background-image: none;
+  background: var(--c-surface);
+  border: 1px solid var(--c-line-strong);
+}
+
+/* 自动补全 */
+.editor-host .cm-tooltip {
+  border: 1px solid var(--c-line) !important;
+  border-radius: var(--r-md) !important;
+  background: var(--c-surface) !important;
+  box-shadow: var(--sh-3) !important;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+}
+.editor-host .cm-tooltip-autocomplete > ul > li {
+  padding: 5px 9px;
+  color: var(--c-text-2);
+}
+.editor-host .cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--c-primary-soft);
+  color: var(--c-primary);
+}
+.editor-host .cm-completionLabel { font-size: 12.5px; }
+.editor-host .cm-completionDetail { font-size: 11px; color: var(--c-text-3); margin-left: 8px; font-style: normal; }
+
+/* 占位符 */
+.editor-host .cm-placeholder { color: var(--c-text-3); }
+
+/* 拖拽文件提示 */
+.drop-hint {
+  position: absolute;
+  inset: 12px;
+  border: 2px dashed var(--c-primary);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--c-primary) 8%, transparent);
+  display: grid;
+  place-items: center;
+  color: var(--c-primary);
+  font-size: 14px;
+  font-weight: 600;
+  z-index: 30;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+/* 移动端阅读排版 */
+@media (max-width: 860px) {
+  .editor-host {
+    --doc-pad-x: 18px;
+  }
+  .editor-host .cm-content {
+    padding: 12px 0 55vh;
+    max-width: 100%;
+  }
+  .editor-host .cm-editor {
+    font-size: var(--doc-font-size, 16px);
+    line-height: 1.78;
+  }
+  .editor-host .cm-line.md-h1 {
+    font-size: 1.52em;
+    padding-top: .5em;
+  }
+  .editor-host .cm-line.md-h2 {
+    font-size: 1.28em;
+  }
+  .editor-host .cm-line.md-h3 {
+    font-size: 1.12em;
+  }
+  .editor-host .cm-line.md-quote {
+    padding-left: 12px;
+  }
+  .md-table-wrap {
+    margin: 10px 0;
+    border-radius: var(--r-sm);
+  }
+  .md-table-el th,
+  .md-table-el td {
+    padding: 7px 10px;
+    font-size: .95em;
+    min-width: 64px;
+  }
+  .md-checkbox {
+    width: 19px;
+    height: 19px;
+    margin-right: 8px;
+  }
+}
