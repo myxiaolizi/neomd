@@ -129,13 +129,17 @@ const USAGE = `Neo MD GitHub Release 发布脚本
 /**
  * 本项目固定要求的默认代理（访问 GitHub 必须走它）。
  * 该地址是本地 mixed/http 代理，无鉴权，不含任何凭据。
+ *
+ * 注意：CI 环境（GitHub Actions）本身可直连，不需要这个本地代理，
+ * 因此当检测到 `CI=true` 时默认**不走代理**，避免因连不上 127.0.0.1:1886 而失败。
  */
 const DEFAULT_PROXY = 'http://127.0.0.1:1886';
 
 /**
  * 解析最终生效的代理地址。
  *
- * 优先级：`--proxy=` > `--no-proxy`（强制关闭） > `HTTPS_PROXY` > `HTTP_PROXY` > 默认值。
+ * 优先级：`--proxy=` > `--no-proxy`（强制关闭） > `HTTPS_PROXY` > `HTTP_PROXY` >
+ *         CI 环境（直连） > 默认值。
  *
  * 注意：`--no-proxy` 的优先级高于环境变量，用于「本机已配全局代理、
  * 不想再叠一层」的场景，避免双重代理导致 TLS 握手异常。
@@ -147,6 +151,10 @@ function resolveProxy(args) {
   if (httpsProxy) return { url: httpsProxy, source: '环境变量 HTTPS_PROXY' };
   const httpProxy = (process.env.HTTP_PROXY || process.env.http_proxy || '').trim();
   if (httpProxy) return { url: httpProxy, source: '环境变量 HTTP_PROXY' };
+  // CI（GitHub Actions）可直连，不应回落到本地代理
+  if (process.env.CI === 'true' || process.env.GITHUB_ACTIONS === 'true') {
+    return { url: '', source: 'CI 环境（可直连，跳过本地代理）' };
+  }
   return { url: DEFAULT_PROXY, source: '项目默认代理（未设置 HTTPS_PROXY/HTTP_PROXY）' };
 }
 

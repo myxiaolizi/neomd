@@ -208,18 +208,30 @@ try {
     if (await verifyBtn.count()) {
       await verifyBtn.click();
       await page.waitForTimeout(1800);
-      const tip = await page.locator('.kb-tip').first().innerText().catch(() => '');
+      // 注意：.kb-tip 在页面上有多处（颗粒度说明等），必须限定在令牌明文块内取
+      const tip = await page
+        .locator('.kb-tokenplain .kb-tip')
+        .first()
+        .innerText()
+        .catch(() => '');
       check(tip.includes('验证通过'), '页面「立即验证」显示通过', tip.slice(0, 80));
     }
   }
 
   // C：测试按钮（按 id）
-  const testBtn = page.getByRole('button', { name: /^测试$/ }).first();
+  // 注意：列表倒序，已吊销的行测试按钮是 disabled 的；必须只在「有效行」里点，
+  // 否则点到 disabled 按钮不会有任何反应（这是之前误判的原因）。
+  const aliveRow = page.locator('.kb-tokenitem:not(.is-dead)').first();
+  const testBtn = aliveRow.getByRole('button', { name: /^测试$/ }).first();
   if (await testBtn.count()) {
     await testBtn.click();
-    await page.waitForTimeout(1500);
-    const tip = await page.locator('.kb-tip').first().innerText().catch(() => '');
-    check(tip.includes('可用'), '「测试」按钮显示令牌可用', tip.slice(0, 80));
+    await page.waitForTimeout(2000);
+    // 取清单里所有提示，优先找「可用 / 不可用」这类测试结果文案
+    const tips = await page.locator('.kb-tokens .kb-tip').allInnerTexts().catch(() => []);
+    const hit = tips.find((t) => t.includes('项检查通过') || t.includes('不可用')) ?? tips.join(' | ');
+    check(hit.includes('项检查通过'), '「测试」按钮显示令牌可用', hit.slice(0, 80));
+  } else {
+    check(false, '「测试」按钮显示令牌可用', '未找到可用行的测试按钮');
   }
 
   // C：吊销

@@ -197,12 +197,12 @@ defineExpose({ reload: load });
   display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 18px 20px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
 }
-.lsum__item span { font-size: 11.5px; color: var(--fg-3); }
+.lsum__item span { font-size: 12px; color: var(--fg-3); }
 .lsum__item strong { font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .lsum__item small { font-size: 10.5px; color: var(--fg-3); }
 .lsum__item--in strong { color: #0e9f6e; }
@@ -216,7 +216,7 @@ defineExpose({ reload: load });
 
 .ltable-wrap {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--bg-elevated);
   overflow: hidden;
 }
@@ -237,7 +237,7 @@ defineExpose({ reload: load });
 .ltable tbody tr:last-child td { border-bottom: none; }
 .ltable tbody tr:hover { background: var(--bg-hover); }
 .ltable .num { text-align: right; font-variant-numeric: tabular-nums; }
-.ltable .muted { color: var(--fg-3); font-size: 11.5px; }
+.ltable .muted { color: var(--fg-3); font-size: 12px; }
 .ltable .is-in { color: #0e9f6e; font-weight: 600; }
 .ltable .is-out { color: #d93025; font-weight: 600; }
 .lref { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

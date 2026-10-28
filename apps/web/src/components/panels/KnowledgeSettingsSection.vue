@@ -392,6 +392,9 @@ const tokenFormOpen = ref(false);
 const newTokenPlain = ref('');
 const tokenTestResult = ref('');
 const tokenTestOk = ref(true);
+/** 列表操作（测试 / 吊销）的独立提示，避免与创建提示互相覆盖 */
+const tokenListTip = ref('');
+const tokenListOk = ref(true);
 const tokenVerifying = ref(false);
 const tokenVerifyResult = ref('');
 const tokenVerifyOk = ref(true);
@@ -482,16 +485,17 @@ async function submitToken(): Promise<void> {
 
 /** 测试某枚令牌（按 id 校验有效性） */
 async function testToken(t: KnowledgeTokenDto): Promise<void> {
-  tokenTestResult.value = '';
+  tokenListTip.value = '';
+  await new Promise((r) => setTimeout(r, 16));
   try {
     const res = await knowledgeTokensApi.test(t.id);
-    tokenTestOk.value = res.passed;
-    tokenTestResult.value = res.passed
+    tokenListOk.value = res.passed;
+    tokenListTip.value = res.passed
       ? `令牌「${t.name}」可用（${res.checks.filter((c) => c.ok).length}/${res.checks.length} 项检查通过）`
       : `令牌「${t.name}」不可用：${res.checks.filter((c) => !c.ok).map((c) => `${c.label}（${c.detail}）`).join('；')}`;
   } catch (e) {
-    tokenTestOk.value = false;
-    tokenTestResult.value = `测试失败：${(e as Error).message}`;
+    tokenListOk.value = false;
+    tokenListTip.value = `测试失败：${(e as Error).message}`;
   }
 }
 
@@ -529,15 +533,15 @@ async function verifyPlainToken(): Promise<void> {
 
 /** 吊销令牌 */
 async function revokeToken(t: KnowledgeTokenDto): Promise<void> {
-  tokenTestResult.value = '';
+  tokenListTip.value = '';
   try {
     await knowledgeTokensApi.revoke(t.id);
-    tokenTestOk.value = true;
-    tokenTestResult.value = `令牌「${t.name}」已吊销，立即失效`;
+    tokenListOk.value = true;
+    tokenListTip.value = `令牌「${t.name}」已吊销，立即失效`;
     await loadTokens();
   } catch (e) {
-    tokenTestOk.value = false;
-    tokenTestResult.value = `吊销失败：${(e as Error).message}`;
+    tokenListOk.value = false;
+    tokenListTip.value = `吊销失败：${(e as Error).message}`;
   }
 }
 
@@ -1220,9 +1224,10 @@ onBeforeUnmount(() => {
             </li>
           </ul>
 
-          <p v-if="tokenTestResult" class="kb-tip" :class="{ 'kb-tip--bad': !tokenTestOk }">
-            <NmIcon :name="tokenTestOk ? 'check' : 'alert'" :size="13" />
-            <span>{{ tokenTestResult }}</span>
+          <!-- 列表操作结果（测试 / 吊销）。与创建提示分开，避免旧提示残留造成误读 -->
+          <p v-if="tokenListTip" class="kb-tip" :class="{ 'kb-tip--bad': !tokenListOk }">
+            <NmIcon :name="tokenListOk ? 'check' : 'alert'" :size="13" />
+            <span>{{ tokenListTip }}</span>
           </p>
         </div>
 

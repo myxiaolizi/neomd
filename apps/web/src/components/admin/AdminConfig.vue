@@ -211,7 +211,7 @@ defineExpose({ reload: load });
   padding: 10px 12px;
   border-radius: 9px;
   background: var(--accent-weak-2);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.7;
   color: var(--fg-2);
 }
@@ -227,8 +227,8 @@ defineExpose({ reload: load });
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 18px 20px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
   transition: border-color 0.14s ease;
@@ -254,16 +254,16 @@ defineExpose({ reload: load });
 }
 .crow__badge--dirty { background: var(--accent-weak); color: var(--accent); }
 .crow__time { font-size: 10.5px; color: var(--fg-3); white-space: nowrap; }
-.crow__hint { margin: 0; font-size: 11.5px; color: var(--fg-3); line-height: 1.6; }
+.crow__hint { margin: 0; font-size: 12px; color: var(--fg-3); line-height: 1.6; }
 .crow__input { max-width: 620px; }
 .crow__area {
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12px;
   line-height: 1.65;
   resize: vertical;
   min-height: 96px;
 }
-.crow__err { margin: 0; font-size: 11.5px; color: #d93025; }
+.crow__err { margin: 0; font-size: 12px; color: #d93025; }
 
 .empty { text-align: center; color: var(--fg-3); padding: 32px 12px; font-size: 12.5px; }
 

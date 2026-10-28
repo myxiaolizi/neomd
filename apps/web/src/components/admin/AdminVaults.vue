@@ -225,12 +225,12 @@ defineExpose({ reload: load });
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 14px 16px;
-  border-radius: 12px;
+  padding: 18px 20px;
+  border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--bg-elevated);
 }
-.vsum__item span { font-size: 11.5px; color: var(--fg-3); }
+.vsum__item span { font-size: 12px; color: var(--fg-3); }
 .vsum__item strong { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .vsum__item.is-warn strong { color: #f59e0b; }
 
@@ -241,7 +241,7 @@ defineExpose({ reload: load });
 
 .vtable-wrap {
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--bg-elevated);
   overflow: hidden;
 }
@@ -263,7 +263,7 @@ defineExpose({ reload: load });
 .vtable tbody tr:hover { background: var(--bg-hover); }
 .vtable .num { text-align: right; font-variant-numeric: tabular-nums; }
 .vtable .right { text-align: right; }
-.vtable .muted { color: var(--fg-3); font-size: 11.5px; white-space: nowrap; }
+.vtable .muted { color: var(--fg-3); font-size: 12px; white-space: nowrap; }
 
 .vname { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .vname strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -276,7 +276,7 @@ defineExpose({ reload: load });
 .vtag--off { background: rgba(245, 158, 11, 0.14); color: #b45309; }
 
 .vbtn {
-  font-size: 11.5px;
+  font-size: 12px;
   padding: 3px 9px;
   border-radius: 5px;
   color: var(--accent);

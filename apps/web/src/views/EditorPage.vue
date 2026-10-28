@@ -2832,8 +2832,13 @@ const tabBarTabs = computed(() =>
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  /* 顶部留白略大：桌面端这里作为窗口拖拽区，需要一小块稳定可拖的空白 */
-  padding: 14px 4px 8px;
+  /*
+   * 顶部留白略大：桌面端这里作为窗口拖拽区，需要一小块稳定可拖的空白。
+   * 底部 padding 必须是 0 —— 末位「插件商店」按钮用 margin-top: auto 贴底，
+   * 若底部还有 padding，按钮会被顶起来一段（实测 8px），就不是「最下对齐」了。
+   * 贴底按钮与上方按钮之间的间距由 `gap` 与按钮自身的 margin-top 共同决定。
+   */
+  padding: 14px 4px 0;
   background: var(--bg-sidebar);
 }
 .ribbon--left {

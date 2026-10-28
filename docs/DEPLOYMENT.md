@@ -1069,6 +1069,22 @@ export GITHUB_REPO="owner/repo"
 
 也支持完整写法 `https://github.com/owner/repo.git` 或 `git@github.com:owner/repo.git`，脚本会自动清洗。
 
+#### 15.3.2.1 代理配置
+
+本项目开发机访问 GitHub 必须走本地代理 `http://127.0.0.1:1886`，脚本已内置该默认值：
+
+| 场景 | 行为 |
+| --- | --- |
+| 未设置任何代理变量（本机） | 自动回落到 `http://127.0.0.1:1886` |
+| 设置了 `HTTPS_PROXY` / `HTTP_PROXY` | 使用环境变量里的地址 |
+| 传了 `--proxy=http://...` | 使用命令行指定地址（优先级最高） |
+| 传了 `--no-proxy` | 强制直连，忽略所有代理配置 |
+| GitHub Actions（`CI=true`） | 自动跳过本地代理（CI 可直连） |
+
+> 实现说明：Node 原生 `fetch` 不读取代理环境变量，脚本通过设置 `NODE_USE_ENV_PROXY=1`
+> 启用 Node 24 内置的代理支持，**未引入任何第三方依赖**。
+> 脚本启动时会先做一次 TCP 探活，代理没开时会明确提示，而不是给出难以理解的 `fetch failed`。
+
 #### 15.3.3 执行发布
 
 ```bash
@@ -1087,20 +1103,60 @@ node tools/publish-github-release.mjs
 | --- | --- |
 | `--dry-run` | 只演练，不联网 |
 | `--skip-assets` | 只同步 Release 说明，不上传安装包（产物还没构建好时用） |
+| `--all-versions` | **批量模式**：为 CHANGELOG 里所有版本一次性创建/更新 Release（不上传产物） |
 | `--draft` | 发成草稿，先在页面预览再手动发布 |
 | `--prerelease` | 标记为预发布（不会顶到 Latest） |
 | `--version=1.1.7` | 覆盖版本号（默认读 `package.json`） |
 | `--tag=v1.1.7` | 覆盖 tag 名（默认 `v<版本号>`） |
 | `--repo=owner/repo` | 覆盖仓库标识 |
+| `--proxy=http://127.0.0.1:1886` | 覆盖代理地址 |
+| `--no-proxy` | 强制直连 |
 | `--help` | 查看全部选项 |
+
+#### 15.3.3.1 批量补建历史版本 Release
+
+把 CHANGELOG 里已有的历史版本（如 v1.0.0 ~ v1.1.8）一次性同步到 GitHub Releases：
+
+```bash
+# 先看会创建哪些（不联网）
+node tools/publish-github-release.mjs --all-versions --dry-run --repo=owner/repo
+
+# 确认无误后执行
+node tools/publish-github-release.mjs --all-versions --repo=owner/repo
+```
+
+特性：
+
+- **幂等**：已存在同名 tag 的 Release 只更新说明正文，不重复创建；
+- **单个失败不影响后续**：逐条 try/catch，最后汇总「新建 N / 更新 N / 失败 N」；
+- **不上传资产**：历史版本的安装包通常已不可得，资产只属于当前版本，由常规发布流程处理；
+- Release 正文严格取自 `CHANGELOG.md` 对应版本段，**不会自行编写内容**。
 
 #### 15.3.4 把 tag 与 CHANGELOG 推送到仓库
 
-!!! 注意：本机 `git` 不在 PATH
+!!! 注意：git 与代理
 
-    当前开发机未把 `git` 加入 PATH（`Get-Command git` 无结果），因此下面的提交与推送需要
-    **在装有 Git 的机器上执行**，或先把 Git 加入 PATH（Git for Windows 默认路径
-    `C:\Program Files\Git\bin`，本机实测该目录存在，只是没进 PATH）。
+    本机 `git` 位于 `C:\Program Files\Git\cmd\git.exe`（v2.56，已在 PATH）。
+    推送 GitHub 同样必须走代理，用 `-c http.proxy=...` 一次性传入即可。
+
+**token 绝不写进 remote URL 或配置文件**，用 `http.extraheader` 一次性注入：
+
+```powershell
+# 1) 远端地址保持干净（不含 token）
+git remote add origin https://github.com/myxiaolizi/neomd.git
+
+# 2) 把 token 编码成 Basic 头（只在当前进程内，不落盘、不进命令行历史）
+$b64 = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
+
+# 3) 推送（经代理）
+git -c http.proxy=http://127.0.0.1:1886 `
+    -c https.proxy=http://127.0.0.1:1886 `
+    -c http.extraheader="AUTHORIZATION: basic $b64" `
+    push -u origin main
+```
+
+> 为什么用 `http.extraheader` 而不是 `https://<token>@github.com/...`：
+> 后者会把 token 写进 shell 历史、`git remote -v` 输出和 CI 日志里。
 
 Release 创建后，`CHANGELOG.md` 的本次改动还必须**随代码一起进主分支**，否则仓库里的更新日志会落后于 Release 页面：
 

@@ -983,9 +983,144 @@ onMounted(async () => {
               {{ aiMetaSaving ? '保存中…' : '保存展示配置' }}
             </button>
           </div>
-        </template>
 
-        <!-- 5. 计费、模型多计费方式与积分赠送 -->
+          <!-- 1.1.8：平台付费侧的模型治理（模型列表 / 每模型设置 / 系统提示词） -->
+          <h3 class="section-title">平台模型配置（用户扣积分调用）</h3>
+          <p class="hint">
+            这里配置的是<strong>平台代付</strong>那条线：用户在前台「平台 AI 服务」区块只看到模型名与价格，
+            看不到供应商地址与密钥。模型列表决定「开放哪些模型」，每模型设置决定温度上限 / 最大 token / 单价，
+            系统提示词会在用户调用时注入（用户可在客户端临时覆盖）。
+          </p>
+
+          <p v-if="aiModelsMessage" class="hint mono">{{ aiModelsMessage }}</p>
+          <p v-if="aiModelsLoading" class="hint">正在加载模型配置…</p>
+
+          <template v-else>
+            <div v-for="p in aiModelProviders" :key="p.provider" class="model-cfg">
+              <div class="model-cfg__head">
+                <strong>{{ p.name }}</strong>
+                <span class="muted mono">({{ p.provider }})</span>
+                <span class="tag" :class="p.apiKeySet ? 'tag--ok' : ''">
+                  {{ p.apiKeySet ? '密钥已配' : '未配密钥' }}
+                </span>
+                <span class="tag" :class="{ 'tag--accent': p.enabled }">
+                  {{ p.enabled ? '前台可见' : '前台不可见' }}
+                </span>
+              </div>
+
+              <div class="model-cfg__row">
+                <div class="field-box">
+                  <label class="nm-label">开放模型（逗号分隔）</label>
+                  <input
+                    :value="(p.models ?? []).join(', ')"
+                    class="nm-input mono"
+                    placeholder="deepseek-chat, deepseek-reasoner"
+                    aria-label="开放模型列表"
+                    @input="updateModelList(p, ($event.target as HTMLInputElement).value)"
+                  />
+                </div>
+                <div class="field-box">
+                  <label class="nm-label">默认模型</label>
+                  <select v-model="p.defaultModel" class="nm-input" aria-label="默认模型">
+                    <option value="">（不设默认）</option>
+                    <option v-for="m in p.models" :key="m" :value="m">{{ m }}</option>
+                  </select>
+                </div>
+                <div class="field-box">
+                  <label class="nm-label">供应商级系统提示词（模型未配时兜底）</label>
+                  <input
+                    v-model="p.systemPrompt"
+                    class="nm-input"
+                    placeholder="你是 Neo MD 的写作助手…"
+                    aria-label="供应商级系统提示词"
+                  />
+                </div>
+              </div>
+
+              <!-- 每模型设置 -->
+              <table class="table table--tight">
+                <thead>
+                  <tr>
+                    <th>模型</th>
+                    <th style="width: 86px;">温度上限</th>
+                    <th style="width: 96px;">最大 tokens</th>
+                    <th style="width: 92px;">单价(入)</th>
+                    <th style="width: 92px;">单价(出)</th>
+                    <th>模型级系统提示词</th>
+                    <th style="width: 84px;">提示词来源</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="m in p.models" :key="m">
+                    <td class="mono">{{ m }}</td>
+                    <td>
+                      <input
+                        v-model.number="modelSettingOf(p, m).temperature"
+                        class="nm-input nm-input--num"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="2"
+                        aria-label="温度上限"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        v-model.number="modelSettingOf(p, m).maxTokens"
+                        class="nm-input nm-input--num"
+                        type="number"
+                        min="1"
+                        max="32768"
+                        aria-label="最大 tokens"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        v-model.number="modelSettingOf(p, m).priceIn"
+                        class="nm-input nm-input--num"
+                        type="number"
+                        min="0"
+                        aria-label="输入单价"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        v-model.number="modelSettingOf(p, m).priceOut"
+                        class="nm-input nm-input--num"
+                        type="number"
+                        min="0"
+                        aria-label="输出单价"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        v-model="modelSettingOf(p, m).systemPrompt"
+                        class="nm-input"
+                        placeholder="留空则用供应商兜底"
+                        aria-label="模型级系统提示词"
+                      />
+                    </td>
+                    <td class="muted">
+                      {{ resolvedSource(p, m) === 'model' ? '模型级' : resolvedSource(p, m) === 'provider' ? '供应商' : '未配置' }}
+                    </td>
+                  </tr>
+                  <tr v-if="!p.models.length">
+                    <td colspan="7" class="empty">该供应商还没有开放模型</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <button
+                class="nm-btn nm-btn--primary nm-btn--sm"
+                :disabled="aiModelsSaving === p.provider"
+                title="保存该供应商的模型治理配置"
+                @click="saveAiModelProvider(p)"
+              >
+                {{ aiModelsSaving === p.provider ? '保存中…' : `保存 ${p.name} 配置` }}
+              </button>
+            </div>
+          </template>
+        </template>
         <template v-else-if="tab === 'billing'">
           <div v-if="billing" class="billing">
             <h3 class="section-title" style="margin-top: 0;">积分兑换与自动赠送规则</h3>
@@ -1335,10 +1470,12 @@ onMounted(async () => {
   transition: background 0.14s ease, color 0.14s ease;
 }
 .nav-item:hover { background: #eceef2; color: #1f2329; }
-/* 选中态：白底卡片 + 蓝色左侧标记 + 淡阴影，浅色下靠「浮起」而非「变色」突出 */
+/* 选中态：白底卡片 + 蓝色左侧标记 + 淡阴影，浅色下靠「浮起」而非「变色」突出。
+   文字色用加深的 `#0b5ed7`：`#1677ff` 在白底上只有 4.10:1，不满足 AA 的 4.5:1；
+   加深后 5.84:1，同时左侧标记仍用品牌蓝 `#1677ff` 保持视觉一致性。 */
 .nav-item.is-active {
   background: #ffffff;
-  color: #1677ff;
+  color: #0b5ed7;
   font-weight: 600;
   position: relative;
   box-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.08);

@@ -18,6 +18,18 @@ on:
   push:
     tags:
       - 'v*'
+  # 支持在 Actions 页面手动触发（可指定要发布的版本，便于补发历史版本或重试失败发布）
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '要发布的版本号（如 1.1.8，留空则读 package.json）'
+        required: false
+        type: string
+      dry_run:
+        description: '只演练不发布（勾选后不创建 Release、不上传资产）'
+        required: false
+        type: boolean
+        default: false
 
 # 同一 tag 的重复推送取消上一次未完成的运行，避免并发上传同名资产互相打架
 concurrency:
@@ -115,7 +127,13 @@ jobs:
       - name: 检查发布产物是否就位
         id: artifacts
         run: |
-          VERSION=$(node -p "require('./package.json').version")
+          # 手动触发时可指定版本，否则读 package.json
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION=$(node -p "require('./package.json').version")
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "待发布版本：$VERSION"
           MISSING=""
           for f in "NeoMD-${VERSION}-setup.exe" "NeoMD-${VERSION}-win-x64.zip" "NeoMD-${VERSION}.apk"; do
@@ -134,10 +152,15 @@ jobs:
             echo "assets_ready=true" >> "$GITHUB_OUTPUT"
           fi
 
+      # 手动触发且勾选了 dry_run → 只演练，不产生任何远端变更
+      - name: 演练发布（dry-run）
+        if: github.event.inputs.dry_run == 'true'
+        run: node tools/publish-github-release.mjs --dry-run --repo=${{ github.repository }} --version=${{ steps.artifacts.outputs.version }}
+
       # 产物齐全 → 完整发布（建 Release + 传资产）
       - name: 发布到 GitHub Releases（含安装包）
-        if: steps.artifacts.outputs.assets_ready == 'true'
-        run: node tools/publish-github-release.mjs --repo=${{ github.repository }}
+        if: steps.artifacts.outputs.assets_ready == 'true' && github.event.inputs.dry_run != 'true'
+        run: node tools/publish-github-release.mjs --repo=${{ github.repository }} --version=${{ steps.artifacts.outputs.version }}
         env:
           # secrets.GITHUB_TOKEN 是 GitHub 自动注入的临时令牌，有效期仅本次工作流，
           # 无需手工配置，也不会泄露到仓库里。
@@ -145,14 +168,14 @@ jobs:
 
       # 产物缺失 → 只同步更新记录，保证「发布记录一定同步到 GitHub」
       - name: 发布到 GitHub Releases（仅同步更新记录）
-        if: steps.artifacts.outputs.assets_ready != 'true'
-        run: node tools/publish-github-release.mjs --repo=${{ github.repository }} --skip-assets
+        if: steps.artifacts.outputs.assets_ready != 'true' && github.event.inputs.dry_run != 'true'
+        run: node tools/publish-github-release.mjs --repo=${{ github.repository }} --version=${{ steps.artifacts.outputs.version }} --skip-assets
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # 把 Release 链接回写到本次运行的摘要页，方便点开就能验收
       - name: 输出 Release 地址
         run: |
-          echo "本次 tag：${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "本次版本：${{ steps.artifacts.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Release 页面：https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release 页面：https://github.com/${{ github.repository }}/releases/tag/v${{ steps.artifacts.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"

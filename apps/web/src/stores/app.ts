@@ -70,14 +70,41 @@ export interface Tab {
 
 export type DocSortKey = 'updated-desc' | 'updated-asc' | 'created-desc' | 'created-asc' | 'title-asc' | 'title-desc';
 
+/**
+ * 供 UI 列表使用的仓库精简条目。
+ *
+ * 1.1.8 起补齐 `vaultId` 与 `available`：仓库注册表（`packages/core/src/vault/registry.ts`）
+ * 才是仓库数据的权威来源，本类型只是喂给列表渲染的投影。
+ * 之前缺这两个字段，导致 `syncAllVaults()` 里按 vaultId 去重、
+ * 以及过滤「本机可用」仓库的逻辑无字段可用（TS2339）。
+ */
 export interface VaultEntry {
   name: string;
   location: string;
   lastOpenedAt: number;
+  /** 仓库唯一 id（来自注册表），用于跨端对齐与去重 */
+  vaultId?: string;
+  /** 本机是否可用；云端有但本机没下载过的为 false */
+  available?: boolean;
 }
 
 const MODE_ORDER: EditorMode[] = ['wysiwyg', 'source', 'compare', 'read'];
 const VAULTS_STORAGE_KEY = 'neomd.vaultList.v1';
+
+/**
+ * 同步行为偏好（1.1.8）。
+ *
+ * 必须定义在**模块顶层**：它出现在 `useAppStore` 的返回值里，
+ * 而 `useAppStore` 是导出的，TypeScript 生成声明时要求该名字可被公开引用，
+ * 否则报 TS4025（has or is using private name）。
+ * 也不能写在 `defineStore(...)` 的 setup 函数体内加 `export`（函数内不允许 export，TS1184）。
+ */
+export interface SyncBehavior {
+  direction: 'both' | 'upload' | 'download';
+  conflictPolicy: 'newest' | 'local' | 'remote';
+  /** 自动同步间隔（毫秒），0 表示关闭 */
+  autoIntervalMs: number;
+}
 
 export const useAppStore = defineStore('app', () => {
   const settingsStore = useSettingsStore();
@@ -247,23 +274,68 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
-  async function createAndSwitchVault(name: string): Promise<void> {
+  /**
+   * 新建仓库（1.1.8：PC 端**必须选择真实文件夹**）。
+   *
+   * 用户原话：「在PC端新建仓库是要选择对应文件夹，PC的正文数据都是存在电脑文件夹中的，
+   * 同时通过S3或账号同步到云端和其他平台」。因此桌面端不再自动拼 `文档/Neo MD/<名字>`，
+   * 而是**强制**弹目录选择器，让用户明确指定落盘位置。
+   *
+   * 为什么不用「自动拼默认路径」：用户有多块盘、多个同步目录时，
+   * 自动拼出来的路径往往会和用户既有的资料夹结构冲突，事后还要手工搬。
+   * 显式选择虽然多一步，但不会被搞乱。
+   *
+   * @param name 仓库显示名
+   * @param pickedLocation 已选定的目录（桌面端由调用方先弹选择器后传入，避免二次弹窗）
+   * @returns 是否成功创建
+   */
+  async function createAndSwitchVault(name: string, pickedLocation?: string): Promise<boolean> {
     const clean = sanitizeTitle(name.trim()) || '新仓库';
     const runtime = detectRuntime();
     const bridge = getBridge();
-    // 桌面端所有仓库都落到真实本地文件夹：<本地根>/<仓库名>
     let loc = `vault:${clean}`;
-    if (runtime.platform === 'desktop' && bridge?.paths) {
-      const base = await desktopDefaultVaultDir();
-      if (base) {
-        const sep = base.includes('\\') ? '\\' : '/';
-        loc = `${base.replace(/[\\/]+$/, '')}${sep}${clean}`;
+
+    if (runtime.platform === 'desktop') {
+      // 桌面端：必须拿到真实文件夹
+      let dir = pickedLocation?.trim() ?? '';
+      if (!dir) {
+        const pick = bridge?.dialog?.pickDirectory;
+        if (!pick) {
+          notify('当前环境不支持选择文件夹，无法创建本地仓库', 'error', 4600);
+          return false;
+        }
+        try {
+          dir = (await pick()) ?? '';
+        } catch (e) {
+          notify(`选择文件夹失败：${(e as Error).message}`, 'error', 4600);
+          return false;
+        }
       }
-    } else if (settingsStore.storageConfigured) {
+      if (!dir) {
+        // 用户取消 → 中止创建（不能静默退回逻辑仓库，那会让正文数据落不到磁盘）
+        notify('已取消：创建本地仓库必须选择一个文件夹', 'info', 3600);
+        return false;
+      }
+      loc = dir;
+    } else if (canSync()) {
+      // 网页/移动端：登录后走云端仓库（数据经平台存储同步）
       loc = `cloud:${clean}`;
     }
+
     await switchVault(loc, clean);
     notify(`已创建仓库「${clean}」${runtime.platform === 'desktop' ? '（本地文件夹）' : ''}`, 'success');
+
+    /*
+     * 建完立即登记到云端，使其它端能发现这个仓库（需求 C）。
+     * 失败不阻塞——本地仓库已经可用，只是暂时在其它端看不到。
+     */
+    if (canSync()) {
+      const auth = useAuthStore();
+      if (auth.isLoggedIn) {
+        void pullVaultList().then(() => pushVaultEntry());
+      }
+    }
+    return true;
   }
 
   /* ---------------- 仓库 ---------------- */
@@ -446,9 +518,18 @@ export const useAppStore = defineStore('app', () => {
        * 前置判断把回落整个挡住了，这是「同步能力完全无法使用」的根因。
        *
        * 现在统一用 `canSync()`：自配 S3 **或** 已登录（走平台代理）都算可同步。
+       *
+       * 1.1.8 增强：登录用户改走 `runFirstSyncIfNeeded()` ——
+       * 先拉云端仓库清单，再在「该仓库首次同步」时把云端文档真正拉到本地，
+       * 并写标记避免每次启动重复全量拉取。
        */
       if (canSync()) {
-        void syncNow({ silent: true });
+        const auth = useAuthStore();
+        if (auth.isLoggedIn) {
+          void runFirstSyncIfNeeded();
+        } else {
+          void syncNow({ silent: true });
+        }
       }
     } catch (e) {
       notify(`打开仓库失败：${(e as Error).message}`, 'error', 4200);
@@ -976,13 +1057,9 @@ export const useAppStore = defineStore('app', () => {
    */
   const SYNC_OPTS_KEY = 'neomd.syncOptions.v1';
 
-  interface SyncBehavior {
-    direction: 'both' | 'upload' | 'download';
-    conflictPolicy: 'newest' | 'local' | 'remote';
-    /** 自动同步间隔（毫秒），0 表示关闭 */
-    autoIntervalMs: number;
-  }
-
+  /**
+   * 同步行为偏好：见模块顶层的 `SyncBehavior` 定义（此处只做局部引用）。
+   */
   function loadSyncBehavior(): SyncBehavior {
     const fallback: SyncBehavior = { direction: 'both', conflictPolicy: 'newest', autoIntervalMs: 0 };
     try {
@@ -1428,12 +1505,14 @@ export const useAppStore = defineStore('app', () => {
       statusText.value = '';
       const reason = explainSyncError(e, vaultId);
       lastSyncSummary.value = { ok: false, message: reason, at: Date.now() };
-      // 失败也记一条日志，设置页里能看到具体原因而不是笼统 Failed to fetch
+      // 失败也记一条日志，设置页里能看到具体原因而不是笼统 Failed to fetch。
+      // 注意 `level: 'error' as const`：不加 as const 时 TS 会把字面量拓宽成 string，
+      // 与 SyncLogEntry.level 的联合类型不兼容（TS2322）。
       syncLogs.value = [
         {
           id: `sync-err-${Date.now()}`,
           at: Date.now(),
-          level: 'error',
+          level: 'error' as const,
           message: `同步失败：${reason}`,
         },
         ...syncLogs.value,
