@@ -31,11 +31,36 @@ export class BrowserVaultAdapter implements VaultAdapter {
   location = '';
   private root: FileSystemDirectoryHandle | null = null;
   private idb: IDBDatabase | null = null;
+  private activeDbName = '';
 
   constructor(private readonly dbName = 'neomd-vault') {}
 
+  /**
+   * 按 location 计算隔离的 IndexedDB 数据库名（1.1.9 修复 Web 端多仓库串库）。
+   *
+   * - 默认仓库 `'Neo MD'`（或空串）保持 `'neomd-vault'`（兼容旧数据）；
+   * - 其它仓库（如 `cloud:<vaultId>`、`vault:<name>`）使用 `${this.dbName}:${location}`，
+   *   保证每个仓库拥有独立的 `.neomd/vault.json`、`.neomd/index.json` 与文件存储。
+   */
+  private resolveDbName(location: string): string {
+    const loc = (location || 'Neo MD').trim();
+    if (!loc || loc === 'Neo MD') return this.dbName;
+    return `${this.dbName}:${loc}`;
+  }
+
   async open(location: string): Promise<void> {
     this.location = location || 'Neo MD';
+    this.root = null;
+    const nextDbName = this.resolveDbName(this.location);
+    if (this.idb && this.activeDbName !== nextDbName) {
+      try {
+        this.idb.close();
+      } catch {
+        /* ignore */
+      }
+      this.idb = null;
+    }
+    this.activeDbName = nextDbName;
     if (location && location.startsWith('handle:')) {
       this.root = await this.restoreHandle(location.slice(7));
     }
@@ -91,8 +116,9 @@ export class BrowserVaultAdapter implements VaultAdapter {
 
   private openIdb(): Promise<IDBDatabase> {
     if (this.idb) return Promise.resolve(this.idb);
+    const targetDb = this.activeDbName || this.resolveDbName(this.location);
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(this.dbName, 1);
+      const req = indexedDB.open(targetDb, 1);
       req.onupgradeneeded = () => {
         const db = req.result;
         if (!db.objectStoreNames.contains('files')) db.createObjectStore('files');
@@ -100,6 +126,7 @@ export class BrowserVaultAdapter implements VaultAdapter {
       };
       req.onsuccess = () => {
         this.idb = req.result;
+        this.activeDbName = targetDb;
         resolve(req.result);
       };
       req.onerror = () => reject(req.error);

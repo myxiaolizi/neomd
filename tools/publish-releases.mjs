@@ -13,7 +13,7 @@ const repo = path.resolve(here, '..');
 /**
  * 从环境变量读取必需凭据。
  *
- * 安全说明（1.1.7 修复）：此处历史上把**真实的阿里云 AK/SK 写成默认值**，
+ * 安全说明（1.1.8 修复）：此处历史上把**真实的阿里云 AK/SK 写成默认值**，
  * 一旦代码随 git 历史公开，凭据即永久泄露、只能吊销重建。
  * 现在不允许任何默认值，缺失就明确报错。
  *
@@ -90,9 +90,9 @@ async function putBucketPolicy(policyXml) {
 
 async function main() {
   const releases = [
-    { file: 'NeoMD-1.1.7-win-x64.zip', type: 'application/zip' },
-    { file: 'NeoMD-1.1.7-setup.exe', type: 'application/vnd.microsoft.portable-executable' },
-    { file: 'NeoMD-1.1.7.apk', type: 'application/vnd.android.package-archive' },
+    { file: 'NeoMD-1.1.8-win-x64.zip', type: 'application/zip' },
+    { file: 'NeoMD-1.1.8-setup.exe', type: 'application/vnd.microsoft.portable-executable' },
+    { file: 'NeoMD-1.1.8.apk', type: 'application/vnd.android.package-archive' },
   ];
 
   console.log('1. 开放 releases/ 前缀匿名读取（可选，桶策略）');

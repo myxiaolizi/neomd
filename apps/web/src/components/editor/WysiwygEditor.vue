@@ -11,6 +11,7 @@ import Placeholder from '@tiptap/extension-placeholder';
 import CharacterCount from '@tiptap/extension-character-count';
 import Image from '@tiptap/extension-image';
 import { markdownToHtml, htmlToSource } from '@neomd/core';
+import { useSettingsStore } from '@/stores/settings';
 
 const props = defineProps<{
   modelValue: string;
@@ -18,6 +19,16 @@ const props = defineProps<{
   lineHeight?: number;
   placeholder?: string;
   readonly?: boolean;
+  /**
+   * 拼写检查开关。显式传入时以 prop 为准；不传时**回退到设置里
+   * `appearance.spellcheck`**。
+   *
+   * 为什么组件内部直接读 store 而不强制宿主传参：
+   * 本组件在同一个页面里会被实例化多次（主栏 + 分屏第二栏），宿主是
+   * `EditorPage.vue`，而该文件由并行任务维护、不属于本次改动范围。
+   * 直读 store 可以让每个实例各自响应设置变化，且不产生对宿主的耦合。
+   */
+  spellcheck?: boolean;
   /**
    * 当前文档标题（不含扩展名）。
    *
@@ -39,6 +50,20 @@ const host = ref<HTMLDivElement | null>(null);
 const editor = shallowRef<Editor | null>(null);
 let internal = false;
 let lastEmittedSource = props.modelValue;
+
+const settingsStore = useSettingsStore();
+
+/**
+ * 生效的拼写检查开关。
+ *
+ * 优先级：显式 prop > 设置项 `appearance.spellcheck` > 关闭。
+ * 用 computed 而不是在 createEditor() 里读一次就固定：设置页里改开关后，
+ * 页面上所有已挂载的实例（主栏 + 分屏第二栏）都要立刻跟随。
+ */
+const spellcheckEnabled = computed<boolean>(() => {
+  if (typeof props.spellcheck === 'boolean') return props.spellcheck;
+  return settingsStore.settings.appearance?.spellcheck === true;
+});
 
 /**
  * 内容开头是否带一句「与文件名相同的 H1」。
@@ -107,7 +132,9 @@ function createEditor(): void {
     editorProps: {
       attributes: {
         class: 'nm-content ProseMirror',
-        spellcheck: String(false),
+        // 拼写检查跟随设置（1.1.9 接线）。此前这里硬编码 String(false)，
+        // 设置里的开关改了也没有任何可观测效果 —— 典型的「假开关」。
+        spellcheck: String(spellcheckEnabled.value),
       },
       handleClick: (_view, _pos, event) => {
         const target = event.target as HTMLElement | null;
@@ -142,6 +169,9 @@ function createEditor(): void {
     },
   });
   editor.value = instance;
+  // 挂载后补一次 spellcheck：上面的 watch 是 immediate 的，但它在 setup 阶段
+  // 执行时 editor 还是 null，所以真正挂到 DOM 上之后要再落一次（见 watch 注释）。
+  instance.view.dom.setAttribute('spellcheck', String(spellcheckEnabled.value));
   emit('ready', instance);
   emit('wordCount', {
     chars: instance.storage.characterCount.characters(),
@@ -192,6 +222,33 @@ watch(
 watch(
   () => props.readonly,
   (v) => editor.value?.setEditable(!v),
+);
+
+/**
+ * 拼写检查开关实时生效（1.1.9）。
+ *
+ * 为什么要「setOptions + 直接写 DOM」双保险：
+ * Tiptap 的 `setOptions({ editorProps })` 只保证后续渲染用新 editorProps，
+ * 对**已经挂到文档里的** DOM 属性并不总是立刻重写（ProseMirror 只在
+ * 属性 diff 时才写回）。而 `spellcheck` 是纯 DOM 属性、没有对应装饰层，
+ * 所以这里补一次显式 setAttribute —— 无论 Tiptap 内部怎么处理，
+ * 挂载后的 `.ProseMirror` 上的值一定是准的。
+ */
+watch(
+  spellcheckEnabled,
+  (v) => {
+    const enabled = Boolean(v);
+    const ed = editor.value;
+    if (ed) {
+      ed.setOptions({
+        editorProps: {
+          attributes: { class: 'nm-content ProseMirror', spellcheck: String(enabled) },
+        },
+      });
+      ed.view.dom.setAttribute('spellcheck', String(enabled));
+    }
+  },
+  { immediate: true, flush: 'post' },
 );
 
 onMounted(createEditor);

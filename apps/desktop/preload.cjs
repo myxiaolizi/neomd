@@ -77,16 +77,25 @@ const bridge = {
     minimize: () => ipcRenderer.invoke('window:minimize'),
     close: () => ipcRenderer.invoke('window:close'),
     /**
-     * 新建应用窗口（1.1.7 多窗口）。
+     * 新建应用窗口（多窗口）。
      *
-     * 传入 docId 时，主进程会把它拼到新窗口的 URL 上（`/app?doc=<docId>`），
-     * 新窗口启动后由渲染层自行打开该文档 —— 不走跨窗口 IPC 推送，
-     * 避免新窗口 webContents 尚未加载完成时丢消息。
+     * 文档参数走 URL 而不是跨窗口 IPC 推送：新窗口的 webContents 在 did-finish-load 之前
+     * 收不到消息，而 URL 是它自身加载时就带上的，最稳。
+     *
+     * 主进程最终把参数拼成 `neomd://neomd/app?doc=<docId>&fresh=1`：
+     * - `doc`   只打开这一篇文档；
+     * - `fresh` 不恢复旧标签（"移动至新窗口"的语义：搬走这一篇，而不是把旧窗口整套标签克隆过来）。
      *
      * @param {string} [docId] 要在新窗口打开的文档 id
+     * @param {{fresh?: boolean}} [options] fresh 默认 true；传 false 可保留「恢复旧标签」的历史行为
      * @returns {Promise<number>} 新窗口的 id
      */
-    newWindow: (docId) => ipcRenderer.invoke('window:newWindow', docId ?? null),
+    newWindow: (docId, options) =>
+      ipcRenderer.invoke(
+        'window:newWindow',
+        docId ?? null,
+        options && typeof options === 'object' ? { fresh: options.fresh !== false } : undefined,
+      ),
     /**
      * 订阅最大化状态变化：回调立即触发一次当前状态，之后随窗口事件触发。
      * 配套 `offStateChange(cb)` 取消订阅，避免组件反复挂载时监听器累积。

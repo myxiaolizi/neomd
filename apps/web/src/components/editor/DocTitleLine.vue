@@ -184,7 +184,7 @@ defineExpose({ startEdit });
   left: var(--nm-titleline-pad-left, 32px);
   right: var(--nm-titleline-pad-right, 32px);
   height: 0;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border-strong, var(--border));
   pointer-events: none;
 }
 
@@ -196,7 +196,7 @@ defineExpose({ startEdit });
   outline: none;
   background: transparent;
   color: var(--fg);
-  font-family: inherit;
+  font-family: var(--font-content, var(--font-ui));
   font-weight: 700;
   line-height: 1.35;
   padding: 0;

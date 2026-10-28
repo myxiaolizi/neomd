@@ -2,7 +2,12 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { markdownToHtml } from '@neomd/core';
 
-const props = defineProps<{ modelValue: string; title?: string }>();
+const props = defineProps<{
+  modelValue: string;
+  title?: string;
+  fontSize?: number;
+  lineHeight?: number;
+}>();
 const emit = defineEmits<{ ready: [] }>();
 
 const host = ref<HTMLDivElement | null>(null);
@@ -44,7 +49,14 @@ emit('ready');
 </script>
 
 <template>
-  <div class="read-view">
+  <div
+    class="read-view"
+    :style="{
+      ...(fontSize ? { '--content-font-size': `${fontSize}px` } : {}),
+      ...(lineHeight ? { '--content-line-height': String(lineHeight) } : {}),
+    }"
+  >
+    <slot name="title" />
     <article ref="host" class="nm-content read-view__body" @click="onClick" />
   </div>
 </template>
@@ -58,5 +70,8 @@ emit('ready');
 .read-view__body {
   padding: 24px 0 160px;
   min-height: 100%;
+}
+.read-view:has(> .nm-titleline) .read-view__body {
+  padding-top: 4px;
 }
 </style>

@@ -76,13 +76,15 @@ try {
 
   /* ============ 一、Obsidian 导入 ============ */
   console.log('\n[一.1] 设置页「导入」入口');
-  const hasImport = await page.evaluate(() => {
-    const btns = Array.from(document.querySelectorAll('[title]'));
-    return btns.some((b) => (b.getAttribute('title') || '').includes('打开设置'));
-  });
-  check(hasImport, '存在设置入口');
+  /**
+   * 1.1.8 起设置入口**只在用户头像菜单**里（用户明确要求界面上不再出现独立设置按钮），
+   * 因此不能再断言「功能区存在 title 含『打开设置』的按钮」。
+   * 改为：能用快捷键打开设置即可（这仍是受支持的入口）。
+   */
   await page.keyboard.press('Control+,');
   await page.waitForTimeout(1800);
+  const settingsOpened = await page.locator('.settings__nav-item').count();
+  check(settingsOpened > 0, '可通过 Ctrl+, 打开设置页', `${settingsOpened} 个页签`);
 
   const tabLabels = await page.evaluate(() =>
     Array.from(document.querySelectorAll('.settings__nav-item')).map((n) => (n.textContent || '').trim()),

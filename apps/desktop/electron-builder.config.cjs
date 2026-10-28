@@ -21,7 +21,10 @@ module.exports = {
     output: outDir,
     buildResources: path.join(__dirname, 'build'),
   },
-  files: ['main.cjs', 'preload.cjs', 'package.json'],
+  // 注意：electron-builder 的 files 是显式白名单，主进程 require 的每个文件都必须列出来。
+  // 1.1.9 多窗口改造把窗口几何/登记表逻辑抽到了两个独立 .cjs 模块（便于纯 Node 单测），
+  // 如果漏加，打包后主进程会以 MODULE_NOT_FOUND 直接启动失败（开发态不会暴露这个问题）。
+  files: ['main.cjs', 'preload.cjs', 'window-utils.cjs', 'window-registry.cjs', 'package.json'],
   extraResources: [
     {
       from: webDist,

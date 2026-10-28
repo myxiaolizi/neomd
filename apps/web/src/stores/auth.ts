@@ -2,8 +2,32 @@ import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 import { authApi, setTokens, getAccessToken, type UserDto } from '@/api/client';
 
+const USER_CACHE_KEY = 'neomd.user.cache';
+
+function loadCachedUser(): UserDto | null {
+  try {
+    if (!getAccessToken()) return null;
+    const raw = localStorage.getItem(USER_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as UserDto;
+    return parsed && typeof parsed === 'object' && parsed.username ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedUser(u: UserDto | null): void {
+  try {
+    if (u) localStorage.setItem(USER_CACHE_KEY, JSON.stringify(u));
+    else localStorage.removeItem(USER_CACHE_KEY);
+  } catch {
+    /* ignore */
+  }
+}
+
 export const useAuthStore = defineStore('auth', () => {
-  const user = ref<UserDto | null>(null);
+  // 首帧直接从本地缓存恢复用户信息（配合 token），使编辑器启动零网络等待即可获知登录态
+  const user = ref<UserDto | null>(loadCachedUser());
   const loading = ref(false);
   const error = ref('');
   /** 会话恢复是否已完成（含"无 token"的情况） */
@@ -21,12 +45,18 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         if (!getAccessToken()) {
           user.value = null;
+          saveCachedUser(null);
           return;
         }
-        user.value = await authApi.me();
+        const fresh = await authApi.me();
+        user.value = fresh;
+        saveCachedUser(fresh);
       } catch {
-        user.value = null;
-        setTokens(null, null);
+        // 若没有缓存用户才清理；网络暂时不可达时保留本地缓存避免离线启动丢失身份
+        if (!user.value) {
+          setTokens(null, null);
+          saveCachedUser(null);
+        }
       } finally {
         restored.value = true;
         restoring = null;
@@ -43,6 +73,7 @@ export const useAuthStore = defineStore('auth', () => {
       const res = await authApi.login({ account, password, deviceId });
       setTokens(res.accessToken, res.refreshToken);
       user.value = res.user;
+      saveCachedUser(res.user);
       restored.value = true;
       return true;
     } catch (e) {
@@ -60,6 +91,7 @@ export const useAuthStore = defineStore('auth', () => {
       const res = await authApi.register({ email, username, password });
       setTokens(res.accessToken, res.refreshToken);
       user.value = res.user;
+      saveCachedUser(res.user);
       restored.value = true;
       return true;
     } catch (e) {
@@ -78,6 +110,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
     setTokens(null, null);
     user.value = null;
+    saveCachedUser(null);
     restored.value = true;
   }
 

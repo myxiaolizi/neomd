@@ -255,7 +255,9 @@ describe('importObsidianVault 导入执行器', () => {
   it('单文件失败不中断整体', async () => {
     // 让适配器在写入指定路径时抛错，模拟磁盘满/权限不足
     class FlakyAdapter extends MemoryAdapter {
-      async writeText(path: string, content: string): Promise<void> {
+      // `override` 是 noImplicitOverride 要求的显式标记：这里确实覆写了基类方法，
+      // 缺了它 tsc 会报 TS4114（vitest 本身不检查，只有类型检查会拦）。
+      override async writeText(path: string, content: string): Promise<void> {
         if (path.includes('boom')) throw new Error('模拟写入失败：磁盘空间不足');
         return super.writeText(path, content);
       }

@@ -169,6 +169,56 @@ export function findProvider(id) {
 }
 
 /**
+ * 为数据库行构造兜底供应商定义（支持后台新增自定义供应商）。
+ * 若该 provider 是内置的，返回内置定义；否则用 row 的字段构造自定义供应商定义。
+ */
+export function resolveProviderDef(providerId, row = null) {
+  const builtin = findProvider(providerId);
+  if (builtin) return builtin;
+  const key = String(providerId ?? row?.provider ?? '').trim();
+  if (!key) return null;
+  const models = safeJson(row?.models_json, null);
+  const modelList = Array.isArray(models) && models.length > 0 ? models.map(String) : [];
+  const rawSettings = safeJson(row?.model_settings_json, {});
+  const customName =
+    rawSettings && typeof rawSettings === 'object' && typeof rawSettings.__providerName === 'string' && rawSettings.__providerName.trim()
+      ? rawSettings.__providerName.trim()
+      : key;
+  return {
+    provider: key,
+    name: customName,
+    baseUrl: String(row?.base_url ?? ''),
+    models: modelList,
+    defaultModel: String(row?.default_model ?? modelList[0] ?? ''),
+    docs: String(row?.docs_url ?? ''),
+    docsUrl: String(row?.docs_url ?? ''),
+    apiKeyUrl: String(row?.signup_url ?? ''),
+    signupUrl: String(row?.signup_url ?? ''),
+    note: String(row?.note ?? ''),
+    sortOrder: Number.isFinite(Number(row?.sort_order)) ? Number(row.sort_order) : 100,
+    group: 'platform',
+    supportsCors: false,
+    isCustom: true,
+  };
+}
+
+/**
+ * 合并内置供应商列表与数据库中新增的自定义供应商列表。
+ */
+export function mergeAllProviderDefs(rows = []) {
+  const seen = new Set(PLATFORM_PROVIDERS.map((d) => d.provider));
+  const out = [...PLATFORM_PROVIDERS];
+  for (const row of rows) {
+    const id = String(row?.provider ?? '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    const def = resolveProviderDef(id, row);
+    if (def) out.push(def);
+  }
+  return out;
+}
+
+/**
  * 供应商展示元数据的「后台值优先、默认值兜底」解析。
  *
  * 1.1.7 起后台可配置 enabled / signupUrl / docsUrl / note / sortOrder；
@@ -201,25 +251,59 @@ function resolveProviderMeta(row, def) {
   };
 }
 
-/** 对外投影：客户端 /api/ai/providers 使用（只读，不含任何密钥） */
+/**
+ * 对外投影：客户端 /api/ai/providers 使用（只读，不含任何密钥）。
+ *
+ * 1.1.9 起**刻意不再返回 `enabled`**（前台「是否开通」语义）：
+ *  - 这份列表服务的是「我的 AI 供应商（自带 Key）」——用户拿自己的 Key 调厂商，
+ *    平台有没有为该供应商配平台代付密钥，与用户能不能用毫无关系；
+ *  - 老版本把 `enabled` 当前台开关用，于是「后台没开代付 → 前台显示未开通 → 用户以为不可用」，
+ *    而 BYOK 其实一直可用。语义错位正是这次要消除的「是否开通」概念。
+ *  - 「平台代付能不能用」改由 `/api/ai/platform-models` 的**空/非空**表达
+ *    （只汇总已启用且有平台密钥的供应商），那里同样不出现任何「开通」字样。
+ *
+ * 后台视角仍需要 enabled（决定代付渠道是否参与调度），那走 `adminProviderItem`，两者不共用。
+ */
 export function publicProvider(def, row = null) {
-  const meta = resolveProviderMeta(row, def);
+  const resolvedDef = resolveProviderDef(def?.provider ?? row?.provider, row) ?? def;
+  const meta = resolveProviderMeta(row, resolvedDef);
+  const models = safeJson(row?.models_json, null);
+  const modelList = Array.isArray(models) && models.length > 0 ? models.map(String) : resolvedDef.models;
+  const group = resolvedDef.group ?? 'platform';
+  /*
+   * 平台代付组**绝不回传 baseUrl**（1.1.9）。
+   *
+   * `group === 'platform'` 表示「用平台积分、由服务端代付」的供应商：客户端只传模型名，
+   * 真正的上游地址与密钥都在服务端（见 routes/ai.js 的 usePlatform 分支）。
+   * 把这个 baseUrl 回传出去等于把平台的上游拓扑暴露给任何调用方，既无必要，
+   * 也让「平台付费与客户端自带 Key 彻底分开」这条要求落空 ——
+   * 前端看到一个「可以直接连过去」的地址，就会被当成 BYOK 用。
+   *
+   * 自带 Key（group !== 'platform'）则**必须**回传 baseUrl：
+   * 客户端要拿它直接请求用户自己的供应商，这是产品功能本身。
+   */
+  const exposeBaseUrl = group !== 'platform';
   return {
-    id: def.provider,
-    name: def.name,
-    baseUrl: row?.base_url || def.baseUrl,
-    models: def.models,
-    defaultModel: def.defaultModel,
-    docs: def.docs,
-    supportsCors: def.supportsCors,
+    id: resolvedDef.provider,
+    name: resolvedDef.name,
+    ...(exposeBaseUrl
+      ? {
+          baseUrl: row?.base_url || resolvedDef.baseUrl,
+          /** 内置预设的 Base URL（客户端「恢复默认地址」用，不含任何密钥） */
+          builtinBaseUrl: resolvedDef.baseUrl ?? '',
+        }
+      : {}),
+    models: modelList,
+    defaultModel: String(row?.default_model || resolvedDef.defaultModel || modelList[0] || ''),
+    docs: resolvedDef.docs,
+    supportsCors: resolvedDef.supportsCors,
     docsUrl: meta.docsUrl,
-    apiKeyUrl: def.apiKeyUrl,
-    // 1.1.7 新增：后台可配置的展示信息
+    apiKeyUrl: resolvedDef.apiKeyUrl,
+    // 后台可配置的展示信息
     signupUrl: meta.signupUrl,
     note: meta.note,
     sortOrder: meta.sortOrder,
-    enabled: meta.enabled,
-    group: def.group ?? 'platform',
+    group,
   };
 }
 
@@ -332,7 +416,7 @@ export function normalizeModelSettings(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return out;
   for (const [rawModel, rawSetting] of Object.entries(input)) {
     const model = String(rawModel).trim().slice(0, 120);
-    if (!model) continue;
+    if (!model || model === '__providerName') continue;
     const s = rawSetting && typeof rawSetting === 'object' && !Array.isArray(rawSetting) ? rawSetting : {};
     const item = {};
     if (s.enabled !== undefined) item.enabled = Boolean(s.enabled);
@@ -405,22 +489,24 @@ export function resolveModelSetting(row, def, model) {
 export function listPlatformModels(rows) {
   const out = [];
   const seen = new Set();
-  for (const def of PLATFORM_PROVIDERS) {
+  const allDefs = mergeAllProviderDefs(rows);
+  for (const def of allDefs) {
     const row = rows.find((r) => r.provider === def.provider);
     if (!row) continue;
     // 只汇总「已启用且配了密钥」的供应商：没密钥的模型前台选了也调不通
     if (Number(row.enabled) !== 1 || !row.api_key_enc) continue;
+    const resolvedDef = resolveProviderDef(def.provider, row) ?? def;
     const models = safeJson(row.models_json, null);
-    const modelList = Array.isArray(models) && models.length > 0 ? models.map(String) : def.models;
+    const modelList = Array.isArray(models) && models.length > 0 ? models.map(String) : resolvedDef.models;
     for (const model of modelList) {
       if (seen.has(model)) continue;
       seen.add(model);
-      const setting = resolveModelSetting(row, def, model);
+      const setting = resolveModelSetting(row, resolvedDef, model);
       if (!setting.enabled) continue;
       out.push({
         model,
-        provider: def.provider,
-        providerName: def.name,
+        provider: resolvedDef.provider,
+        providerName: resolvedDef.name,
         temperature: setting.temperature,
         maxTokens: setting.maxTokens,
         priceIn: setting.priceIn,
@@ -463,16 +549,27 @@ export async function loadBilling() {
  *  - mode === 'free': 0 积分
  *  - mode === 'request': 按次固定扣减 perCall 积分
  *  - mode === 'tokens' (默认): 每 1000 token 消耗 in / out 积分
+ *  - 若传入 modelSetting 且配置了自定义 priceIn / priceOut，则优先采用模型治理中的单价
  */
-export function computeCost(modelPrices, model, inTokens, outTokens) {
-  const price = modelPrices && modelPrices[model] ? modelPrices[model] : { mode: 'tokens', in: 1, out: 2, perCall: 2 };
-  if (price.mode === 'free') return 0;
-  if (price.mode === 'request') {
+export function computeCost(modelPrices, model, inTokens, outTokens, modelSetting = null) {
+  const price = modelPrices && modelPrices[model] ? modelPrices[model] : null;
+  if (price?.mode === 'free') return 0;
+  if (price?.mode === 'request') {
     const c = Number(price.perCall);
     return Number.isFinite(c) && c >= 0 ? Math.round(c) : 2;
   }
-  const inPrice = Number.isFinite(Number(price.in)) ? Number(price.in) : 1;
-  const outPrice = Number.isFinite(Number(price.out)) ? Number(price.out) : 2;
+  const hasModelPriceIn = modelSetting && Number.isFinite(Number(modelSetting.priceIn));
+  const hasModelPriceOut = modelSetting && Number.isFinite(Number(modelSetting.priceOut));
+  const inPrice = hasModelPriceIn
+    ? Number(modelSetting.priceIn)
+    : price && Number.isFinite(Number(price.in))
+      ? Number(price.in)
+      : 1;
+  const outPrice = hasModelPriceOut
+    ? Number(modelSetting.priceOut)
+    : price && Number.isFinite(Number(price.out))
+      ? Number(price.out)
+      : 2;
   const prompt = Math.max(0, Number(inTokens) || 0);
   const completion = Math.max(0, Number(outTokens) || 0);
   const raw = (prompt / 1000) * inPrice + (completion / 1000) * outPrice;
@@ -572,48 +669,52 @@ export function encryptProviderKey(apiKey) {
 
 /** 管理端投影：绝不返回密钥明文，但包含全部展示元数据（1.1.7 起可编辑） */
 export function adminProviderItem(row, def) {
+  const resolvedDef = resolveProviderDef(def?.provider ?? row?.provider, row) ?? def;
   const models = safeJson(row?.models_json, null);
-  const meta = resolveProviderMeta(row, def);
+  const meta = resolveProviderMeta(row, resolvedDef);
   return {
-    provider: def.provider,
-    name: def.name,
-    baseUrl: row?.base_url || def.baseUrl,
+    provider: resolvedDef.provider,
+    name: resolvedDef.name,
+    isCustom: Boolean(resolvedDef.isCustom),
+    baseUrl: row?.base_url || resolvedDef.baseUrl,
     enabled: meta.enabled,
     priority: meta.priority,
     apiKeySet: Boolean(row?.api_key_enc),
-    models: Array.isArray(models) && models.length > 0 ? models.map((m) => String(m)) : def.models,
+    models: Array.isArray(models) && models.length > 0 ? models.map((m) => String(m)) : resolvedDef.models,
     // 1.1.7 新增：展示配置（后台可编辑）
     signupUrl: meta.signupUrl,
     docsUrl: meta.docsUrl,
     note: meta.note,
     sortOrder: meta.sortOrder,
-    group: def.group ?? 'platform',
+    group: resolvedDef.group ?? 'platform',
     // 1.1.8 新增：平台付费侧的模型治理
-    defaultModel: String(row?.default_model ?? def.defaultModel ?? ''),
+    defaultModel: String(row?.default_model ?? resolvedDef.defaultModel ?? ''),
     modelSettings: providerModelSettings(row),
     systemPrompt: String(row?.system_prompt ?? '').trim(),
     // 默认值，供后台「恢复默认」与占位提示使用
     defaults: {
-      signupUrl: def.signupUrl ?? def.apiKeyUrl ?? '',
-      docsUrl: def.docsUrl ?? def.docs ?? '',
-      note: def.note ?? '',
-      sortOrder: Number(def.sortOrder ?? 100),
-      defaultModel: String(def.defaultModel ?? ''),
+      signupUrl: resolvedDef.signupUrl ?? resolvedDef.apiKeyUrl ?? '',
+      docsUrl: resolvedDef.docsUrl ?? resolvedDef.docs ?? '',
+      note: resolvedDef.note ?? '',
+      sortOrder: Number(resolvedDef.sortOrder ?? 100),
+      defaultModel: String(resolvedDef.defaultModel ?? ''),
     },
     updatedAt: row?.updated_at ?? null,
   };
 }
 
 /**
- * 写入供应商配置（仅更新传入的字段）。
+ * 写入供应商配置（仅更新传入的字段，支持内置供应商与后台新增自定义供应商）。
  *
  * 1.1.7 起支持展示元数据：signupUrl / docsUrl / note / sortOrder。
  * 传空串表示「恢复默认」（落库为 NULL，读取时回落到 PLATFORM_PROVIDERS）。
  */
 export async function saveProvider(provider, patch) {
-  const def = findProvider(provider);
+  const key = String(provider ?? '').trim();
+  if (!key) return null;
+  const current = await getProviderRow(key);
+  const def = resolveProviderDef(key, current);
   if (!def) return null;
-  const current = await getProviderRow(def.provider);
   const baseUrl = patch.baseUrl === undefined ? current?.base_url ?? def.baseUrl : String(patch.baseUrl);
   const enabled = patch.enabled === undefined ? Number(current?.enabled ?? 0) : patch.enabled ? 1 : 0;
   const priority =
@@ -659,9 +760,19 @@ export async function saveProvider(provider, patch) {
     return text === '' ? null : text.slice(0, MODEL_SETTING_LIMITS.systemPromptMax);
   })();
   const modelSettingsJson = (() => {
-    if (patch.modelSettings === undefined) return current?.model_settings_json ?? null;
-    const normalized = normalizeModelSettings(patch.modelSettings);
-    return Object.keys(normalized).length === 0 ? null : JSON.stringify(normalized);
+    const existingRaw = safeJson(current?.model_settings_json, {});
+    const existingName =
+      existingRaw && typeof existingRaw === 'object' && typeof existingRaw.__providerName === 'string'
+        ? existingRaw.__providerName
+        : '';
+    const nextName = patch.name !== undefined ? String(patch.name).trim() : existingName;
+    const baseSettings =
+      patch.modelSettings === undefined ? providerModelSettings(current) : normalizeModelSettings(patch.modelSettings);
+    const merged = { ...baseSettings };
+    if (def.isCustom && nextName) {
+      merged.__providerName = nextName.slice(0, 80);
+    }
+    return Object.keys(merged).length === 0 ? null : JSON.stringify(merged);
   })();
 
   const fullSql = `INSERT INTO platform_ai_providers
@@ -715,7 +826,18 @@ export async function saveProvider(provider, patch) {
   }
 
   const saved = await getProviderRow(def.provider);
-  return adminProviderItem(saved, def);
+  const savedDef = resolveProviderDef(def.provider, saved) ?? def;
+  return adminProviderItem(saved, savedDef);
+}
+
+/**
+ * 删除后台新增的自定义供应商（内置供应商不可删除，仅可禁用或恢复默认）。
+ */
+export async function deleteProvider(provider) {
+  const key = String(provider ?? '').trim();
+  if (!key || findProvider(key)) return false;
+  const result = await execute('DELETE FROM platform_ai_providers WHERE provider = ?', [key]);
+  return Number(result?.affectedRows ?? 0) > 0;
 }
 
 /**
@@ -726,21 +848,25 @@ export async function resolvePlatformCandidates(requestedProvider, model) {
   const rows = await listProviderRows();
   const billing = await loadBilling();
   const rowMap = new Map(rows.map((r) => [r.provider, r]));
+  const allDefs = mergeAllProviderDefs(rows);
 
   const activeList = [];
-  for (const def of PLATFORM_PROVIDERS) {
+  for (const def of allDefs) {
     const row = rowMap.get(def.provider);
     const key = row ? providerApiKey(row) : null;
     if (!row || Number(row.enabled) !== 1 || !key) continue;
+    const resolvedDef = resolveProviderDef(def.provider, row) ?? def;
     const models = safeJson(row.models_json, null);
-    const modelSet = new Set(Array.isArray(models) && models.length ? models.map(String) : def.models);
+    const modelSet = new Set(Array.isArray(models) && models.length ? models.map(String) : resolvedDef.models);
     activeList.push({
-      provider: def.provider,
-      name: def.name,
-      baseUrl: row.base_url || def.baseUrl,
+      provider: resolvedDef.provider,
+      name: resolvedDef.name,
+      baseUrl: row.base_url || resolvedDef.baseUrl,
       apiKey: key,
       priority: Number.isFinite(Number(row.priority)) ? Number(row.priority) : 100,
       modelSet,
+      row,
+      def: resolvedDef,
     });
   }
 
@@ -800,6 +926,8 @@ export default {
   DEFAULT_MODEL_PRICES,
   DEFAULT_PAYMENT_METHODS,
   findProvider,
+  resolveProviderDef,
+  mergeAllProviderDefs,
   publicProvider,
   getConfigValue,
   getConfigJson,
@@ -818,6 +946,7 @@ export default {
   encryptProviderKey,
   adminProviderItem,
   saveProvider,
+  deleteProvider,
   resolvePlatformCandidates,
   grantDailyCreditsIfEligible,
   safeJson,

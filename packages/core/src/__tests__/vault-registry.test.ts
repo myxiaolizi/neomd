@@ -247,12 +247,13 @@ describe('仓库注册表 · 与云端合并', () => {
     expect(e.available).toBe(true);
   });
 
-  it('云端有本机没有 → 插入 available=false 的条目', () => {
+  it('云端有本机没有 → 插入 location=cloud:<vaultId> 且 available=true 的条目', () => {
     const r = new VaultRegistry(storage);
     r.mergeRemote([{ vaultId: 'remote-1', name: '别处的仓库' }]);
     const e = r.get('remote-1')!;
     expect(e).toBeTruthy();
-    expect(e.available).toBe(false);
+    expect(e.available).toBe(true);
+    expect(e.location).toBe('cloud:remote-1');
     expect(e.name).toBe('别处的仓库');
   });
 

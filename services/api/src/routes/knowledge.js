@@ -70,8 +70,14 @@ function mintToken() {
   };
 }
 
-/** 对外投影：绝不返回 token_hash，只给前缀与状态 */
-function tokenItem(row) {
+/**
+ * 对外投影：绝不返回 token_hash，只给前缀与状态。
+ *
+ * 1.1.9 起导出给 `routes/admin.js` 的管理员令牌治理复用：
+ * 用户视角与管理员视角必须是**同一份投影**，否则两处字段会各自漂移
+ * （例如一处加了 `usable`、另一处忘了加，前端就要写两套判断）。
+ */
+export function tokenItem(row) {
   const now = Date.now();
   const expiresAt = row.expires_at ? new Date(row.expires_at).getTime() : null;
   const revoked = Boolean(row.revoked_at);
@@ -434,12 +440,12 @@ export async function knowledgeRoutes(app) {
       const inTokens = usage.in > 0 ? usage.in : estimateTokens(messages.map((m) => m.content).join('\n'));
       const outTokens = usage.out > 0 ? usage.out : estimateTokens(collected);
 
-      // 平台代付：按管理员配置的计费方式扣积分（与 /api/ai/chat 一致）
+      // 平台代付：按管理员配置的计费方式扣积分（与 /api/ai/chat 一致，优先读取 modelSetting 中的 priceIn / priceOut）
       let billing = null;
       if (isPlatform) {
         try {
           const billingConfig = await loadBilling();
-          const cost = computeCost(billingConfig.modelPrices, body.model, inTokens, outTokens);
+          const cost = computeCost(billingConfig.modelPrices, body.model, inTokens, outTokens, modelSetting);
           const charged = await chargeCredits(req.user.id, cost, {
             kind: 'consume',
             ref: body.model,

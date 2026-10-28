@@ -1,6 +1,7 @@
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
+import { detectRuntime } from '@neomd/core';
 import App from './App.vue';
 import '../../../packages/ui/src/styles/index.css';
 import '../../../packages/ui/src/styles/content.css';
@@ -53,7 +54,6 @@ const router = createRouter({
 
 // 进入需要管理员权限的页面前先恢复会话；本机端（Desktop/Android）直接进入编辑器，不展示营销首页
 router.beforeEach(async (to) => {
-  const { detectRuntime } = await import('@neomd/core');
   const rt = detectRuntime();
   if (rt.native && (to.path === '/' || to.path === '/index.html')) {
     return { path: '/app' };

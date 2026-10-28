@@ -6,8 +6,9 @@
  */
 import { pathToFileURL } from 'node:url';
 import path from 'node:path';
-import { execute, queryOne, closePool } from './pool.js';
+import { execute, query, queryOne, closePool } from './pool.js';
 import { migrate } from './migrate.js';
+import { platformConfig } from '../lib/oss.js';
 import {
   DEFAULT_CREDIT_PER_YUAN,
   DEFAULT_MODEL_PRICES,
@@ -201,6 +202,101 @@ async function ensureKnowledgeTokens() {
   return 1;
 }
 
+/**
+ * 【只读检测，绝不改数据】扫描残留的错误对象存储配置（1.1.9）。
+ *
+ * 背景：生产库曾有账号的云端设置里存着 `bucket: "zhenglob"`（真实桶名是 `zhengle`）
+ * 且 accessKeyId 正好等于平台内置 AK 的配置，前端会据此直连一个不存在的桶，
+ * 是「同步失败：Failed to fetch」的来源之一。
+ *
+ * 为什么只检测、不在这里清理（重要）：
+ *  1. 这段代码跑在**服务启动期**，每次启动都会执行；一旦清理逻辑有偏差，
+ *     就会在所有用户的加密设置上做不可逆改写（用户自建 S3 / 自建 AI Key 全部丢失）；
+ *  2. `payload_enc` 是 AES-256-GCM 密文，启动期做「解密 → 改 → 重加密 → 写回」的
+ *     失败模式极难在部署现场发现，风险远大于收益；
+ *  3. 实际影响已由前端的「已登录永不直连自建 S3」不变量消除，残留配置不会再被使用；
+ *  4. 清理应当由**用户主动触发**（设置页「重置对象存储配置」按钮走 resetStorageConfig()），
+ *     这才是正确的授权边界。
+ *
+ * 因此本函数只做两件事：精确条件匹配 + 打印日志，**不含任何 UPDATE**。
+ *
+ * 精确判据（两者同时满足才报告，避免误伤真实的自建 S3）：
+ *  - `storage.bucket === 'zhenglob'`（一个不可能存在的拼写错误）
+ *  - `storage.accessKeyId` 非空且等于平台内置 AK
+ *
+ * @returns {Promise<{scanError?: string, suspicious: Array<{userId:number, bucket:string}>}>}
+ */
+async function detectStaleZhenglobStorage() {
+  const result = { suspicious: [] };
+  let rows;
+  try {
+    rows = await query('SELECT user_id, payload_json FROM user_settings');
+  } catch (err) {
+    // 老库可能还没有 user_settings 表：不阻断迁移，如实记录
+    result.scanError = err?.message ?? String(err);
+    return result;
+  }
+
+  const platformKey = platformStorageKey();
+  // 平台 AK 读不到时直接放弃扫描：空串会让匹配条件失去意义，宁可漏报也不误报
+  if (!platformKey) return result;
+
+  for (const row of rows) {
+    let payload = null;
+    try {
+      payload = row.payload_json ? JSON.parse(String(row.payload_json)) : null;
+    } catch {
+      continue;
+    }
+    for (const storage of collectStorageGroups(payload)) {
+      if (!storage || typeof storage !== 'object') continue;
+      const bucket = String(storage.bucket ?? '').trim();
+      const ak = String(storage.accessKeyId ?? '').trim();
+      if (bucket !== 'zhenglob') continue;
+      if (!ak || ak !== platformKey) continue;
+      result.suspicious.push({ userId: Number(row.user_id), bucket });
+      break;
+    }
+  }
+  return result;
+}
+
+/**
+ * 收集一条设置里的全部 storage 分组（兼容 v2 的 global + 各 platform 分区与旧版平铺）。
+ * @param {unknown} payload
+ * @returns {unknown[]}
+ */
+function collectStorageGroups(payload) {
+  if (!payload || typeof payload !== 'object') return [];
+  const out = [];
+  const push = (group) => {
+    if (group && typeof group === 'object' && group.storage) out.push(group.storage);
+  };
+  if (payload.global || payload.platform) {
+    push(payload.global);
+    if (payload.platform && typeof payload.platform === 'object') {
+      for (const group of Object.values(payload.platform)) push(group);
+    }
+  } else {
+    // 旧版平铺结构：整体视为一个分组
+    push(payload);
+  }
+  return out;
+}
+
+/**
+ * 平台内置对象存储的 AccessKeyId（只读配置，不含 Secret）。
+ * @returns {string}
+ */
+function platformStorageKey() {
+  try {
+    const cfg = platformConfig();
+    return String(cfg?.accessKeyId ?? '').trim();
+  } catch {
+    return '';
+  }
+}
+
 /** 缺失时写入一条 platform_config 默认值 */
 async function seedConfig(key, value) {
   const existing = await queryOne('SELECT cfg_key FROM platform_config WHERE cfg_key = ? LIMIT 1', [key]);
@@ -240,7 +336,7 @@ export async function seedPlatformDefaults() {
 
 /**
  * 执行 v2 迁移。
- * @returns {Promise<{columns: number, config: string[], providers: number, vaultIndexes: number, providerIndexes: number, declaredIndexes: number, knowledgeTables: number}>}
+ * @returns {Promise<{columns: number, config: string[], providers: number, vaultIndexes: number, providerIndexes: number, declaredIndexes: number, knowledgeTables: number, staleStorage: number}>}
  */
 export async function migrateV2() {
   const columns = await ensureColumns();
@@ -249,7 +345,41 @@ export async function migrateV2() {
   const declaredIndexes = await ensureDeclaredIndexes();
   const knowledgeTables = await ensureKnowledgeTokens();
   const seeded = await seedPlatformDefaults();
-  return { columns, ...seeded, vaultIndexes, providerIndexes, declaredIndexes, knowledgeTables };
+
+  /*
+   * 只读体检：扫描残留的错误对象存储配置，打印到日志供运维跟进。
+   * 刻意**不在这里清理**（理由见 detectStaleZhenglobStorage 的注释）：
+   * 启动期改写用户的加密设置风险不可控，清理应由用户在设置页主动触发。
+   */
+  let staleStorage = 0;
+  try {
+    const stale = await detectStaleZhenglobStorage();
+    if (stale.scanError) {
+      console.warn(`[migrate] 残留存储配置扫描跳过：${stale.scanError}`);
+    } else if (stale.suspicious.length > 0) {
+      staleStorage = stale.suspicious.length;
+      const ids = stale.suspicious.map((s) => s.userId).join(',');
+      console.warn(
+        `[migrate] 检测到 ${staleStorage} 条残留 zhenglob 存储配置 user_id=[${ids}]（不自动清理；` +
+          `请在设置页「对象存储」点「重置对象存储配置」，或由用户自行改桶名）`,
+      );
+    } else {
+      console.log('[migrate] 未检测到残留的 zhenglob 存储配置');
+    }
+  } catch (err) {
+    // 体检失败绝不能阻断启动
+    console.warn(`[migrate] 残留存储配置扫描异常：${err?.message ?? String(err)}`);
+  }
+
+  return {
+    columns,
+    ...seeded,
+    vaultIndexes,
+    providerIndexes,
+    declaredIndexes,
+    knowledgeTables,
+    staleStorage,
+  };
 }
 
 // 允许直接运行：node src/db/migrate-v2.js

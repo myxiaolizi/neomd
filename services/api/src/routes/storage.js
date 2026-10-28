@@ -260,7 +260,7 @@ const storageRateLimit = userRateLimit('storage', { max: 900, windowMs: 60_000 }
   return Number(row?.bytes ?? 0);
 }
 
-/** 从请求里取出原始字节（支持 octet-stream 与 multipart 两种投递方式） */
+/** 从请求里取出原始字节（支持 octet-stream 与 multipart 两种投递方式；允许 0 字节空文档） */
 async function readRawBody(req) {
   if (req.isMultipart && req.isMultipart()) {
     const file = await req.file({ limits: { fileSize: MAX_OBJECT_BYTES } });
@@ -275,15 +275,23 @@ async function readRawBody(req) {
       contentType: file.mimetype || 'application/octet-stream',
     };
   }
-  const buffer = await req.body;
+  const raw = await req.body;
+  const buffer = Buffer.isBuffer(raw)
+    ? raw
+    : raw === undefined || raw === null || raw === ''
+      ? Buffer.alloc(0)
+      : typeof raw === 'string'
+        ? Buffer.from(raw, 'utf8')
+        : null;
   if (!Buffer.isBuffer(buffer)) {
     throw new HttpError(400, 'EMPTY_BODY', '请求体必须是原始字节流（application/octet-stream）');
   }
   const headerKey = req.headers['x-object-key'];
+  const customContentType = req.headers['x-object-content-type'];
   return {
     buffer,
     key: String(headerKey ?? '').trim(),
-    contentType: String(req.headers['content-type'] ?? 'application/octet-stream'),
+    contentType: String(customContentType ?? req.headers['content-type'] ?? 'application/octet-stream'),
   };
 }
 
@@ -497,7 +505,7 @@ export async function storageRoutes(app) {
       const scope = await resolveScope(req, body, reply);
       const { key, relative } = resolveScopedKey(scope.prefix, rawKey);
 
-      if (!body.buffer || body.buffer.length === 0) {
+      if (!body.buffer) {
         throw new HttpError(400, 'EMPTY_BODY', '上传内容为空');
       }
       if (body.buffer.length > MAX_OBJECT_BYTES) {

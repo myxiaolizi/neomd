@@ -1,0 +1,367 @@
+/**
+ * 后台管理端的设计令牌与通用样式（1.1.9）。
+ *
+ * 为什么要单独一个 CSS 文件而不是塞进 AdminPage.vue 的 <style scoped>：
+ *  AdminPage 拆成 components/admin/* 之后，scoped 样式**不会穿透到子组件**，
+ *  每个子组件都要重新声明一遍按钮、表格、卡片的话，浅色主题必然慢慢走样。
+ *  这里用一份**非 scoped** 的 `.admin-shell` 作用域前缀统一承载：
+ *  只有挂在 `.admin-shell` 内部时才生效，因此不会污染编辑器/设置页等其它页面。
+ *
+ * 视觉取向（用户明确要求「浅色主题、更大留白、更大气」）：
+ *  - 侧栏 #f7f8fa、卡片纯白、边框 #e5e7eb、主色 #1677ff；
+ *  - 层次感由「底色差 + 1px 描边 + 轻微阴影」承担，不靠深浅反差；
+ *  - 正文色 #1f2329（白底对比度约 15:1），次要文字 #6b7280（约 4.9:1），均满足 WCAG AA。
+ */
+
+/* ---------------- 主题变量锁定 ---------------- */
+.admin-shell {
+  --adm-bg: #f5f6f8;
+  --adm-card: #ffffff;
+  --adm-sidebar: #f7f8fa;
+  --adm-border: #e5e7eb;
+  --adm-border-soft: #eef0f3;
+  --adm-fg: #1f2329;
+  --adm-fg-2: #4b5563;
+  --adm-fg-3: #6b7280;
+  --adm-fg-4: #9aa1ab;
+  --adm-accent: #1677ff;
+  --adm-accent-deep: #0b5ed7;
+  --adm-accent-weak: rgba(22, 119, 255, 0.09);
+  --adm-accent-weak-2: rgba(22, 119, 255, 0.05);
+  --adm-ok: #0e9f6e;
+  --adm-ok-weak: rgba(14, 159, 110, 0.11);
+  --adm-warn: #b5540f;
+  --adm-warn-weak: rgba(245, 158, 11, 0.15);
+  --adm-danger: #d93025;
+  --adm-danger-weak: rgba(217, 48, 37, 0.09);
+  --adm-radius: 12px;
+  --adm-shadow-1: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --adm-shadow-2: 0 4px 12px rgba(16, 24, 40, 0.08);
+  color-scheme: light;
+
+  /*
+   * 兼容别名：早期子组件（AdminVaults / AdminLedger / AdminConfig / AdminDashboard）
+   * 用的是全局主题变量名（--border / --bg-elevated / --fg-3 …）。
+   * 在这里重新绑定成后台的浅色取值，既不用改那些已工作的组件，
+   * 又能保证即使全局主题被切成深色，后台依然是浅色。
+   */
+  --bg: #f5f6f8;
+  --bg-elevated: #ffffff;
+  --bg-sidebar: #f7f8fa;
+  --bg-hover: #f1f3f5;
+  --bg-active: #e9ecef;
+  --bg-input: #ffffff;
+  --fg: #1f2329;
+  --fg-2: #4b5563;
+  --fg-3: #6b7280;
+  --border: #e5e7eb;
+  --border-strong: #d3d7de;
+  --accent: #1677ff;
+  --accent-hover: #0958d9;
+  --accent-weak: rgba(22, 119, 255, 0.09);
+  --accent-weak-2: rgba(22, 119, 255, 0.05);
+  --orange-weak: rgba(245, 158, 11, 0.15);
+  --sky: rgba(22, 119, 255, 0.09);
+  --radius: 8px;
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-2: 0 4px 12px rgba(16, 24, 40, 0.08);
+}
+
+/* ---------------- 页头（每个模块共用） ---------------- */
+.admin-shell .adm-page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+.admin-shell .adm-page-head h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--adm-fg);
+}
+.admin-shell .adm-page-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--adm-fg-3);
+  max-width: 76ch;
+}
+.admin-shell .adm-page-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+/* ---------------- 卡片 ---------------- */
+.admin-shell .adm-card {
+  background: var(--adm-card);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius);
+  box-shadow: var(--adm-shadow-1);
+}
+.admin-shell .adm-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--adm-border-soft);
+  flex-wrap: wrap;
+}
+.admin-shell .adm-card__title {
+  margin: 0;
+  font-size: 14.5px;
+  font-weight: 650;
+  color: var(--adm-fg);
+}
+.admin-shell .adm-card__sub {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--adm-fg-3);
+}
+.admin-shell .adm-card__body { padding: 20px 22px; }
+
+/* ---------------- 指标卡 ---------------- */
+.admin-shell .adm-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(212px, 1fr));
+  gap: 16px;
+}
+.admin-shell .adm-metric {
+  background: var(--adm-card);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius);
+  box-shadow: var(--adm-shadow-1);
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition: box-shadow 0.16s ease;
+}
+.admin-shell .adm-metric:hover { box-shadow: var(--adm-shadow-2); }
+.admin-shell .adm-metric__label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--adm-fg-3);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.admin-shell .adm-metric__value {
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+  color: var(--adm-fg);
+  font-variant-numeric: tabular-nums;
+}
+.admin-shell .adm-metric__value.is-warn { color: var(--adm-warn); }
+.admin-shell .adm-metric__value.is-danger { color: var(--adm-danger); }
+.admin-shell .adm-metric__sub {
+  font-size: 11.5px;
+  color: var(--adm-fg-4);
+  line-height: 1.5;
+}
+.admin-shell .adm-metric__sub b { color: var(--adm-fg-2); font-weight: 600; }
+
+/* ---------------- 工具条 ---------------- */
+.admin-shell .adm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.admin-shell .adm-toolbar__search { max-width: 280px; }
+.admin-shell .adm-toolbar__sel { max-width: 160px; }
+.admin-shell .adm-toolbar__num { max-width: 110px; }
+.admin-shell .adm-toolbar__spacer { margin-left: auto; }
+.admin-shell .adm-toolbar__count {
+  font-size: 12px;
+  color: var(--adm-fg-3);
+  white-space: nowrap;
+}
+
+/* ---------------- 表格 ---------------- */
+.admin-shell .adm-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  background: var(--adm-card);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius);
+  overflow: hidden;
+  box-shadow: var(--adm-shadow-1);
+}
+.admin-shell .adm-table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--adm-fg-2);
+  background: #fafbfc;
+  border-bottom: 1px solid var(--adm-border);
+  white-space: nowrap;
+}
+.admin-shell .adm-table td {
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--adm-border-soft);
+  vertical-align: middle;
+  color: var(--adm-fg-2);
+}
+.admin-shell .adm-table tbody tr:last-child td { border-bottom: none; }
+.admin-shell .adm-table tbody tr:hover td { background: #fafbfc; }
+.admin-shell .adm-table--tight th,
+.admin-shell .adm-table--tight td { padding: 9px 12px; }
+
+/* ---------------- 文本与徽章 ---------------- */
+.admin-shell .adm-right { text-align: right; }
+.admin-shell .adm-strong { font-weight: 600; color: var(--adm-fg); }
+.admin-shell .adm-muted { color: var(--adm-fg-3); }
+.admin-shell .adm-mono {
+  font-family: var(--font-mono, ui-monospace, 'Cascadia Code', Consolas, monospace);
+  font-size: 11.5px;
+}
+.admin-shell .adm-empty {
+  text-align: center;
+  color: var(--adm-fg-4);
+  padding: 32px 12px;
+  font-size: 13px;
+}
+.admin-shell .adm-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2.5px 9px;
+  border-radius: 10px;
+  background: #f1f3f5;
+  color: var(--adm-fg-2);
+  white-space: nowrap;
+}
+.admin-shell .adm-badge--ok { background: var(--adm-ok-weak); color: var(--adm-ok); }
+.admin-shell .adm-badge--warn { background: var(--adm-warn-weak); color: var(--adm-warn); }
+.admin-shell .adm-badge--danger { background: var(--adm-danger-weak); color: var(--adm-danger); }
+.admin-shell .adm-badge--accent { background: var(--adm-accent-weak); color: var(--adm-accent-deep); }
+.admin-shell .adm-badge--muted { background: #f1f3f5; color: var(--adm-fg-3); }
+
+.admin-shell .adm-rowbtn {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 9px;
+  border-radius: 6px;
+  color: var(--adm-accent-deep);
+  white-space: nowrap;
+  transition: background 0.13s ease;
+}
+.admin-shell .adm-rowbtn:hover { background: var(--adm-accent-weak); }
+.admin-shell .adm-rowbtn--danger { color: var(--adm-danger); }
+.admin-shell .adm-rowbtn--danger:hover { background: var(--adm-danger-weak); }
+.admin-shell .adm-rowbtn[disabled] { opacity: 0.45; cursor: not-allowed; }
+
+/* ---------------- 进度条（模型成本占比等） ---------------- */
+.admin-shell .adm-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: #eef0f3;
+  overflow: hidden;
+  min-width: 60px;
+}
+.admin-shell .adm-bar__fill {
+  height: 100%;
+  border-radius: 3px;
+  background: var(--adm-accent);
+  transition: width 0.3s ease;
+}
+
+/* ---------------- 提示条 ---------------- */
+.admin-shell .adm-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 0 18px;
+  padding: 12px 15px;
+  border-radius: 10px;
+  background: var(--adm-accent-weak-2);
+  border: 1px solid rgba(22, 119, 255, 0.12);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--adm-fg-2);
+}
+.admin-shell .adm-note code {
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  background: #ffffff;
+  padding: 1px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--adm-border);
+  font-size: 11.5px;
+}
+.admin-shell .adm-note--warn {
+  background: var(--adm-warn-weak);
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+/* ---------------- 分段控件（时间范围切换） ---------------- */
+.admin-shell .adm-seg {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 9px;
+  background: #f1f3f5;
+  border: 1px solid var(--adm-border);
+}
+.admin-shell .adm-seg button {
+  padding: 5px 13px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--adm-fg-3);
+  transition: background 0.13s ease, color 0.13s ease;
+}
+.admin-shell .adm-seg button.is-on {
+  background: #ffffff;
+  color: var(--adm-accent-deep);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+}
+
+/* ---------------- 分页 ---------------- */
+.admin-shell .adm-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 18px;
+  font-size: 12.5px;
+  color: var(--adm-fg-3);
+}
+
+/* ---------------- 字段块 ---------------- */
+.admin-shell .adm-field {
+  background: var(--adm-card);
+  border: 1px solid var(--adm-border);
+  border-radius: var(--adm-radius);
+  padding: 14px 16px;
+}
+.admin-shell .adm-field .nm-label { margin-bottom: 8px; }
+
+/* ---------------- 响应式 ---------------- */
+@media (max-width: 1000px) {
+  .admin-shell .adm-page-head { margin-bottom: 18px; }
+  .admin-shell .adm-page-head h2 { font-size: 17.5px; }
+  .admin-shell .adm-metric-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+  .admin-shell .adm-metric { padding: 14px 15px; }
+  .admin-shell .adm-metric__value { font-size: 22px; }
+  .admin-shell .adm-toolbar__search { max-width: 100%; }
+  .admin-shell .adm-table { display: block; overflow-x: auto; white-space: nowrap; }
+  .admin-shell .adm-card__body { padding: 16px 14px; }
+}

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { NmIcon, NmModal } from '@neomd/ui';
 import {
@@ -33,7 +33,13 @@ import InputDialog from '@/components/common/InputDialog.vue';
 import RightSection from '@/components/panels/right/RightSection.vue';
 import ResizeHandle from '@/components/layout/ResizeHandle.vue';
 import RibbonContextMenu, { type RibbonItemDef } from '@/components/layout/RibbonContextMenu.vue';
-import { useLocalLayout, SPLIT_RATIO_MAX, SPLIT_RATIO_MIN } from '@/lib/local-layout';
+import {
+  useLocalLayout,
+  SPLIT_RATIO_MAX,
+  SPLIT_RATIO_MIN,
+  RIGHT_SECTION_HEIGHT_MIN,
+  RIGHT_SECTION_HEIGHT_MAX,
+} from '@/lib/local-layout';
 import UserMenu from '@/components/panels/UserMenu.vue';
 
 /*
@@ -96,15 +102,26 @@ const exportBusy = ref(false);
 const mobileDrawer = ref(false);
 const mobileAi = ref(false);
 const bootError = ref('');
-const booting = ref(true);
 /**
- * 首屏阶段文案。
+ * 启动状态拆成两个（1.1.9 启动极速化）。
  *
- * 为什么单独维护：`boot()` 里既有网络阶段（恢复登录、拉云端设置/积分）又有
- * 本地阶段（打开仓库、建索引），过去只显示一句「正在打开仓库…」，
- * 用户无法判断到底卡在网络上还是卡在磁盘上。区分阶段后可直接定位问题。
+ * 用户要求「像 Obsidian 那样打开即用」。原来只有一个 `booting`，用
+ * `v-if="booting"` 挡住**整个工作台**：仓库索引 + 标签正文全部读完之前，
+ * 左侧栏、标签栏、工具栏一个都不渲染，用户面对的是全屏骨架，感知上就是「启动很慢」。
+ *
+ * 现在拆开：
+ * - `shellReady`：外壳（左侧栏 / 标签栏 / 工具栏 / 状态栏）可以渲染了。
+ *   它不需要等文档正文，`onMounted` 里同步置 true 即可 —— 首帧就能画出真实外壳。
+ * - `docReady`：正文区可以渲染真实编辑器了（当前文档正文已就绪）。
+ *   只挡住正文区那一块，用轻量占位，不再阻塞外壳。
+ *
+ * 这样即使 app.ts 的标签正文还是串行读，用户也能立刻看到并操作界面框架，
+ * 感知延迟大幅下降（这是「感知性能」优化，不依赖任何后端/接口改动）。
  */
-const bootPhase = ref('正在启动…');
+const shellReady = ref(false);
+const docReady = ref(false);
+/** 正文区占位用的阶段文案（原 bootPhase，语义不变，现在只影响正文区） */
+const bootPhase = ref('正在打开本地仓库…');
 const wordCount = ref({ chars: 0, words: 0 });
 const recentClosed = ref<Array<{ docId: string; mode: EditorMode }>>([]);
 // 注意：`splitDirection` / `splitTabId` 都定义在下方（读写 localLayout，用于持久化），
@@ -190,12 +207,19 @@ const PLUGIN_RIBBON_DEFS: Record<string, { icon: string; title: string; pluginId
   database: { icon: 'table', title: '数据库视图', pluginId: 'database' },
   'web-browser': { icon: 'globe', title: '内嵌浏览器', pluginId: 'web-browser' },
   recorder: { icon: 'mic', title: '语音录音机', pluginId: 'recorder' },
+  'diagram-flowchart': { icon: 'columns', title: '流程图', pluginId: 'diagram-flowchart' },
+  'new-flowchart': { icon: 'columns', title: '流程图', pluginId: 'diagram-flowchart' },
+  'diagram-mindmap': { icon: 'graph', title: '思维导图', pluginId: 'diagram-mindmap' },
+  'new-mindmap': { icon: 'graph', title: '思维导图', pluginId: 'diagram-mindmap' },
 };
 
 const ribbonActions = computed(() => {
   const seen = new Set<string>();
   const out: Array<{ id: string; icon: string; title: string }> = [];
-  for (const rawId of layout.value.ribbonItems ?? []) {
+  const rawList = layout.value.ribbonItems ?? [];
+  // 兼容升级：若用户的 ribbonItems 尚未包含图表插件 id，默认追加进候选并交由 pluginOn 判断显隐
+  const candidates = [...rawList, 'diagram-flowchart', 'diagram-mindmap'];
+  for (const rawId of candidates) {
     const def = PLUGIN_RIBBON_DEFS[rawId];
     if (!def) continue;
     if (!settingsStore.pluginOn(def.pluginId)) continue;
@@ -203,10 +227,6 @@ const ribbonActions = computed(() => {
     seen.add(def.pluginId);
     out.push({ id: def.pluginId, icon: def.icon, title: def.title });
   }
-  // 图编辑器入口（1.1.0）：固定追加、不占用户配置位。
-  // 标题保持纯名称，不带任何括号备注（用户明确要求：插件名称里不要加说明）。
-  out.push({ id: 'new-flowchart', icon: 'columns', title: '新建流程图' });
-  out.push({ id: 'new-mindmap', icon: 'graph', title: '新建思维导图' });
   return out;
 });
 
@@ -305,26 +325,12 @@ function withBootTimeout<T>(task: Promise<T>, ms: number, fallback: T, label: st
 }
 
 async function boot(): Promise<void> {
-  booting.value = true;
+  docReady.value = false;
   bootError.value = '';
-  bootPhase.value = '正在恢复登录状态…';
-
-  /*
-   * 网络任务句柄：发起后**不 await**，让首屏先出；
-   * finally 里再挂一个后台等待，用于在云端设置晚到后补齐同步。
-   */
-  let cloudTasks: Promise<void> = Promise.resolve();
+  bootPhase.value = '正在打开本地仓库…';
 
   try {
-    // ① 会话恢复：仓库位置的计算需要登录态，因此必须等；但网络异常/超时按"未登录"继续
-    const restored = await withBootTimeout(
-      auth.restore().then(() => true),
-      BOOT_NETWORK_TIMEOUT_MS,
-      false,
-      '恢复登录状态',
-    );
-
-    bootPhase.value = '正在准备本地数据…';
+    // ① 零网络等待：直接根据本地记忆的仓库路径或缓存用户信息计算出本地/云端仓库位置
     const info = detectRuntime();
     const bridge = getBridge();
     let location = localStorage.getItem('neomd.lastVault') ?? '';
@@ -334,41 +340,74 @@ async function boot(): Promise<void> {
     } else if (info.platform === 'android' && bridge?.paths) {
       if (!location) location = await bridge.paths.documents();
     } else {
-      // 网页端：优先使用已配置对象存储或当前账号的云端仓库，保证多端一致
-      location = app.cloudVaultLocation();
+      // 网页端：authStore 初始化时已同步从 localStorage 恢复缓存 user，无需等待网络即可计算云仓库名
+      location = location || app.cloudVaultLocation();
     }
 
-    // ② 网络类任务与本地类任务**并行**：先发起网络请求，但不等待它
-    if (restored && auth.isLoggedIn) {
-      cloudTasks = Promise.all([
-        withBootTimeout(settingsStore.pullCloudSettings(), BOOT_NETWORK_TIMEOUT_MS, undefined, '拉取云端设置'),
-        withBootTimeout(app.loadCredits(), BOOT_NETWORK_TIMEOUT_MS, undefined, '拉取积分'),
-      ]).then(() => undefined);
-    }
-
-    // ③ 本地仓库：`vaultReady` 守卫保证不会重复打开
-    bootPhase.value = '正在打开本地仓库…';
+    // ② 立即打开本地仓库（内部已启用 deferReconcile，只读本地缓存索引 JSON，几毫秒内完成）
     if (!app.vaultReady) await app.openVault(location);
-    await app.restoreTabs();
-    if (!app.tabs.length && app.docs.length) {
-      const first = [...app.docs].sort((a, b) => b.updatedAt - a.updatedAt)[0];
-      if (first) await app.openDoc(first.docId);
+
+    /**
+     * ③ 恢复标签（1.1.9 启动极速化 + 多窗口）。
+     *
+     * `?doc=<docId>&fresh=1`（「移动至新窗口」，desktop 主进程按此约定拼 URL）：
+     * - 只打开该文档；
+     * - **完全不恢复**旧标签列表 —— 否则新窗口会把原窗口的全部标签克隆一份，
+     *   「移动」就变成「整组复制」；
+     * - 交给 `restoreTabs({ fresh: true })` 而不是「自己跳过 + openDoc」：
+     *   fresh 分支在 store 里还会**关闭本进程的标签持久化**，否则这个只剩一篇的
+     *   新窗口退出时会把 `neomd.tabs` 覆盖成单标签，把原窗口的标签列表冲掉。
+     *
+     * 非 fresh 情形把「当前应激活的 docId」作为 `eagerDocId` 传下去：
+     * 让 restoreTabs 只**同步**读这一篇的正文，其余标签先建壳、后台再补
+     * （这一步是首屏时间的主要来源，过去是串行读 N 篇）。
+     */
+    const urlDocId =
+      typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('doc')?.trim() || '' : '';
+    const isFreshWindow =
+      typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('fresh') === '1';
+
+    if (isFreshWindow && urlDocId) {
+      await app.restoreTabs({ fresh: true, eagerDocId: urlDocId });
+    } else {
+      const eagerDocId = urlDocId || app.activeTab?.docId || '';
+      await app.restoreTabs({ eagerDocId });
+      // ④ 若带 ?doc=<docId> 启动，优先打开并激活目标文档（无 fresh 时仍恢复旧标签）
+      if (urlDocId && app.docs.some((d) => d.docId === urlDocId)) {
+        await app.openDoc(urlDocId);
+      } else if (!app.tabs.length && app.docs.length) {
+        const first = [...app.docs].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+        if (first) await app.openDoc(first.docId);
+      }
     }
-    bootPhase.value = '即将完成…';
   } catch (e) {
     bootError.value = (e as Error).message;
   } finally {
-    // 仓库就绪即结束首屏转圈，**不等网络**：这正是本次提速的核心
-    booting.value = false;
-    /*
-     * 云端设置晚到后的补偿：仓库打开时若 storage 配置尚未到位，
-     * `openVault` 内部的首次静默同步会被跳过；这里在设置落地后补一次。
-     */
-    void cloudTasks
-      .then(() => {
-        if (app.vaultReady) void app.syncNow({ silent: true });
-      })
-      .catch(() => undefined);
+    // ⑤ 当前文档就绪 → 放开正文区（外壳早在 onMounted 就已渲染，不受这里影响）
+    docReady.value = true;
+
+    // ⑥ 打开后再在后台异步恢复登录态、同步云端设置项、积分与仓库数据（完全不阻塞 UI）
+    app.installAutoSyncTimer();
+    void (async () => {
+      const restored = await withBootTimeout(
+        auth.restore().then(() => true),
+        BOOT_NETWORK_TIMEOUT_MS,
+        false,
+        '恢复登录状态',
+      );
+      if (restored && auth.isLoggedIn) {
+        await Promise.all([
+          withBootTimeout(settingsStore.pullCloudSettings(), BOOT_NETWORK_TIMEOUT_MS, undefined, '拉取云端设置'),
+          withBootTimeout(app.loadCredits(), BOOT_NETWORK_TIMEOUT_MS, undefined, '拉取积分'),
+        ]);
+      }
+      if (app.vaultReady && app.canSync()) {
+        if (auth.isLoggedIn) {
+          await app.runFirstSyncIfNeeded();
+        }
+        await app.syncNow({ silent: true });
+      }
+    })().catch(() => undefined);
   }
 }
 
@@ -402,6 +441,7 @@ function buildCommands(): Command[] {
     { id: 'width', title: `切换正文页宽（当前：${widthLabel(pageWidth.value)}）`, group: '正文视图', icon: 'width', run: cycleWidth },
     { id: 'mode', title: '切换编辑视图模式', group: '正文视图', keys: 'Ctrl+E', icon: 'layers', run: () => app.cycleMode() },
     { id: 'format', title: '显示/隐藏正文工具栏', group: '正文视图', icon: 'type', run: () => settingsStore.updateLayout({ editorToolbar: !layout.value.editorToolbar }) },
+    { id: 'new-window', title: '新建独立窗口', group: '正文视图', keys: 'Ctrl+Shift+N', icon: 'external', run: () => void openNewAppWindow() },
   ];
   // 挂载用户导入或安装的社区扩展插件命令
   try {
@@ -501,8 +541,127 @@ function isEditable(t: EventTarget | null): boolean {
   return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
 }
 
+function runShortcutCommand(command: string): boolean {
+  switch (command) {
+    case 'editor.h1':
+    case 'editor.h2':
+    case 'editor.h3':
+    case 'editor.h4':
+    case 'editor.h5':
+    case 'editor.h6':
+      applyHeading(Number(command.slice(-1)));
+      return true;
+    case 'editor.bold':
+      onFormatCommand('bold');
+      return true;
+    case 'editor.italic':
+      onFormatCommand('italic');
+      return true;
+    case 'editor.underline':
+      onFormatCommand('underline');
+      return true;
+    case 'editor.strike':
+      onFormatCommand('strike');
+      return true;
+    case 'editor.highlight':
+      onFormatCommand('highlight');
+      return true;
+    case 'editor.code':
+      onFormatCommand('code');
+      return true;
+    case 'editor.codeBlock':
+      onFormatCommand('codeblock');
+      return true;
+    case 'editor.link':
+      onFormatCommand('link');
+      return true;
+    case 'editor.quote':
+      onFormatCommand('quote');
+      return true;
+    case 'editor.taskList':
+      onFormatCommand('task');
+      return true;
+    case 'editor.bulletList':
+      onFormatCommand('ul');
+      return true;
+    case 'editor.numberedList':
+      onFormatCommand('ol');
+      return true;
+    case 'editor.table':
+      onFormatCommand('table');
+      return true;
+    case 'editor.hr':
+      onFormatCommand('hr');
+      return true;
+    case 'app.save':
+      void saveAndSync();
+      return true;
+    case 'app.sync':
+      void app.syncNow();
+      return true;
+    case 'app.commandPalette':
+      paletteOpen.value = true;
+      return true;
+    case 'app.quickSwitch':
+    case 'app.search':
+      searchOpen.value = true;
+      return true;
+    case 'app.newNote':
+      void app.createDoc({});
+      return true;
+    case 'app.closeTab':
+      if (app.activeTabId) closeTab(app.activeTabId);
+      return true;
+    case 'app.reopenTab': {
+      const last = recentClosed.value.pop();
+      if (last) void app.openDoc(last.docId, { mode: last.mode });
+      return true;
+    }
+    case 'app.toggleSidebar':
+      settingsStore.updateLayout({ leftPanelOpen: !layout.value.leftPanelOpen });
+      return true;
+    case 'app.toggleAi':
+      toggleAi();
+      return true;
+    case 'app.toggleMode':
+      app.cycleMode();
+      return true;
+    case 'app.settings':
+      openSettings();
+      return true;
+    case 'app.export':
+      exportOpen.value = true;
+      return true;
+    case 'daily.today':
+      openDaily();
+      return true;
+    case 'random.open':
+      openRandom();
+      return true;
+    default:
+      return false;
+  }
+}
+
 function onKeydown(e: KeyboardEvent): void {
   const combo = keyCombo(e);
+
+  // 1. 优先匹配用户在设置页自定义的快捷键（settingsStore.settings.shortcuts）
+  const customShortcuts = settingsStore.settings.shortcuts ?? [];
+  const matchedCustom = customShortcuts.find((s) =>
+    s.keys.some((k) => k.toLowerCase() === combo.toLowerCase()),
+  );
+  if (matchedCustom) {
+    // 若在普通 input/textarea 输入框内，仅放行全局 app.* 快捷键，避免拦截正常打字
+    const inInput = isEditable(e.target) && !(e.target as HTMLElement | null)?.closest('.ProseMirror, .cm-editor');
+    if (!inInput || matchedCustom.command.startsWith('app.') || matchedCustom.command.startsWith('daily.') || matchedCustom.command.startsWith('random.')) {
+      if (runShortcutCommand(matchedCustom.command)) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    }
+  }
 
   // 标题快捷键必须优先于输入框判断
   const heading = /^Ctrl\+([1-6])$/.exec(combo);
@@ -529,6 +688,7 @@ function onKeydown(e: KeyboardEvent): void {
     'Ctrl+Shift+F': () => (searchOpen.value = true),
     'Ctrl+S': () => void saveAndSync(),
     'Ctrl+N': () => void app.createDoc({}),
+    'Ctrl+Shift+N': () => void openNewAppWindow(),
     'Ctrl+,': () => openSettings(),
     'Ctrl+E': () => app.cycleMode(),
     'Ctrl+Shift+A': () => toggleAi(),
@@ -565,6 +725,12 @@ function notifyShortcutUnavailable(combo: string): void {
   }
 }
 
+function targetWysiwyg() {
+  return splitDirection.value !== 'none' && activePane.value === 'split'
+    ? (splitWysiwygRef.value ?? wysiwygRef.value)
+    : wysiwygRef.value;
+}
+
 function applyHeading(level: number): void {
   if (mode.value === 'source' || mode.value === 'compare') {
     const cm = document.querySelector('.cm-content') as HTMLElement | null;
@@ -574,12 +740,12 @@ function applyHeading(level: number): void {
     }
     return;
   }
-  const w = wysiwygRef.value as unknown as { setHeading?: (lv: 1 | 2 | 3 | 4 | 5 | 6) => void } | null;
+  const w = targetWysiwyg() as unknown as { setHeading?: (lv: 1 | 2 | 3 | 4 | 5 | 6) => void } | null;
   if (w?.setHeading) {
     w.setHeading(level as 1 | 2 | 3 | 4 | 5 | 6);
     return;
   }
-  wysiwygRef.value?.runCommand((ed) => {
+  targetWysiwyg()?.runCommand((ed) => {
     if (ed.isActive('heading', { level })) ed.chain().focus().setParagraph().run();
     else ed.chain().focus().setNode('heading', { level }).run();
   });
@@ -660,23 +826,38 @@ function closeEditorMenu(): void {
   editorCtxMenu.value = null;
 }
 
-function onFormatCommand(cmd: string, arg?: string): void {
+function onFormatCommand(cmd: string, _arg?: string): void {
   if (cmd === 'palette') {
     paletteOpen.value = true;
     return;
   }
+  const target = targetWysiwyg();
   if (cmd === 'undo' || cmd === 'redo') {
-    wysiwygRef.value?.runCommand((ed) => {
+    target?.runCommand((ed) => {
       if (cmd === 'undo') ed.chain().focus().undo().run();
       else ed.chain().focus().redo().run();
     });
     return;
   }
-  if (cmd.startsWith('h')) {
+  if (cmd.startsWith('h') && /^h[1-6]$/.test(cmd)) {
     applyHeading(Number(cmd.slice(1)));
     return;
   }
-  wysiwygRef.value?.runCommand((ed) => {
+  if (cmd === 'image') {
+    void app.askInput('插入图片', '输入图片 URL 地址', 'https://').then((url) => {
+      if (!url || !url.trim()) return;
+      const cleanUrl = url.trim();
+      if (target?.insertMarkdownBlock) {
+        target.insertMarkdownBlock(`![](${cleanUrl})`);
+      } else {
+        target?.runCommand((ed) => {
+          ed.chain().focus().insertContent(`<img src="${cleanUrl}" alt="" />`).run();
+        });
+      }
+    });
+    return;
+  }
+  target?.runCommand((ed) => {
     const c = ed.chain().focus();
     switch (cmd) {
       case 'bold':
@@ -798,8 +979,7 @@ function toggleAutosave(): void {
  * 注意：**不改动文档内容**。标题行是独立 UI，不写进 markdown，
  * 所以内容 hash / 同步去重 / 历史版本 / 导出均不受影响。
  */
-function renameActiveDoc(nextTitle: string): void {
-  const tab = activeTab.value;
+function renameDocByTab(tab: { docId: string; title: string; path: string } | null | undefined, nextTitle: string): void {
   if (!tab) return;
   const clean = nextTitle.trim();
   if (!clean || clean === tab.title) return;
@@ -812,6 +992,14 @@ function renameActiveDoc(nextTitle: string): void {
   const ext = extMatch ? extMatch[0] : '.md';
   const nextPath = folder ? `${folder}/${clean}${ext}` : `${clean}${ext}`;
   void app.renameDoc(tab.docId, nextPath);
+}
+
+function renameActiveDoc(nextTitle: string): void {
+  renameDocByTab(activeTab.value, nextTitle);
+}
+
+function renameSplitDoc(nextTitle: string): void {
+  renameDocByTab(splitTab.value, nextTitle);
 }
 
 /** 打开重命名弹窗（仅修改文件名，支持添加日期、时间与 AI 智能命名） */
@@ -952,12 +1140,23 @@ async function deleteDoc(docId: string): Promise<void> {
 function closeTab(id: string): void {
   const tab = app.tabs.find((t) => t.id === id);
   if (tab) {
-    // 设置标签不是真实文档，不能进「最近关闭」列表（重开无意义）
-    if (id !== SETTINGS_TAB_ID) recentClosed.value.push({ docId: tab.docId, mode: tab.mode });
+    /**
+     * 只有**真实文档**标签才进「最近关闭」列表。
+     *
+     * 1.1.9 修：原来只特判了 SETTINGS_TAB_ID，漏了 PLUGIN_TAB_ID。
+     * 于是关掉插件商店后它被塞进 recentClosed，用户 `Ctrl+Shift+T`（重开标签）
+     * 会恢复出一个 docId 为 `__plugins__`、内容为空的假文档标签，看起来像文档丢了。
+     */
+    const isVirtual = id === SETTINGS_TAB_ID || id === PLUGIN_TAB_ID;
+    if (!isVirtual) recentClosed.value.push({ docId: tab.docId, mode: tab.mode });
   }
   if (recentClosed.value.length > 20) recentClosed.value.shift();
   if (id === SETTINGS_TAB_ID) {
     closeSettingsTab();
+    return;
+  }
+  if (id === PLUGIN_TAB_ID) {
+    closePluginStoreTab();
     return;
   }
   app.closeTab(id);
@@ -1006,12 +1205,10 @@ function onTabAction({ id, action }: { id: string; action: string }): void {
       break;
     }
     case 'split-v':
-      splitDirection.value = splitDirection.value === 'v' && splitTabId.value === id ? 'none' : 'v';
-      splitTabId.value = id;
+      void splitTabIntoPane(id, 'v');
       break;
     case 'split-h':
-      splitDirection.value = splitDirection.value === 'h' && splitTabId.value === id ? 'none' : 'h';
-      splitTabId.value = id;
+      void splitTabIntoPane(id, 'h');
       break;
     case 'window':
       void moveTabToNewWindow(tab);
@@ -1033,6 +1230,28 @@ function onTabAction({ id, action }: { id: string; action: string }): void {
  * 并把 docId 拼进 URL 交给新窗口（新窗口启动后自动打开这篇文档）。
  * 网页端没有该能力，退化为在浏览器新标签打开同一路由，并给出提示。
  */
+/** 新建一个独立的应用窗口（Ctrl+Shift+N / 命令面板调用） */
+async function openNewAppWindow(docId?: string): Promise<void> {
+  const bridge = getBridge() as unknown as
+    | { win?: { newWindow?: (docId?: string) => Promise<number> } }
+    | undefined;
+  const openNewWindow = bridge?.win?.newWindow;
+  if (typeof openNewWindow === 'function') {
+    try {
+      await openNewWindow(docId);
+      app.notify('已打开新的程序窗口', 'success', 2000);
+    } catch (e) {
+      app.notify(`打开新窗口失败：${(e as Error).message}`, 'error', 3200);
+    }
+    return;
+  }
+  const url = new URL(window.location.href);
+  if (docId) url.searchParams.set('doc', docId);
+  else url.searchParams.delete('doc');
+  window.open(url.toString(), '_blank', 'noopener');
+  app.notify('已在浏览器新标签页打开工作台', 'info', 2400);
+}
+
 async function moveTabToNewWindow(tab: { id: string; docId: string; title: string }): Promise<void> {
   // 设置 / 插件商店这类虚拟标签没有真实文档，移过去没有意义
   if (tab.id === SETTINGS_TAB_ID || tab.id === PLUGIN_TAB_ID) {
@@ -1045,21 +1264,32 @@ async function moveTabToNewWindow(tab: { id: string; docId: string; title: strin
   const openNewWindow = bridge?.win?.newWindow;
   if (typeof openNewWindow === 'function') {
     try {
-      await openNewWindow(tab.docId);
-      // 移过去之后原窗口关掉这个标签（先把未保存内容落盘，不弹确认）
       await saveTabIfDirty(tab.id);
+      await openNewWindow(tab.docId);
+      /**
+       * 无条件关掉原标签（1.1.9 修「移动变成复制」）。
+       *
+       * 改前是 `if (app.tabs.length > 1) app.closeTab(...)`，本意是「别让原窗口变成空壳」，
+       * 但结果是：只有 1 个标签时点「移动至新窗口」，新窗口开出来了、原窗口那篇还留着
+       * —— 用户看到的是复制，不是移动。「移动」的语义就是从这个窗口消失；
+       * 原窗口剩 0 个标签时显示空状态引导（新建 / 从左侧选），比「悄悄不移动」更符合预期。
+       */
       app.closeTab(tab.id, true);
-      app.notify(`已在新的窗口打开「${tab.title}」`, 'success', 2400);
+      app.notify(`已移动到新的窗口打开「${tab.title}」`, 'success', 2400);
     } catch (e) {
       app.notify(`打开新窗口失败：${(e as Error).message}`, 'error', 3200);
     }
     return;
   }
-  // 网页端：新标签打开并带上 doc 参数
+  // 网页端：新标签打开并带上 doc 参数；fresh=1 让新窗口**不恢复**旧标签列表，
+  // 否则新页面会把原窗口的全部标签克隆一份（用户看到的是「移动」变成「整组复制」）。
+  await saveTabIfDirty(tab.id);
   const url = new URL(window.location.href);
   url.searchParams.set('doc', tab.docId);
+  url.searchParams.set('fresh', '1');
   window.open(url.toString(), '_blank', 'noopener');
-  app.notify('已在浏览器新标签中打开（网页端不支持独立窗口）', 'info', 2800);
+  app.closeTab(tab.id, true);
+  app.notify(`已在新窗口/标签页中移动「${tab.title}」`, 'success', 2600);
 }
 
 /**
@@ -1334,9 +1564,11 @@ function onPanelAction(id: string): void {
       openPluginStore();
       break;
     case 'new-flowchart':
+    case 'diagram-flowchart':
       void createDiagram('flowchart');
       break;
     case 'new-mindmap':
+    case 'diagram-mindmap':
       void createDiagram('mindmap');
       break;
     default:
@@ -1558,7 +1790,28 @@ onMounted(async () => {
   window.addEventListener('mousedown', closeZoomMenu);
   window.addEventListener('wheel', onWheelZoom, { passive: false });
   onResize();
+
+  /**
+   * 首帧就放开外壳（1.1.9）。
+   *
+   * `shellReady` 必须在 `await boot()` **之前**置 true，否则外壳会跟着异步启动流程一起等，
+   * 「先渲染真实外壳」就完全失效了。放在 nextTick 后置位可以保证这一帧的 DOM 已经提交，
+   * 用户看到的是「界面已经在、正文在填充」，而不是「全屏转圈」。
+   */
+  void nextTick(() => {
+    shellReady.value = true;
+  });
+
   await boot();
+  // 监听桌面端文件关联打开事件
+  const bridge = getBridge() as unknown as
+    | { app?: { onOpenFile?: (cb: (filePath: string) => void) => void } }
+    | undefined;
+  bridge?.app?.onOpenFile?.((filePath: string) => {
+    const fileName = filePath.split(/[\\/]/).pop() ?? '';
+    const hit = app.docs.find((d) => d.path === fileName || d.path.endsWith(`/${fileName}`));
+    if (hit) void app.openDoc(hit.docId);
+  });
 });
 
 onBeforeUnmount(() => {
@@ -1645,6 +1898,8 @@ const RIBBON_ALL_ITEMS: RibbonItemDef[] = [
   { id: 'database', label: '数据库', icon: 'table' },
   { id: 'web-browser', label: '内嵌浏览器', icon: 'globe' },
   { id: 'recorder', label: '语音录音', icon: 'mic' },
+  { id: 'diagram-flowchart', label: '流程图', icon: 'columns' },
+  { id: 'diagram-mindmap', label: '思维导图', icon: 'graph' },
 ];
 
 const ribbonMenu = ref<{ open: boolean; x: number; y: number; targetId?: string; targetLabel?: string }>({
@@ -1723,6 +1978,22 @@ const splitDirection = computed<'none' | 'v' | 'h'>({
 });
 
 /**
+ * 源码 / 对照模式标题行的左内边距（1.1.9 动态化）。
+ *
+ * 这两个模式的正文由 CodeMirror 渲染：`.cm-content` 左右各 32px、`.cm-line` 再各 4px，
+ * 左侧还有行号 gutter（`padding-left: 12px` + 行号自身宽度）。
+ * 于是标题行要跟正文左缘对齐，左内边距必须随「行号开/关」变化：
+ * - 开行号：gutter 约 46px 才对齐（12 padding + 行号数字 + 间隙）；
+ * - 关行号：gutter 消失，只剩 32px 的 `.cm-content` 内边距。
+ *
+ * 改前这里写死 46 —— 关掉行号后标题行会比正文右移 14px，看起来像「多缩进了一格」。
+ */
+const sourceTitlePadLeft = computed(() => (settingsStore.settings.appearance.showLineNumbers ? 46 : 32));
+
+/** 当前聚焦的分屏窗格（'primary' 主栏 | 'split' 第二栏），用于让左栏点文件或工具栏命令作用于当前聚焦栏 */
+const activePane = ref<'primary' | 'split'>('primary');
+
+/**
  * 分屏第二栏显示的标签 id（1.1.8 持久化）。
  * 空串 = 未指定，由 `splitTab` 回落到当前活动标签。
  */
@@ -1733,13 +2004,36 @@ const splitTabId = computed<string>({
 
 /** 分屏第二栏的标签选择器数据（虚拟标签不可在窄栏渲染，已排除） */
 const splitSelectableTabs = computed(() =>
-  tabBarTabs.value.filter((t) => t.id !== SETTINGS_TAB_ID),
+  tabBarTabs.value.filter((t) => t.id !== SETTINGS_TAB_ID && t.id !== PLUGIN_TAB_ID),
 );
+
+/** 仓库中尚未在标签栏打开的其它文档（供分屏第二栏下拉菜单直接点选打开不同文件） */
+const splitUnopenedDocs = computed(() => {
+  const openedDocIds = new Set(app.tabs.map((t) => t.docId));
+  return app.docs.filter((d) => !openedDocIds.has(d.docId));
+});
 
 /** 切换分屏第二栏显示的标签（1.1.8 真分屏） */
 function chooseSplitTab(id: string): void {
   splitTabId.value = id;
+  activePane.value = 'split';
   splitPickerOpen.value = false;
+}
+
+/** 在分屏第二栏直接选择打开仓库内任意文档（无需先用 + 号新建标签） */
+async function chooseSplitDoc(docId: string): Promise<void> {
+  splitPickerOpen.value = false;
+  const prevActive = app.activeTabId;
+  await app.openDoc(docId);
+  const openedTab = app.tabs.find((t) => t.docId === docId);
+  if (openedTab) {
+    splitTabId.value = openedTab.id;
+  }
+  // 保持主栏原来的活动标签不变，实现左右/上下两栏各自显示不同文件
+  if (prevActive && app.tabs.some((t) => t.id === prevActive) && prevActive !== openedTab?.id) {
+    app.activeTabId = prevActive;
+  }
+  activePane.value = 'split';
 }
 
 /** 分屏标签下拉是否展开 */
@@ -1753,34 +2047,35 @@ function onSplitRatio(next: number): void {
   updateLocalLayout({ splitRatio: Math.min(SPLIT_RATIO_MAX, Math.max(SPLIT_RATIO_MIN, next)) });
 }
 
-/* ---------------- 打开新文件的行为（1.1.7） ---------------- */
+/* ---------------- 打开新文件的行为（1.1.7 / 1.1.9 分屏协同） ---------------- */
 
 /**
  * 打开文档的统一入口。
  *
- * 用户原话：「只有点击 + 号打开其他文件才视为同时打开 2 篇文件，否则打开新文件的时候
- * 自动保存并关闭当前文件；（当前的打开方式作为设置项，允许用户调整）」
- *
- * 因此行为分两种，由 `localLayout.openMode` 决定（设置项，存本机 localStorage）：
- * - `replace`（默认）：先把当前标签**静默保存**（不弹确认），再关掉它，然后打开目标文档
- *   → 视觉上永远只有一个文档标签，符合"单文档阅读"习惯；
- * - `keep`：保留当前标签，目标文档另开一个标签（点标签栏 + 号走的就是这条路）。
- *
- * 注意：目标文档已经在标签里打开时，无论哪种模式都只是切过去，不做关闭（否则会误关）。
- *
- * @param docId    目标文档 id
- * @param options.keep 强制保留当前标签（+ 号 / Ctrl+N 等明确"再开一篇"的入口传 true）
+ * - 当处于分屏状态且焦点在第二栏（`activePane === 'split'`）时：
+ *   在第二栏打开目标文档，保留主栏文档不关闭，支持同时对照编辑两篇不同文档！
+ * - 当处于分屏状态且焦点在主栏时：
+ *   在主栏打开目标文档，且绝不关闭第二栏正在显示的标签！
+ * - 未分屏时：按 `localLayout.openMode`（`replace` 替换当前标签 / `keep` 保留并新开标签）执行。
  */
 async function openDocInMode(docId: string, options: { keep?: boolean } = {}): Promise<void> {
+  if (splitDirection.value !== 'none' && activePane.value === 'split') {
+    await chooseSplitDoc(docId);
+    return;
+  }
+
   const alreadyOpen = app.tabs.some((t) => t.docId === docId);
-  const keepCurrent = options.keep === true || localLayout.value.openMode === 'keep' || alreadyOpen;
+  const keepCurrent =
+    options.keep === true ||
+    localLayout.value.openMode === 'keep' ||
+    alreadyOpen ||
+    splitDirection.value !== 'none';
 
   if (!keepCurrent) {
     // 单文档模式：先把当前文档落到磁盘（用户要求：修改即保存、不询问），再关掉它
     const cur = activeTab.value;
-    if (cur && cur.docId !== docId) {
+    if (cur && cur.docId !== docId && cur.id !== splitTabId.value) {
       const saved = await saveTabIfDirty(cur.id);
-      // 保存失败就不要关，避免丢内容
       if (saved) app.closeTab(cur.id, true);
     }
   }
@@ -1789,13 +2084,6 @@ async function openDocInMode(docId: string, options: { keep?: boolean } = {}): P
 
 /**
  * 标签栏「+」号的语义（1.1.7）。
- *
- * 用户要求：点 + 才算「同时打开两篇」。
- * 实现上就是**直接新建一篇并保留现有标签** —— `createDoc` 本身总是新开标签、
- * 从不关闭已有的，所以它天然就是「多开」语义；而左栏点文件走 `openDocInMode`，
- * 默认会按 `openMode=replace` 先保存再关掉当前标签。两者由此区分开。
- *
- * 为了不让用户以为"打开方式设置被绕过"，这里给一次轻提示说明当前状态。
  */
 function onNewTabClick(): void {
   void app.createDoc({});
@@ -1804,12 +2092,6 @@ function onNewTabClick(): void {
   }
 }
 
-/**
- * 分屏分隔条的可拖动范围。
- *
- * min/max 用百分比表示，但 ResizeHandle 需要一个具体的数值区间，
- * 因此这里把「比例」换算成一个 0-100 的标尺，拖动时再除回比例。
- */
 const SPLIT_HANDLE_MIN = 20;
 const SPLIT_HANDLE_MAX = 80;
 const splitHandleValue = computed(() => Math.round(splitRatio.value * 100));
@@ -1819,25 +2101,77 @@ function onSplitHandleUpdate(value: number): void {
 }
 
 /**
- * 标签栏分屏按钮 / 右键菜单设置分屏方向（1.1.7）。
+ * 标签栏分屏按钮 / 右键菜单设置分屏方向（1.1.9 增强：默认同时打开不同文件）。
  *
- * 分屏是「两篇并排看」的功能，所以打开分屏时要确保第二栏有内容：
- * - 当前只有一个标签时，第二栏会退化为同一篇（`splitTab` 已做兜底），这是合理的；
- * - 关闭分屏只需把方向置为 none。
+ * 开启分屏时：
+ * 1. 若已有其它已打开的文档标签，优先选另一篇作为第二栏；
+ * 2. 若当前只有 1 个标签但仓库里还有别的文档，自动把仓库中另一篇文档打开到第二栏，
+ *    避免分屏一打开两边是同一篇文件（看起来像「当前文件预览」）。
  */
-function onSetSplit(dir: 'none' | 'v' | 'h'): void {
+async function onSetSplit(dir: 'none' | 'v' | 'h'): Promise<void> {
   if (dir === 'none') {
     splitDirection.value = 'none';
+    activePane.value = 'primary';
     return;
   }
-  // 用当前活动标签作为分屏的第二栏参考；若之前已指定过别的标签则保留
-  if (!splitTabId.value && activeTab.value) splitTabId.value = activeTab.value.id;
   splitDirection.value = dir;
+  const curId = activeTab.value?.id ?? '';
+  const validSplit = app.tabs.find(
+    (t) => t.id === splitTabId.value && t.id !== curId && t.id !== SETTINGS_TAB_ID && t.id !== PLUGIN_TAB_ID,
+  );
+  if (validSplit) return;
+
+  const otherTab = app.tabs.find(
+    (t) => t.id !== curId && t.id !== SETTINGS_TAB_ID && t.id !== PLUGIN_TAB_ID,
+  );
+  if (otherTab) {
+    splitTabId.value = otherTab.id;
+    return;
+  }
+
+  // 当前只有一个标签：从仓库中找另一篇文档自动打开到第二栏
+  const otherDoc = app.docs.find((d) => d.docId !== activeTab.value?.docId);
+  if (otherDoc) {
+    await chooseSplitDoc(otherDoc.docId);
+    activePane.value = 'primary';
+  } else if (activeTab.value) {
+    splitTabId.value = activeTab.value.id;
+  }
 }
 
-/* ---------------- 右侧栏功能区块（1.0.2） ---------------- */
+/**
+ * 标签栏右键「左右分屏 / 上下分屏」的入口（1.1.9 修「两栏显示同一篇」）。
+ *
+ * 改前直接把 `splitTabId` 设成被右键的那个标签。但最常用的操作恰恰是
+ * **右键当前正在编辑的标签** → 主栏和第二栏都渲染同一篇文档，
+ * 观感就是「当前文件的预览」，而不是用户要的「同时打开不同的文件」。
+ *
+ * 现在的规则：
+ * - 右键的标签 ≠ 主栏当前标签：把它放进第二栏，主栏不动 → 天然是两篇不同文件；
+ * - 右键的标签 = 主栏当前标签：转交 `onSetSplit`，由它按「优先其它已开标签、
+ *   否则从仓库里再打开一篇」去挑另一篇，保证两栏不是同一篇；
+ * - 已在同方向对同一标签分屏时再点一次：收起分屏（保留「再点一次取消」的手感）。
+ */
+async function splitTabIntoPane(id: string, dir: 'v' | 'h'): Promise<void> {
+  if (splitDirection.value === dir && splitTabId.value === id) {
+    splitDirection.value = 'none';
+    activePane.value = 'primary';
+    return;
+  }
+  const curId = activeTab.value?.id ?? '';
+  if (id === curId) {
+    await onSetSplit(dir);
+    return;
+  }
+  splitDirection.value = dir;
+  splitTabId.value = id;
+  // 不抢焦点：右键动作的意图是「并排看」，主栏仍应是操作目标
+  activePane.value = 'primary';
+}
 
-/** 右侧栏可显示的全部区块（顺序即按钮顺序） */
+/* ---------------- 右侧栏功能区块（1.1.9：多区块上下窗口堆叠 + 拖拽调整高度） ---------------- */
+
+/** 右侧栏可显示的全部区块（顺序即按钮与上下窗口堆叠顺序） */
 const RIGHT_SECTIONS: Array<{ id: RightPanelSection; label: string; icon: string }> = [
   { id: 'ai', label: 'AI 助手', icon: 'sparkles' },
   { id: 'file', label: '文件操作', icon: 'folder' },
@@ -1854,40 +2188,13 @@ function rightSectionOn(id: RightPanelSection): boolean {
   return list.includes(id);
 }
 
-/**
- * 右侧栏当前激活的区块（1.1.8）。
- *
- * 从「多选开关」改成「单选标签」：右侧栏一次只显示一个区块。
- * 取值来源：
- * 1. `localLayout.rightTab` —— 用户上次切到哪个（本机记忆，不参与云同步）；
- * 2. 若它不在已启用的区块列表里，回落到列表第一个；
- * 3. 列表为空时返回 null，模板给出提示文案。
- *
- * `localLayout.rightTab` 是 string（要容错任意脏数据），这里收窄成 RightPanelSection。
- */
-const rightActiveSection = computed<RightPanelSection | null>(() => {
+/** 当前已开启的右侧栏区块列表（按 RIGHT_SECTIONS 标准顺序排列，上下堆叠展示） */
+const enabledRightSections = computed<RightPanelSection[]>(() => {
   const enabled = settingsStore.settings.layout.rightPanelSections ?? [];
-  const remembered = localLayout.value.rightTab as RightPanelSection | '';
-  if (remembered && enabled.includes(remembered)) return remembered;
-  return enabled[0] ?? null;
+  return RIGHT_SECTIONS.map((s) => s.id).filter((id) => enabled.includes(id));
 });
 
-/**
- * 点击标签条切换区块。
- *
- * 若点的正是当前区块，则不做切换（保持稳定，避免误点后内容跳动）；
- * 若该区块未被启用，则**自动启用**它 —— 用户点图标就是要看它，
- * 弹一个"你没启用"的提示毫无意义。
- */
-function activateRightSection(id: RightPanelSection): void {
-  if (!rightSectionOn(id)) {
-    const list = [...(settingsStore.settings.layout.rightPanelSections ?? []), id];
-    settingsStore.updateLayout({ rightPanelSections: list });
-  }
-  updateLocalLayout({ rightTab: id });
-}
-
-/** 切换某个区块的显示状态（写回 layout.rightPanelSections） */
+/** 切换某个区块的开启/关闭状态（多选开关，支持同时打开多个操作区上下排列） */
 function toggleRightSection(id: RightPanelSection): void {
   const list = [...(settingsStore.settings.layout.rightPanelSections ?? [])];
   const idx = list.indexOf(id);
@@ -1896,8 +2203,86 @@ function toggleRightSection(id: RightPanelSection): void {
   settingsStore.updateLayout({ rightPanelSections: list });
 }
 
-/** 右侧栏「历史版本」区块展示的最近版本（进入面板时按需加载，默认空） */
+/** 获取某个右侧区块的默认高度（px） */
+function defaultRightSectionHeight(id: RightPanelSection): number {
+  if (id === 'ai') return 380;
+  if (id === 'file') return 300;
+  if (id === 'calendar') return 260;
+  return 220;
+}
+
+/** 读取某个右侧区块当前高度（优先用户拖拽记忆值） */
+function getRightSectionHeight(id: RightPanelSection): number {
+  const saved = localLayout.value.rightSectionHeights?.[id];
+  if (typeof saved === 'number' && Number.isFinite(saved)) return saved;
+  return defaultRightSectionHeight(id);
+}
+
+/** 拖动区块下方分隔条时更新该区块高度并持久化到 localLayout */
+function setRightSectionHeight(id: RightPanelSection, height: number): void {
+  const clamped = Math.min(RIGHT_SECTION_HEIGHT_MAX, Math.max(RIGHT_SECTION_HEIGHT_MIN, Math.round(height)));
+  updateLocalLayout({
+    rightSectionHeights: {
+      ...(localLayout.value.rightSectionHeights ?? {}),
+      [id]: clamped,
+    },
+  });
+}
+
+/**
+ * 单个右侧子系统窗口的内联尺寸（1.1.9 重做）。
+ *
+ * 用户原话：「右侧多个操作区每个高度可调，但最后一个面板下方有多余手柄、总高不足时留白、
+ * 超出时出现双滚动条」。
+ *
+ * 三条规则：
+ * 1. 只有一个区块：让它占满整个右侧栏（`flex: 1 1 auto`），不需要拖（也没有手柄）；
+ * 2. 多个区块里的**非末位**：用用户拖过的固定高度（`flex: 0 0 auto` + height）。
+ *    `flex-shrink: 0` 是关键 —— 否则总高超出时这些块会被压缩，
+ *    高度记忆值看起来「不生效」，而且压缩后的块内部再滚一层，就又变成双滚动条；
+ * 3. 多个区块里的**末位**：不再给固定高度，而是 `flex: 1 1 0` 吃掉剩余空间。
+ *    这样「总高不足」时是末位块填满容器 → 不再留白；
+ *    「总高超出」时末位块缩到 minHeight（80px），超出部分由外层 `.rightstack`
+ *    唯一的那条滚动条承担 → 不再双滚动条。
+ */
+function rightPaneStyle(id: RightPanelSection, idx: number): Record<string, string> {
+  if (enabledRightSections.value.length === 1) {
+    return { flex: '1 1 auto', minHeight: '160px' };
+  }
+  if (idx === enabledRightSections.value.length - 1) {
+    return { flex: '1 1 0', minHeight: `${RIGHT_SECTION_HEIGHT_MIN}px` };
+  }
+  return { height: `${getRightSectionHeight(id)}px`, flex: '0 0 auto' };
+}
+
+/** 右侧栏「历史版本」区块展示的最近版本 */
 const cloudVersions = ref<Array<{ id: string; rev: number; createdAt: number; label?: string }>>([]);
+
+async function loadRightHistoryVersions(): Promise<void> {
+  const docId = activeTab.value?.docId;
+  if (!docId || !app.vault || !rightSectionOn('history')) {
+    cloudVersions.value = [];
+    return;
+  }
+  try {
+    const local = await app.vault.listVersions(docId);
+    if (local.length) {
+      cloudVersions.value = local;
+      return;
+    }
+    cloudVersions.value = await app.listCloudVersions(docId);
+  } catch {
+    cloudVersions.value = [];
+  }
+}
+
+watch(
+  () => [activeTab.value?.docId, activeTab.value?.dirty, rightSectionOn('history')] as const,
+  () => {
+    void loadRightHistoryVersions();
+  },
+  { immediate: true },
+);
 
 const settingsTabOpen = computed(() => app.tabs.some((t) => t.id === SETTINGS_TAB_ID));
 const isSettingsActive = computed(() => app.activeTabId === SETTINGS_TAB_ID);
@@ -1909,6 +2294,15 @@ const isPluginActive = computed(() => app.activeTabId === PLUGIN_TAB_ID);
 const isFlowTab = computed(() => /\.flow$/i.test(activeTab.value?.path ?? ''));
 /** 当前标签是否是思维导图 */
 const isMindTab = computed(() => /\.mind$/i.test(activeTab.value?.path ?? ''));
+
+/**
+ * 分屏第二栏标签的图文档判定（1.1.9）。
+ *
+ * 只看 `splitTab.path` 的扩展名。图文档的内容是 JSON，若落进 markdown 编辑器，
+ * 用户会看到一大段 `{"nodes":[...]}` 文本，等于第二栏废掉。
+ */
+const isSplitFlowTab = computed(() => /\.flow$/i.test(splitTab.value?.path ?? ''));
+const isSplitMindTab = computed(() => /\.mind$/i.test(splitTab.value?.path ?? ''));
 
 /**
  * 新建图文档并打开。
@@ -1985,12 +2379,15 @@ const tabBarTabs = computed(() =>
 <template>
   <div class="shell" :class="{ 'is-narrow': narrow }">
     <!--
-      启动骨架屏（1.1.8）。
-      用户要求「像 Obsidian 那样打开即用」：这里直接画出**编辑器布局骨架**
-      （左侧栏 + 工具栏 + 正文区占位），而不是一个居中的转圈文字。
-      视觉上「已经打开了」，等真实内容就绪后原地替换，不做整页重渲染。
+      外壳骨架（1.1.9 启动极速化：只在**首帧之前**出现）。
+
+      原实现是 `v-if="booting"` 挡住整个工作台，直到仓库索引 + 全部标签正文读完
+      才一次性渲染 —— 用户看到全屏骨架的时间等于完整启动时间。
+
+      现在 `shellReady` 在 onMounted 里 nextTick 就置 true（不等待 boot()），
+      所以这个骨架通常只存在一帧：作用只是避免「DOM 还没挂载」时的白屏闪烁。
     -->
-    <div v-if="booting" class="skel" role="status" aria-live="polite" aria-label="正在打开工作台">
+    <div v-if="!shellReady" class="skel" role="status" aria-live="polite" aria-label="正在打开工作台">
       <!-- 顶部工具条骨架 -->
       <div class="skel__bar">
         <span class="skel__dot" />
@@ -2021,14 +2418,15 @@ const tabBarTabs = computed(() =>
       <p class="skel__phase">{{ bootPhase }}</p>
     </div>
 
-    <div v-else-if="bootError" class="boot">
-      <NmIcon name="alert" :size="26" />
-      <p class="boot__error">{{ bootError }}</p>
-      <button class="nm-btn nm-btn--primary" @click="boot">重试</button>
-    </div>
-
     <template v-else>
-      <main class="shell__main">
+      <!-- 启动失败：整体替换为错误面板（此时连仓库都没打开，外壳没有可展示的数据） -->
+      <div v-if="bootError && !docReady" class="boot">
+        <NmIcon name="alert" :size="26" />
+        <p class="boot__error">{{ bootError }}</p>
+        <button class="nm-btn nm-btn--primary" @click="boot">重试</button>
+      </div>
+
+      <main v-else class="shell__main">
         <!-- 主工作区：左侧栏置顶直通顶部，标签栏从左侧栏结束的位置开始 -->
         <div class="shell__body">
           <!--
@@ -2055,6 +2453,7 @@ const tabBarTabs = computed(() =>
             <!-- 末位固定按钮：插件商店（竖排时贴底，见 .ribbon__btn--bottom） -->
             <button
               class="ribbon__btn ribbon__btn--bottom"
+              :class="{ 'is-on': isPluginActive }"
               :title="ribbonBottomAction.title"
               :data-ribbon-bottom="ribbonBottomAction.id"
               @click="onPanelAction(ribbonBottomAction.id)"
@@ -2069,8 +2468,8 @@ const tabBarTabs = computed(() =>
             :style="{ width: `${localLayout.leftWidth}px` }"
           >
             <LeftPanel
-              :docs="app.docs"
-              :active-doc-id="activeTab?.docId ?? ''"
+              :docs="app.docsForPanel"
+              :active-doc-id="(splitDirection !== 'none' && activePane === 'split' ? splitTab?.docId : activeTab?.docId) ?? ''"
               :show-recent="layout.showRecent"
               :recent-count="layout.recentCount"
               :view="layout.leftPanelMode"
@@ -2194,8 +2593,12 @@ const tabBarTabs = computed(() =>
                     :initial-tab="settingsTab"
                     @close="closeSettingsTab"
                   />
-                  <!-- 插件商店标签页：功能区入口，新标签页打开可进入配置 -->
-                  <PluginCenter v-else-if="isPluginActive" embedded />
+                  <!--
+                    插件商店标签页：功能区入口，新标签页打开可进入配置。
+                    `:open="true"` 显式告诉组件「已经打开」——组件内部据此触发市场/已装插件的加载
+                    （它原本只在 props.open 变化时加载，标签页形态下不传就会一片空白）。
+                  -->
+                  <PluginCenter v-else-if="isPluginActive" embedded :open="true" />
                   <!-- 流程图 / 思维导图：按文件扩展名分流到专用编辑器（1.1.0） -->
                   <FlowchartEditor
                     v-else-if="isFlowTab"
@@ -2222,7 +2625,13 @@ const tabBarTabs = computed(() =>
                     滚动条就落在了 1226px 处（离右边界 1440px 差 214px）—— 用户看到的
                     「滚动条在页面中间」正是这个。
                   -->
-                  <div v-else class="shell__content" @contextmenu="openEditorMenu">
+                  <div
+                    v-else
+                    class="shell__content"
+                    :class="{ 'is-pane-active': splitDirection !== 'none' && activePane === 'primary' }"
+                    @mousedown="activePane = 'primary'"
+                    @contextmenu="openEditorMenu"
+                  >
                     <div class="shell__page" :class="pageWidthClass">
                     <template v-if="activeTab">
                       <WysiwygEditor
@@ -2241,8 +2650,8 @@ const tabBarTabs = computed(() =>
                             :key="`t-${activeTab.id}`"
                             :model-value="activeTab.title"
                             :font-size="effectiveFontSize + 2"
-                            :padding-left="32"
-                            :padding-right="32"
+                            :padding-left="settingsStore.settings.appearance.showLineNumbers ? 36 : 0"
+                            :padding-right="0"
                             @rename="(next: string) => renameActiveDoc(next)"
                           />
                         </template>
@@ -2263,7 +2672,7 @@ const tabBarTabs = computed(() =>
                             :key="`ts-${activeTab.id}`"
                             :model-value="activeTab.title"
                             :font-size="effectiveFontSize + 2"
-                            :padding-left="46"
+                            :padding-left="sourceTitlePadLeft"
                             :padding-right="32"
                             @rename="(next: string) => renameActiveDoc(next)"
                           />
@@ -2275,10 +2684,63 @@ const tabBarTabs = computed(() =>
                         :model-value="activeTab.content"
                         :font-size="effectiveFontSize"
                         :line-height="settingsStore.settings.appearance.lineHeight"
+                        :show-line-numbers="settingsStore.settings.appearance.showLineNumbers"
                         @update:model-value="(v: string) => app.updateTabContent(activeTab!.id, v)"
-                      />
-                      <ReadView v-else :key="`r-${activeTab.id}`" :model-value="activeTab.content" :title="activeTab.title" />
+                      >
+                        <template #title>
+                          <DocTitleLine
+                            :key="`tc-${activeTab.id}`"
+                            :model-value="activeTab.title"
+                            :font-size="effectiveFontSize + 2"
+                            :padding-left="sourceTitlePadLeft"
+                            :padding-right="32"
+                            @rename="(next: string) => renameActiveDoc(next)"
+                          />
+                        </template>
+                        <!-- 对照模式右侧预览区也要有同一行文件名，两栏首行才对得齐 -->
+                        <template #preview-title>
+                          <DocTitleLine
+                            :key="`tcp-${activeTab.id}`"
+                            :model-value="activeTab.title"
+                            :font-size="effectiveFontSize + 2"
+                            :padding-left="sourceTitlePadLeft"
+                            :padding-right="32"
+                            @rename="(next: string) => renameActiveDoc(next)"
+                          />
+                        </template>
+                      </CompareView>
+                      <ReadView
+                        v-else
+                        :key="`r-${activeTab.id}`"
+                        :model-value="activeTab.content"
+                        :title="activeTab.title"
+                        :font-size="effectiveFontSize"
+                        :line-height="settingsStore.settings.appearance.lineHeight"
+                      >
+                        <template #title>
+                          <DocTitleLine
+                            :key="`tr-${activeTab.id}`"
+                            :model-value="activeTab.title"
+                            :font-size="effectiveFontSize + 2"
+                            :padding-left="0"
+                            :padding-right="0"
+                            readonly
+                          />
+                        </template>
+                      </ReadView>
                     </template>
+                    <!--
+                      正文加载中的占位（1.1.9）。
+                      与空状态区分开：`activeTab` 还没建出来时，如果直接落到「还没有打开任何文档」，
+                      用户会以为文档丢了。这里只挡住正文区，左侧栏和标签栏此刻已经可以操作了。
+                    -->
+                    <div v-else-if="!docReady" class="docboot" role="status" aria-live="polite">
+                      <span class="docboot__title" />
+                      <span class="docboot__line" />
+                      <span class="docboot__line docboot__line--w90" />
+                      <span class="docboot__line docboot__line--w70" />
+                      <p class="docboot__phase">{{ bootPhase }}</p>
+                    </div>
                     <div v-else class="empty">
                       <div class="empty__mark">N</div>
                       <h2>还没有打开任何文档</h2>
@@ -2293,9 +2755,6 @@ const tabBarTabs = computed(() =>
 
                   <!--
                     分屏分隔条（1.1.7）：两栏之间可拖动调整占比。
-                    竖向分屏 → direction=vertical（左右拖，改宽度）；
-                    横向分屏 → direction=horizontal（上下拖，改高度）。
-                    比例存 localStorage（splitRatio），重启后保持。
                   -->
                   <ResizeHandle
                     v-if="splitDirection !== 'none' && splitTab"
@@ -2310,22 +2769,21 @@ const tabBarTabs = computed(() =>
                   />
 
                   <!--
-                    分屏第二栏（1.1.8 真分屏）。
-                    用户要求：「不是当前文件预览；而是可以同时打开不同的文件」。
-                    因此这里渲染**真正的编辑器**（所见即所得 / 源码），
-                    并带自己的标签选择器，可切到任意已打开标签、独立编辑与滚动。
+                    分屏第二栏（1.1.9 真分屏：可独立选择打开仓库内任意不同文件并编辑）。
                   -->
                   <div
                     v-if="splitDirection !== 'none' && splitTab"
                     class="shell__splitpane"
+                    :class="{ 'is-pane-active': activePane === 'split' }"
                     :style="{ flex: `0 0 ${splitRatio * 100}%` }"
+                    @mousedown="activePane = 'split'"
                   >
                     <div class="splitpane__head">
-                      <!-- 第二栏自己的标签选择器 -->
+                      <!-- 第二栏自己的文档/标签选择器：支持已打开标签 + 仓库全部其它文档 -->
                       <div class="splitpane__picker">
                         <button
                           class="splitpane__pickbtn"
-                          :title="`切换此栏显示的文档（当前：${splitTab.title}）`"
+                          :title="`切换此分屏显示的文档（当前：${splitTab.title}）`"
                           aria-haspopup="menu"
                           :aria-expanded="splitPickerOpen"
                           @click="splitPickerOpen = !splitPickerOpen"
@@ -2335,6 +2793,7 @@ const tabBarTabs = computed(() =>
                           <NmIcon name="chevronDown" :size="10" />
                         </button>
                         <div v-if="splitPickerOpen" class="splitpane__pickmenu" role="menu" @mousedown.stop>
+                          <div v-if="splitSelectableTabs.length" class="splitpane__pickgroup">已打开标签</div>
                           <button
                             v-for="t in splitSelectableTabs"
                             :key="`sp-pick-${t.id}`"
@@ -2344,20 +2803,64 @@ const tabBarTabs = computed(() =>
                             :aria-checked="t.id === splitTab.id"
                             @click="chooseSplitTab(t.id)"
                           >
+                            <NmIcon name="file" :size="12" />
                             <span class="splitpane__picktext">{{ t.title }}</span>
                             <NmIcon v-if="t.id === splitTab.id" name="check" :size="11" />
                           </button>
-                          <p v-if="!splitSelectableTabs.length" class="splitpane__pickempty">没有可选的标签</p>
+                          <template v-if="splitUnopenedDocs.length">
+                            <div class="splitpane__pickgroup">仓库其他文档</div>
+                            <button
+                              v-for="d in splitUnopenedDocs"
+                              :key="`sp-doc-${d.docId}`"
+                              class="splitpane__pickitem"
+                              role="menuitem"
+                              @click="chooseSplitDoc(d.docId)"
+                            >
+                              <NmIcon name="file" :size="12" />
+                              <span class="splitpane__picktext">{{ d.title }}</span>
+                            </button>
+                          </template>
+                          <p v-if="!splitSelectableTabs.length && !splitUnopenedDocs.length" class="splitpane__pickempty">
+                            没有可选的文档
+                          </p>
                         </div>
                       </div>
-                      <button class="splitpane__close" title="关闭分屏" @click="splitDirection = 'none'">
+                      <button class="splitpane__close" title="关闭分屏" @click="onSetSplit('none')">
                         <NmIcon name="close" :size="13" />
                       </button>
                     </div>
-                    <div class="splitpane__body">
-                      <!-- 第二栏是完整编辑器：与主栏同一份数据源，任一侧修改都会同步到同一标签 -->
+                    <div class="splitpane__body" :class="pageWidthClass">
+                      <!--
+                        分屏第二栏按标签自己的 `mode` 分流（1.1.9 补齐）。
+
+                        改前只有两个分支：`mode !== 'source'` 一律 WysiwygEditor，否则 SourceEditor。
+                        于是第二栏选了「阅读视图」或「对照模式」的标签时，
+                        渲染出来的仍是所见即所得编辑器 —— 用户切到阅读视图，第二栏却还能打字。
+                        现在补上 read / compare 两个分支，与主栏的四分支保持一致。
+
+                        图文档（.flow / .mind）额外前置一个分支：它们是 JSON 内容，
+                        当成 markdown 渲染只会得到一团乱码，必须交给专用编辑器。
+                      -->
+                      <FlowchartEditor
+                        v-if="isSplitFlowTab"
+                        :key="`sp-flow-${splitTab.id}`"
+                        class="splitpane__editor"
+                        :model-value="splitTab.content"
+                        :title="splitTab.title"
+                        @update:model-value="(v: string) => app.updateTabContent(splitTab!.id, v)"
+                        @save="saveAndSync"
+                      />
+                      <MindmapEditor
+                        v-else-if="isSplitMindTab"
+                        :key="`sp-mind-${splitTab.id}`"
+                        class="splitpane__editor"
+                        :model-value="splitTab.content"
+                        :title="splitTab.title"
+                        @update:model-value="(v: string) => app.updateTabContent(splitTab!.id, v)"
+                        @save="saveAndSync"
+                      />
                       <WysiwygEditor
-                        v-if="splitTab.mode !== 'source'"
+                        v-else-if="splitTab.mode === 'wysiwyg' || !splitTab.mode"
                         :key="`sp-w-${splitTab.id}`"
                         ref="splitWysiwygRef"
                         class="splitpane__editor"
@@ -2366,9 +2869,20 @@ const tabBarTabs = computed(() =>
                         :line-height="settingsStore.settings.appearance.lineHeight"
                         :title="splitTab.title"
                         @update:model-value="(v: string) => app.updateTabContent(splitTab!.id, v)"
-                      />
+                      >
+                        <template #title>
+                          <DocTitleLine
+                            :key="`spt-w-${splitTab.id}`"
+                            :model-value="splitTab.title"
+                            :font-size="effectiveFontSize + 2"
+                            :padding-left="settingsStore.settings.appearance.showLineNumbers ? 36 : 0"
+                            :padding-right="0"
+                            @rename="(next: string) => renameSplitDoc(next)"
+                          />
+                        </template>
+                      </WysiwygEditor>
                       <SourceEditor
-                        v-else
+                        v-else-if="splitTab.mode === 'source'"
                         :key="`sp-s-${splitTab.id}`"
                         class="splitpane__editor"
                         :model-value="splitTab.content"
@@ -2376,7 +2890,69 @@ const tabBarTabs = computed(() =>
                         :font-size="effectiveFontSize"
                         :line-height="settingsStore.settings.appearance.lineHeight"
                         @update:model-value="(v: string) => app.updateTabContent(splitTab!.id, v)"
-                      />
+                      >
+                        <template #title>
+                          <DocTitleLine
+                            :key="`spt-s-${splitTab.id}`"
+                            :model-value="splitTab.title"
+                            :font-size="effectiveFontSize + 2"
+                            :padding-left="sourceTitlePadLeft"
+                            :padding-right="32"
+                            @rename="(next: string) => renameSplitDoc(next)"
+                          />
+                        </template>
+                      </SourceEditor>
+                      <CompareView
+                        v-else-if="splitTab.mode === 'compare'"
+                        :key="`sp-c-${splitTab.id}`"
+                        class="splitpane__editor"
+                        :model-value="splitTab.content"
+                        :font-size="effectiveFontSize"
+                        :line-height="settingsStore.settings.appearance.lineHeight"
+                        :show-line-numbers="settingsStore.settings.appearance.showLineNumbers"
+                        @update:model-value="(v: string) => app.updateTabContent(splitTab!.id, v)"
+                      >
+                        <template #title>
+                          <DocTitleLine
+                            :key="`spt-c-${splitTab.id}`"
+                            :model-value="splitTab.title"
+                            :font-size="effectiveFontSize + 2"
+                            :padding-left="sourceTitlePadLeft"
+                            :padding-right="32"
+                            @rename="(next: string) => renameSplitDoc(next)"
+                          />
+                        </template>
+                        <template #preview-title>
+                          <DocTitleLine
+                            :key="`spt-cp-${splitTab.id}`"
+                            :model-value="splitTab.title"
+                            :font-size="effectiveFontSize + 2"
+                            :padding-left="sourceTitlePadLeft"
+                            :padding-right="32"
+                            @rename="(next: string) => renameSplitDoc(next)"
+                          />
+                        </template>
+                      </CompareView>
+                      <ReadView
+                        v-else
+                        :key="`sp-r-${splitTab.id}`"
+                        class="splitpane__editor"
+                        :model-value="splitTab.content"
+                        :title="splitTab.title"
+                        :font-size="effectiveFontSize"
+                        :line-height="settingsStore.settings.appearance.lineHeight"
+                      >
+                        <template #title>
+                          <DocTitleLine
+                            :key="`spt-r-${splitTab.id}`"
+                            :model-value="splitTab.title"
+                            :font-size="effectiveFontSize + 2"
+                            :padding-left="0"
+                            :padding-right="0"
+                            readonly
+                          />
+                        </template>
+                      </ReadView>
                     </div>
                   </div>
                 </div>
@@ -2397,21 +2973,20 @@ const tabBarTabs = computed(() =>
 
               <div v-if="layout.rightPanelOpen && !narrow" class="shell__right" :style="{ width: `${localLayout.rightWidth}px` }">
                 <!--
-                  右侧栏标签条（1.1.8）：单选式切换，一次只显示一个区块。
-                  改前这里是「多选开关」（点一下显示/再点隐藏），配合下方全部区块上下堆叠，
-                  与 AiPanel 内部的标签切换形成两套交互。现在统一成标签语义。
+                  右侧栏顶部区块开关条（1.1.9）：
+                  支持多选同时开启多个操作区（上下窗口堆叠），且每个操作区可独立拖拽调整高度；
+                  AI 助手与文件操作也拆分为两个对等的独立上下窗口区块，所有功能交互完全统一。
                 -->
-                <div class="righttabs" role="tablist" aria-label="右侧栏功能">
+                <div class="righttabs" role="toolbar" aria-label="右侧栏功能区块开关">
                   <button
                     v-for="s in RIGHT_SECTIONS"
                     :key="s.id"
                     class="righttabs__btn"
-                    :class="{ 'is-on': rightActiveSection === s.id }"
-                    :title="s.label"
-                    role="tab"
-                    :aria-selected="rightActiveSection === s.id"
+                    :class="{ 'is-on': rightSectionOn(s.id) }"
+                    :title="`${s.label}（点击开启/关闭此窗口）`"
+                    :aria-pressed="rightSectionOn(s.id)"
                     :data-right-tab="s.id"
-                    @click="activateRightSection(s.id)"
+                    @click="toggleRightSection(s.id)"
                   >
                     <NmIcon :name="s.icon" :size="13" />
                   </button>
@@ -2425,58 +3000,88 @@ const tabBarTabs = computed(() =>
                 </div>
 
                 <div class="rightstack nm-scroll">
-                  <!--
-                    1.1.8：右侧栏统一为「标签切换」——一次只渲染当前激活的那个区块。
-                    改前：AiPanel（自带 ai/file 标签）与其它 RightSection 上下堆叠共存，
-                    导致用户在同一个面板里遇到两种交互模型（标签切换 + 上下滚动），
-                    这正是用户抱怨的「打开 AI 和文件操作是标签切换，打开其他功能是上下窗口」。
-                    现在顶部图标条就是唯一的标签栏，下面只放一个区块。
-                  -->
-                  <AiPanel
-                    v-if="rightActiveSection === 'ai' || rightActiveSection === 'file'"
-                    :active-tab="rightActiveSection === 'file' ? 'file' : 'ai'"
-                    @close="settingsStore.updateLayout({ rightPanelOpen: false })"
-                    @file-op="onFileOp"
-                  />
-                  <RightSection
-                    v-else-if="rightActiveSection === 'outline'"
-                    section="outline"
-                    :outline="headings.map((h) => ({ level: h.level, text: h.text }))"
-                    @jump="jumpToHeadingText"
-                  />
-                  <RightSection
-                    v-else-if="rightActiveSection === 'backlinks'"
-                    section="backlinks"
-                    :doc-id="activeTab?.docId"
-                    :title="activeTab?.title"
-                    :docs="app.docs"
-                    @open-doc="(id: string) => app.openDoc(id)"
-                  />
-                  <RightSection
-                    v-else-if="rightActiveSection === 'tags'"
-                    section="tags"
-                    :content="activeTab?.content ?? ''"
-                  />
-                  <RightSection
-                    v-else-if="rightActiveSection === 'history'"
-                    section="history"
-                    :versions="cloudVersions"
-                    @open-version="historyOpen = true"
-                  />
-                  <RightSection
-                    v-else-if="rightActiveSection === 'stats'"
-                    section="stats"
-                    :content="activeTab?.content ?? ''"
-                  />
-                  <RightSection
-                    v-else-if="rightActiveSection === 'calendar'"
-                    section="calendar"
-                    :docs="app.docs"
-                    @open-daily="(date: string) => openDaily(date)"
-                  />
-                  <!-- 所有区块都被关掉时给一条提示，避免右侧栏空白一片 -->
-                  <p v-if="!rightActiveSection" class="rightstack__empty">
-                    点上方图标选择要显示的区块（AI 助手 / 文件操作 / 大纲 / 反链 / 标签 / 历史 / 统计 / 日历）
+                  <template v-for="(secId, idx) in enabledRightSections" :key="secId">
+                    <div
+                      class="rightstack__pane"
+                      :class="{
+                        'rightstack__pane--single': enabledRightSections.length === 1,
+                        'rightstack__pane--last': idx === enabledRightSections.length - 1,
+                      }"
+                      :data-right-pane="secId"
+                      :style="rightPaneStyle(secId, idx)"
+                    >
+                      <AiPanel
+                        v-if="secId === 'ai' || secId === 'file'"
+                        :active-tab="secId === 'file' ? 'file' : 'ai'"
+                        @close="toggleRightSection(secId)"
+                        @file-op="onFileOp"
+                      />
+                      <RightSection
+                        v-else-if="secId === 'outline'"
+                        section="outline"
+                        :outline="headings.map((h) => ({ level: h.level, text: h.text }))"
+                        @jump="jumpToHeadingText"
+                        @close="toggleRightSection(secId)"
+                      />
+                      <RightSection
+                        v-else-if="secId === 'backlinks'"
+                        section="backlinks"
+                        :doc-id="activeTab?.docId"
+                        :title="activeTab?.title"
+                        :docs="app.docs"
+                        @open-doc="(id: string) => openDocInMode(id)"
+                        @close="toggleRightSection(secId)"
+                      />
+                      <RightSection
+                        v-else-if="secId === 'tags'"
+                        section="tags"
+                        :content="activeTab?.content ?? ''"
+                        @close="toggleRightSection(secId)"
+                      />
+                      <RightSection
+                        v-else-if="secId === 'history'"
+                        section="history"
+                        :versions="cloudVersions"
+                        @open-version="historyOpen = true"
+                        @close="toggleRightSection(secId)"
+                      />
+                      <RightSection
+                        v-else-if="secId === 'stats'"
+                        section="stats"
+                        :content="activeTab?.content ?? ''"
+                        @close="toggleRightSection(secId)"
+                      />
+                      <RightSection
+                        v-else-if="secId === 'calendar'"
+                        section="calendar"
+                        :docs="app.docs"
+                        @open-daily="(date: string) => openDaily(date)"
+                        @close="toggleRightSection(secId)"
+                      />
+                    </div>
+                    <!--
+                      只有「非最后一块」的下方才有手柄（1.1.9 修）。
+                      改前条件是 `idx < enabledRightSections.length` —— 恒为 true，
+                      于是最后一块下面也画了一条手柄，用户拖它会把最后一块拉出容器、露出空白。
+
+                      为什么最后一个区块下面不该有手柄：它的高度不是由用户给定，
+                      而是「吃掉剩余空间」（见 rightPaneStyle），拖它没有可分配的对象。
+                    -->
+                    <ResizeHandle
+                      v-if="enabledRightSections.length > 1 && idx < enabledRightSections.length - 1"
+                      :key="`rh-${secId}`"
+                      direction="horizontal"
+                      :value="getRightSectionHeight(secId)"
+                      :min="RIGHT_SECTION_HEIGHT_MIN"
+                      :max="RIGHT_SECTION_HEIGHT_MAX"
+                      :default-value="defaultRightSectionHeight(secId)"
+                      :label="`调整「${RIGHT_SECTIONS.find((x) => x.id === secId)?.label ?? secId}」高度`"
+                      @update="(h: number) => setRightSectionHeight(secId, h)"
+                    />
+                  </template>
+                  <!-- 所有区块都被关掉时给一条提示 -->
+                  <p v-if="!enabledRightSections.length" class="rightstack__empty">
+                    点上方图标开启要显示的窗口（AI 助手 / 文件操作 / 大纲 / 反链 / 标签 / 历史 / 统计 / 日历，可同时打开多个并拖动调整高度）
                   </p>
                 </div>
               </div>
@@ -2488,12 +3093,14 @@ const tabBarTabs = computed(() =>
                   class="ribbon__btn"
                   :title="r.title"
                   @click="onPanelAction(r.id)"
+                  @contextmenu="openRibbonMenu($event, r.id, r.title)"
                 >
                   <NmIcon :name="r.icon" :size="16" />
                 </button>
                 <!-- 末位固定按钮：插件商店（竖排时贴底，见 .ribbon__btn--bottom） -->
                 <button
                   class="ribbon__btn ribbon__btn--bottom"
+                  :class="{ 'is-on': isPluginActive }"
                   :title="ribbonBottomAction.title"
                   :data-ribbon-bottom="ribbonBottomAction.id"
                   @click="onPanelAction(ribbonBottomAction.id)"
@@ -2550,6 +3157,14 @@ const tabBarTabs = computed(() =>
               >
                 <NmIcon :name="r.icon" :size="13" />
               </button>
+              <button
+                class="st"
+                :class="{ 'is-on': isPluginActive }"
+                :title="ribbonBottomAction.title"
+                @click="onPanelAction(ribbonBottomAction.id)"
+              >
+                <NmIcon :name="ribbonBottomAction.icon" :size="13" />
+              </button>
             </template>
           </div>
           <div class="statusbar__right">
@@ -2562,6 +3177,14 @@ const tabBarTabs = computed(() =>
                 @click="onPanelAction(r.id)"
               >
                 <NmIcon :name="r.icon" :size="13" />
+              </button>
+              <button
+                class="st"
+                :class="{ 'is-on': isPluginActive }"
+                :title="ribbonBottomAction.title"
+                @click="onPanelAction(ribbonBottomAction.id)"
+              >
+                <NmIcon :name="ribbonBottomAction.icon" :size="13" />
               </button>
             </template>
             <button class="st" title="点击复制字数" @click="copyNumberStat(wordCount.words, '字数')">
@@ -2855,20 +3478,26 @@ const tabBarTabs = computed(() =>
   place-items: center;
   color: var(--fg-3);
 }
-.ribbon__btn:hover {
+.ribbon__btn:hover,
+.ribbon__btn.is-on {
   background: var(--bg-hover);
   color: var(--accent);
+}
+.ribbon__btn.is-on {
+  background: var(--bg-active);
 }
 /*
  * 功能区末位固定按钮（1.1.8）：竖排时贴底。
  *
- * 用户原话：「功能区最后一个图标，如果在左侧或右侧就最下对齐」。
- * `.ribbon` 是 flex-direction: column 且高度撑满，`margin-top: auto`
- * 会把这一项推到容器底部；横排（状态栏内嵌）时该规则不适用，
- * 因为那些按钮不在 `.ribbon` 容器里。
+ * 1.1.9 修「不贴底」：原来还挂着 `margin-bottom: 6px`，实测功能区高 770px、
+ * 按钮底边 764px、距底 6px —— 用户看到的就是「差一点没到底」。
+ * 用户要求「最下对齐」，因此把这段外边距归零，`margin-top: auto` 单独负责把它推到最下方。
+ * `.ribbon` 自身的底部 padding 也必须是 0（见上方注释），否则同样会顶起 8px。
+ * 左右两个停靠位共用这一个类，所以两边一起生效。
  */
 .ribbon__btn--bottom {
   margin-top: auto;
+  margin-bottom: 0;
 }
 .shell__doc {
   flex: 1 1 auto;
@@ -2909,11 +3538,60 @@ const tabBarTabs = computed(() =>
   background: var(--bg-hover);
   color: var(--fg);
 }
+/*
+ * 正文/设置/插件/图编辑器的容器行（1.1.9 修「分屏被吞或挤坏」）。
+ *
+ * `flex: 1 1 0%` 里的 **0% 是关键**：原来的 `flex: 1 1 auto` 意味着基准尺寸取
+ * 内容宽度（auto），而设置页、插件商店、流程图这些子组件的最小内容宽度都很大
+ * （设置页左侧导航 + 表单、插件商店 168px 导航 + 卡片网格），
+ * 于是这个容器会被内容撑到超出可用宽度，同一行里的分屏第二栏就被挤出去 / 压成 0。
+ * 改成 0% 基准后，容器严格按剩余空间分配，子组件自己负责内部滚动。
+ *
+ * `min-width: 0` 同理：flex item 默认 `min-width: auto`，不加这一条依然会被内容顶开。
+ */
 .shell__panes {
-  flex: 1 1 auto;
+  flex: 1 1 0%;
   min-height: 0;
   min-width: 0;
   display: flex;
+}
+/*
+ * 主栏里承载「设置 / 插件商店 / 图编辑器 / 正文」的那个子项也必须能收缩，
+ * 否则上面 0% 基准省下来的空间又会被它自己顶回去。
+ */
+.shell__panes > .shell__content,
+.shell__panes > :deep(.settings-page),
+.shell__panes > :deep(.plugincenter-shell) {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+}
+/*
+ * 图编辑器（流程图 / 思维导图）也是 `.shell__panes` 的直接子项。
+ *
+ * 它们的根节点是纵向 flex 容器：一条 48px 工具栏 + 画布。画布的最小内容宽度
+ * 由 SVG / 节点坐标决定，一旦不限制就会把父容器顶宽（用户报的「页面错乱 / 横向溢出」）。
+ * 这里统一钉住布局契约：占满剩余空间、允许收缩、内部自己滚动。
+ * 图组件自身的样式归 diagram 任务，所以只用 :deep 兜布局，不改它们的文件。
+ */
+.shell__panes > :deep(.flow),
+.shell__panes > :deep(.mind) {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+/* 分屏第二栏里的图编辑器同理（它外面还多套一层 .splitpane__body） */
+.shell__splitpane :deep(.flow),
+.shell__splitpane :deep(.mind) {
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 .shell__panes--v {
   flex-direction: row;
@@ -3026,6 +3704,38 @@ const tabBarTabs = computed(() =>
   margin: 6px 9px 8px;
   font-size: 12px;
   color: var(--fg-3);
+}
+.splitpane__pickgroup {
+  padding: 5px 8px 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--fg-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.rightstack__pane {
+  display: flex;
+  flex-direction: column;
+  min-height: 80px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+/*
+ * 末位区块不画下边框（1.1.9）。
+ *
+ * 改前用 `:last-of-type` 判断，但堆叠容器里夹着 ResizeHandle（它根节点也是 div），
+ * 于是「最后一个 div」永远是手柄而不是区块 —— 末位区块的下边框一直存在，
+ * 加上手柄的边框，视觉上就是「最后一块下面多了一条线」。
+ * 现在改由模板显式打 `--last`，不再依赖 DOM 顺序猜测。
+ */
+.rightstack__pane--last {
+  border-bottom: none;
+}
+.rightstack__pane :deep(.rsection),
+.rightstack__pane :deep(.ai) {
+  flex: 1 1 auto;
+  height: 100%;
+  min-height: 0;
 }
 /*
  * 分屏第二栏的身体区（1.1.8）。
@@ -3504,6 +4214,48 @@ const tabBarTabs = computed(() =>
   .skel__line,
   .skel__title,
   .skel__search {
+    animation: none;
+  }
+}
+/*
+ * 正文加载占位（1.1.9）。
+ *
+ * 比整页骨架轻得多：只有标题行 + 三行正文的灰条，且**不覆盖**外壳。
+ * 用户此时已经能点左侧文件、切标签、用工具栏，看到这几条灰条只说明「这篇还在读」。
+ */
+.docboot {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 40px 32px;
+  min-height: 220px;
+}
+.docboot__title,
+.docboot__line {
+  height: 13px;
+  border-radius: 5px;
+  background: var(--bg-hover);
+  animation: skel-pulse 1.4s ease-in-out infinite;
+}
+.docboot__title {
+  height: 22px;
+  width: 38%;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.docboot__line {
+  width: 100%;
+}
+.docboot__line--w90 { width: 90%; }
+.docboot__line--w70 { width: 70%; }
+.docboot__phase {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--fg-3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .docboot__title,
+  .docboot__line {
     animation: none;
   }
 }

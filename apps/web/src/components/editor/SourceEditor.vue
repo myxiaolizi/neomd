@@ -61,7 +61,7 @@ function baseTheme(fontSize: number, lineHeight: number) {
       color: 'var(--fg)',
     },
     '.cm-scroller': {
-      fontFamily: 'var(--font-mono)',
+      fontFamily: 'var(--font-content, var(--font-mono))',
       lineHeight: String(lineHeight),
       // 有标题行插槽时，滚动由外层 `.source-editor__scroller` 统一负责，
       // CodeMirror 自身不再产生滚动条（否则标题行会「固定」在顶部，违背「次行不冻结」）。

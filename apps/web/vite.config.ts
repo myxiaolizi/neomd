@@ -26,6 +26,27 @@ export default defineConfig({
     proxy: {
       '/api': { target: 'http://127.0.0.1:3200', changeOrigin: true },
     },
+    /*
+     * 忽略「原子写入的中间产物」。
+     *
+     * 编辑器与工具（含 DSH 的 edit 工具）保存文件时普遍采用「写临时文件 → rename 覆盖」
+     * 的原子写策略，Windows 上会落出 `.xxx.vue.<pid>.<uuid>.tmpdir/xxx.vue.tmp` 这类目录。
+     * Vite 的 chokidar 会去 watch 它们，而杀毒软件 / Windows Search 索引器常在此时
+     * 持有句柄，于是 `fs.watch` 抛 EBUSY，**整个 dev server 直接崩溃退出**。
+     *
+     * 这不是业务代码的问题，但会让「保存即重启」的体验彻底断裂（1.1.9 开发期间反复复现）。
+     * 把这类中间产物排除出 watcher 即可，业务文件的 HMR 完全不受影响。
+     */
+    watch: {
+      ignored: [
+        '**/.*.tmpdir/**',
+        '**/*.tmp',
+        '**/*.tmpdir/**',
+        '**/.git/**',
+        '**/dist/**',
+        '**/dist-*/**',
+      ],
+    },
   },
   build: {
     target: 'es2022',

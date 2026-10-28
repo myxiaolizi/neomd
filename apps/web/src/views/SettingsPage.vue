@@ -6,7 +6,8 @@ import { THEME_SCOPE_STORAGE_KEY, readThemeScope, type ThemeScope } from '@/stor
 import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
 import { AIClient, detectRuntime, getBridge, defaultSettings, DEFAULT_TOOLBAR_ITEMS, DEFAULT_AI_TITLE_PROMPT } from '@neomd/core';
-import { AI_PRESETS, STORAGE_PRESETS, getStoragePreset, getAIPreset, type Settings } from '@neomd/shared';
+import { AI_PRESETS, STORAGE_PRESETS, getStoragePreset, getAIPreset, type RightPanelSection, type Settings } from '@neomd/shared';
+import { useLocalLayout } from '@/lib/local-layout';
 import {
   settingsApi,
   profileApi,
@@ -23,6 +24,7 @@ import ServerSettingsSection from '@/components/panels/ServerSettingsSection.vue
 import ObsidianImportSection from '@/components/panels/ObsidianImportSection.vue';
 import KnowledgeSettingsSection from '@/components/panels/KnowledgeSettingsSection.vue';
 import VaultManagerSection from '@/components/panels/VaultManagerSection.vue';
+import SyncSettingsSection from '@/components/panels/SyncSettingsSection.vue';
 import {
   BUILTIN_THEMES,
   DEFAULT_THEME_ID,
@@ -44,6 +46,7 @@ const emit = defineEmits<{ close: [] }>();
 const settingsStore = useSettingsStore();
 const auth = useAuthStore();
 const app = useAppStore();
+const { layout: localLayout, update: updateLocalLayout } = useLocalLayout();
 
 /**
  * 兜底默认值：所有从 settings 读取的嵌套对象都经由下方 computed 兜底。
@@ -72,8 +75,8 @@ const ALL_TABS: Array<{ id: TabId; label: string; icon: string; nativeOnly?: boo
   { id: 'theme', label: '主题', icon: 'palette' },
   { id: 'layout', label: '界面布局', icon: 'layout' },
   { id: 'shortcuts', label: '快捷键', icon: 'command' },
-  { id: 'storage', label: '对象存储', icon: 'cloud', nativeOnly: true },
-  { id: 'ai', label: 'AI', icon: 'sparkles', nativeOnly: true },
+  { id: 'storage', label: '对象存储', icon: 'cloud' },
+  { id: 'ai', label: 'AI', icon: 'sparkles' },
   // 仓库管理（1.1.5）：网页端同样要看得到云端仓库列表，因此不限桌面端；
   // 「添加仓库 / 复制」等需要本机目录的操作在组件内按平台单独禁用并给出说明。
   { id: 'vaults', label: '仓库', icon: 'hdd' },
@@ -218,6 +221,8 @@ const PLUGIN_RIBBON_CATALOG = [
   { id: 'database', label: '数据库', icon: 'table' },
   { id: 'web-browser', label: '网页浏览器', icon: 'globe' },
   { id: 'recorder', label: '录音机', icon: 'mic' },
+  { id: 'diagram-flowchart', label: '流程图', icon: 'columns' },
+  { id: 'diagram-mindmap', label: '思维导图', icon: 'graph' },
 ];
 
 const RIBBON_ITEMS = computed(() =>
@@ -271,17 +276,58 @@ function toggleToolbarItem(id: string): void {
   flashSaved();
 }
 
-function moveToolbarItem(id: string, dir: -1 | 1): void {
+/** 设置页工具栏按钮拖拽排序（1.1.9：移除点击上下箭头调整，统一改为拖拽调整） */
+const tbDragId = ref('');
+const tbDropId = ref('');
+const tbDropSide = ref<'before' | 'after'>('before');
+
+function onTbDragStart(e: DragEvent, id: string): void {
+  tbDragId.value = id;
+  tbDropId.value = '';
+  e.dataTransfer?.setData('text/plain', id);
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move';
+}
+
+function onTbDragOver(e: DragEvent, id: string): void {
+  if (!tbDragId.value) return;
+  tbDropId.value = id;
+  const rect = (e.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+  if (rect) tbDropSide.value = e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+}
+
+function onTbDragLeave(id: string): void {
+  if (tbDropId.value === id) tbDropId.value = '';
+}
+
+function onTbDrop(_e: DragEvent, targetId: string): void {
+  const from = tbDragId.value;
+  const side = tbDropSide.value;
+  tbDragId.value = '';
+  tbDropId.value = '';
+  if (!from || from === targetId) return;
   const cur = [...toolbarItems.value];
-  const idx = cur.indexOf(id);
-  if (idx === -1) return;
-  const target = idx + dir;
-  if (target < 0 || target >= cur.length) return;
-  const tmp = cur[idx]!;
-  cur[idx] = cur[target]!;
-  cur[target] = tmp;
+  const fromIdx = cur.indexOf(from);
+  if (fromIdx >= 0) cur.splice(fromIdx, 1);
+  const targetIdx = cur.indexOf(targetId);
+  if (targetIdx < 0) {
+    cur.push(from);
+  } else {
+    const insertAt = side === 'after' ? targetIdx + 1 : targetIdx;
+    cur.splice(insertAt, 0, from);
+  }
   settingsStore.updateLayout({ toolbarItems: cur });
-  flashSaved();
+  flashSaved('已调整工具栏顺序');
+}
+
+function onTbDragEnd(): void {
+  tbDragId.value = '';
+  tbDropId.value = '';
+  tbDropSide.value = 'before';
+}
+
+function resetToolbarItems(): void {
+  settingsStore.updateLayout({ toolbarItems: [...DEFAULT_TOOLBAR_ITEMS] });
+  flashSaved('已恢复默认工具栏顺序');
 }
 
 function updateAutosave(patch: Partial<{ enabled: boolean; versionMinutes: number; versionChars: number }>): void {
@@ -935,13 +981,20 @@ function toggleRibbonItem(id: string): void {
   flashSaved();
 }
 
-function toggleRightSection(sec: 'ai' | 'file'): void {
+const RIGHT_SECTION_OPTIONS: Array<{ id: RightPanelSection; label: string }> = [
+  { id: 'ai', label: 'AI 助手' },
+  { id: 'file', label: '文件操作' },
+  { id: 'outline', label: '大纲' },
+  { id: 'backlinks', label: '反向链接' },
+  { id: 'tags', label: '标签' },
+  { id: 'history', label: '版本历史' },
+  { id: 'stats', label: '文档统计' },
+  { id: 'calendar', label: '日历' },
+];
+
+function toggleRightSection(sec: RightPanelSection): void {
   const cur = rightPanelSections.value;
-  const next = cur.includes(sec)
-    ? cur.length > 1
-      ? cur.filter((x) => x !== sec)
-      : cur
-    : [...cur, sec];
+  const next = cur.includes(sec) ? cur.filter((x) => x !== sec) : [...cur, sec];
   settingsStore.updateLayout({ rightPanelSections: next });
   flashSaved();
 }
@@ -1074,7 +1127,7 @@ function onCaptureKey(e: KeyboardEvent, command: string): void {
  */
 onMounted(() => {
   const requested = (props.initialTab as TabId) ?? 'general';
-  if (runtime.platform === 'web' && (requested === 'storage' || requested === 'ai')) {
+  if (runtime.platform === 'web' && (requested === 'server' || requested === 'import')) {
     tab.value = 'general';
   } else {
     tab.value = requested;
@@ -1448,6 +1501,11 @@ const previewStyle = computed<Record<string, string>>(() => {
       if (live[k] !== undefined) vars[k] = live[k]!;
     }
   }
+  const zoom = Math.min(300, Math.max(50, Number(appearance.value.zoom ?? 100)));
+  const scaledFont = Math.round((appearance.value.fontSize || 16) * (zoom / 100) * 100) / 100;
+  vars['--preview-font-family'] = appearance.value.fontFamily?.trim() || 'var(--font-ui)';
+  vars['--preview-font-size'] = `${scaledFont}px`;
+  vars['--preview-line-height'] = String(appearance.value.lineHeight || 1.75);
   return vars;
 });
 
@@ -1902,13 +1960,63 @@ void app;
           </template>
         </section>
         <section v-else-if="tab === 'editor'" class="pane">
-          <!-- 1.1.1：字号/行高/页宽/字体族已迁到「主题」页签（同属观感）。
-               1.1.7：行号显示属于「编辑行为」而非观感，移回本页签（需求 F）。 -->
-          <h3 class="pane__title">行号与排版</h3>
+          <h3 class="pane__title">字体、字号与排版</h3>
+          <div class="field">
+            <div class="row-between">
+              <label class="nm-label">正文字体</label>
+              <button
+                type="button"
+                class="nm-btn nm-btn--sm"
+                title="恢复到系统默认字体与默认字号/行高"
+                @click="resetFontSettings"
+              >
+                <NmIcon name="restore" :size="12" />
+                恢复默认字体
+              </button>
+            </div>
+            <select
+              class="nm-input"
+              :value="appearance.fontFamily"
+              aria-label="正文字体"
+              @change="patchAppearance({ fontFamily: ($event.target as HTMLSelectElement).value })"
+            >
+              <option v-for="f in FONT_OPTIONS" :key="f.value" :value="f.value" :style="{ fontFamily: f.value }">
+                {{ f.label }}
+              </option>
+            </select>
+            <p class="nm-hint">{{ fontHint }}</p>
+          </div>
+          <div class="grid2">
+            <div class="field">
+              <label class="nm-label">正文字号（px）</label>
+              <input
+                class="nm-input"
+                type="number"
+                min="12"
+                max="32"
+                :value="appearance.fontSize"
+                aria-label="编辑器正文字号"
+                @input="patchAppearance({ fontSize: Number(($event.target as HTMLInputElement).value) })"
+              />
+            </div>
+            <div class="field">
+              <label class="nm-label">正文行高</label>
+              <input
+                class="nm-input"
+                type="number"
+                min="1.2"
+                max="2.6"
+                step="0.05"
+                :value="appearance.lineHeight"
+                aria-label="编辑器正文行高"
+                @input="patchAppearance({ lineHeight: Number(($event.target as HTMLInputElement).value) })"
+              />
+            </div>
+          </div>
           <div class="field field--row">
             <div>
               <label class="nm-label">显示正文行号</label>
-              <p class="nm-hint">开启后在正文与源码编辑器左侧显示行号</p>
+              <p class="nm-hint">开启后在正文、源码与双栏对照编辑器左侧显示行号（首行文件名不占行号）</p>
             </div>
             <button
               type="button"
@@ -1920,6 +2028,31 @@ void app;
               @click="patchAppearance({ showLineNumbers: !appearance.showLineNumbers })"
             >
               {{ appearance.showLineNumbers ? '开' : '关' }}
+            </button>
+          </div>
+          <!--
+            拼写检查开关（1.1.9 接线）。
+            此前 `appearance.spellcheck` 在类型与默认值里都有，但设置页没有入口、
+            编辑器又把它硬编码成 false —— 用户永远开不了，属于「字段存在但不可达」。
+            现在补上入口，由 `WysiwygEditor` 读同一个字段并实时写回 `.ProseMirror`
+            的 spellcheck 属性。注意这是**浏览器原生拼写检查**（红色波浪线），
+            不是语法检查；只对所见即所得模式有意义（源码/阅读是纯文本或静态渲染）。
+          -->
+          <div class="field field--row">
+            <div>
+              <label class="nm-label">拼写检查</label>
+              <p class="nm-hint">开启后浏览器会对正文中疑似拼错的单词画红色波浪线（仅所见即所得模式）</p>
+            </div>
+            <button
+              type="button"
+              class="toggle-btn"
+              data-testid="editor-spellcheck"
+              :class="{ 'is-on': appearance.spellcheck }"
+              :title="appearance.spellcheck ? '关闭拼写检查' : '开启拼写检查'"
+              :aria-pressed="appearance.spellcheck"
+              @click="patchAppearance({ spellcheck: !appearance.spellcheck })"
+            >
+              {{ appearance.spellcheck ? '开' : '关' }}
             </button>
           </div>
 
@@ -1986,34 +2119,50 @@ void app;
             </button>
           </div>
           <div class="field">
-            <label class="nm-label">工具栏按钮显隐与排序</label>
-            <div class="tb-config-list">
-              <div v-for="item in orderedToolbarDefs" :key="item.id" class="tb-config-row">
+            <div class="row-between">
+              <label class="nm-label">工具栏按钮显隐与拖动排序</label>
+              <button
+                type="button"
+                class="nm-btn nm-btn--sm"
+                title="恢复默认工具栏顺序与按钮"
+                @click="resetToolbarItems"
+              >
+                <NmIcon name="restore" :size="12" />
+                恢复默认顺序
+              </button>
+            </div>
+            <p class="nm-hint">按住按钮に直接<strong>拖动</strong>即可调整顺序；点击按钮可切换显示 / 隐藏（也可在编辑器顶部工具栏上直接拖拽）。</p>
+            <div class="tb-config-list" :class="{ 'is-reordering': Boolean(tbDragId) }">
+              <div
+                v-for="item in orderedToolbarDefs"
+                :key="item.id"
+                class="tb-config-row"
+                :class="{
+                  'is-dragging': tbDragId === item.id,
+                  'is-drop-before': tbDropId === item.id && tbDropSide === 'before' && tbDragId !== item.id,
+                  'is-drop-after': tbDropId === item.id && tbDropSide === 'after' && tbDragId !== item.id,
+                }"
+                :draggable="item.enabled"
+                @dragstart="item.enabled && onTbDragStart($event, item.id)"
+                @dragover.prevent="item.enabled && onTbDragOver($event, item.id)"
+                @dragleave="onTbDragLeave(item.id)"
+                @drop.prevent="item.enabled && onTbDrop($event, item.id)"
+                @dragend="onTbDragEnd"
+              >
                 <button
                   type="button"
-                  class="model-chip"
+                  class="model-chip tb-chip"
                   :class="{ 'is-on': item.enabled }"
-                  :title="item.enabled ? `隐藏「${item.label}」` : `显示「${item.label}」`"
+                  :title="
+                    item.enabled
+                      ? `拖动调整「${item.label}」顺序，点击隐藏`
+                      : `点击显示「${item.label}」`
+                  "
                   @click="toggleToolbarItem(item.id)"
                 >
-                  {{ item.enabled ? '✓ ' : '' }}{{ item.label }}
+                  <span v-if="item.enabled" class="tb-chip__grip" aria-hidden="true">⋮⋮</span>
+                  <span>{{ item.enabled ? '✓ ' : '' }}{{ item.label }}</span>
                 </button>
-                <div v-if="item.enabled" class="tb-config-Read">
-                  <button
-                    type="button"
-                    class="nm-btn nm-btn--sm"
-                    title="前移"
-                    aria-label="前移"
-                    @click="moveToolbarItem(item.id, -1)"
-                  >↑</button>
-                  <button
-                    type="button"
-                    class="nm-btn nm-btn--sm"
-                    title="后移"
-                    aria-label="后移"
-                    @click="moveToolbarItem(item.id, 1)"
-                  >↓</button>
-                </div>
               </div>
             </div>
           </div>
@@ -2030,6 +2179,28 @@ void app;
               <button type="button" class="seg__item" :class="{ 'is-active': layout.leftPanelMode === 'both' }" @click="patchLayout({ leftPanelMode: 'both' })">上方大纲 + 下方文件</button>
               <button type="button" class="seg__item" :class="{ 'is-active': layout.leftPanelMode === 'search' }" @click="patchLayout({ leftPanelMode: 'search' })">全库搜索</button>
             </div>
+          </div>
+          <div class="field">
+            <label class="nm-label">点击文件列表打开新文档的方式</label>
+            <div class="seg">
+              <button
+                type="button"
+                class="seg__item"
+                :class="{ 'is-active': localLayout.openMode === 'replace' }"
+                @click="updateLocalLayout({ openMode: 'replace' }); flashSaved()"
+              >
+                替换当前标签页（单文档模式）
+              </button>
+              <button
+                type="button"
+                class="seg__item"
+                :class="{ 'is-active': localLayout.openMode === 'keep' }"
+                @click="updateLocalLayout({ openMode: 'keep' }); flashSaved()"
+              >
+                保留当前并新开标签页（多标签模式）
+              </button>
+            </div>
+            <p class="nm-hint">单文档模式下打开另一篇会自动保存并替换当前标签（点击标签栏 + 号仍可同时打开多篇）。</p>
           </div>
           <div class="field field--row">
             <div>
@@ -2063,41 +2234,41 @@ void app;
           </div>
           <div class="field field--row">
             <div>
-              <label class="nm-label">面板宽度</label>
+              <label class="nm-label">面板宽度（px）</label>
             </div>
             <input
               class="nm-input nm-input--num"
               type="number"
-              min="180"
-              max="480"
-              :value="layout.leftPanelWidth"
+              min="200"
+              max="600"
+              :value="localLayout.leftWidth"
               aria-label="左侧面板宽度"
-              @input="patchLayout({ leftPanelWidth: Number(($event.target as HTMLInputElement).value) })"
+              @input="
+                const w = Number(($event.target as HTMLInputElement).value);
+                if (Number.isFinite(w) && w >= 200 && w <= 600) {
+                  updateLocalLayout({ leftWidth: w });
+                  patchLayout({ leftPanelWidth: w });
+                }
+              "
             />
           </div>
 
           <h3 class="pane__title">右侧面板</h3>
           <div class="field">
-            <label class="nm-label">允许在右侧边栏显示的功能</label>
+            <label class="nm-label">右侧边栏当前开启的操作区窗口（支持多选同时打开并拖动调整高度）</label>
             <div class="seg">
               <button
+                v-for="sec in RIGHT_SECTION_OPTIONS"
+                :key="sec.id"
                 type="button"
                 class="seg__item"
-                :class="{ 'is-active': rightPanelSections.includes('ai') }"
-                @click="toggleRightSection('ai')"
+                :class="{ 'is-active': rightPanelSections.includes(sec.id) }"
+                @click="toggleRightSection(sec.id)"
               >
-                AI 助手
-              </button>
-              <button
-                type="button"
-                class="seg__item"
-                :class="{ 'is-active': rightPanelSections.includes('file') }"
-                @click="toggleRightSection('file')"
-              >
-                文件操作
+                {{ sec.label }}
               </button>
             </div>
-            <p class="nm-hint">搜索与大纲统一放在左侧边栏，右侧边栏仅展示 AI 与文件操作相关功能。</p>
+            <p class="nm-hint">右侧栏支持同时打开多个操作区窗口上下排列，拖动窗口间的分隔线即可自由调整每个操作区的高度。</p>
           </div>
 
           <h3 class="pane__title">功能区</h3>
@@ -2520,7 +2691,7 @@ void app;
             </div>
           </section>
 
-          <!-- 自带 Key 的连接细节：仅当选中「我的 AI 供应商」时显示 -->
+          <!-- 自带 Key 的连接细节与参数：仅当选中「我的 AI 供应商」时显示（避免与上方平台 AI 服务表单重复） -->
           <template v-if="!ai.usePlatform && ai.provider !== 'platform'">
             <div class="field">
               <label class="nm-label">Base URL</label>
@@ -2566,78 +2737,78 @@ void app;
                 </button>
               </div>
             </div>
+
+            <div class="field">
+              <div class="row-between">
+                <label class="nm-label">模型</label>
+                <button
+                  type="button"
+                  class="nm-btn nm-btn--sm"
+                  :disabled="loadingModels || !auth.isLoggedIn"
+                  :title="!auth.isLoggedIn ? LOGIN_REQUIRED_AI : '由服务端代拉可用模型列表'"
+                  @click="fetchModels"
+                >
+                  <NmIcon name="refresh" :size="12" />
+                  {{ loadingModels ? '获取中…' : '获取最新列表' }}
+                </button>
+              </div>
+              <p v-if="modelSource" class="nm-hint">{{ modelSource }}</p>
+              <div class="model-list">
+                <button
+                  v-for="m in (modelList.length ? modelList : aiPreset.models)"
+                  :key="m"
+                  type="button"
+                  class="model-chip"
+                  :class="{ 'is-on': (ai.models?.length ? ai.models : aiPreset.models).includes(m) }"
+                  :title="`启用 / 停用模型 ${m}`"
+                  @click="toggleModel(m)"
+                >
+                  {{ m }}
+                </button>
+              </div>
+              <p class="nm-hint">点击可多选可用模型；AI 助手中可随时切换。</p>
+            </div>
+
+            <div class="field">
+              <label class="nm-label">默认模型（AI 自动命名等后台任务使用）</label>
+              <select
+                class="nm-input"
+                :value="ai.model"
+                aria-label="默认模型"
+                @change="patchSettings({ ai: { ...ai, model: ($event.target as HTMLSelectElement).value } })"
+              >
+                <option v-for="m in (ai.models?.length ? ai.models : aiPreset.models)" :key="m" :value="m">{{ m }}</option>
+              </select>
+            </div>
+
+            <div class="grid2">
+              <div class="field">
+                <label class="nm-label">Temperature</label>
+                <input
+                  class="nm-input"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="2"
+                  :value="ai.temperature"
+                  aria-label="Temperature"
+                  @input="patchSettings({ ai: { ...ai, temperature: Number(($event.target as HTMLInputElement).value) } })"
+                />
+              </div>
+              <div class="field">
+                <label class="nm-label">最大 Token</label>
+                <input
+                  class="nm-input"
+                  type="number"
+                  min="256"
+                  max="32000"
+                  :value="ai.maxTokens"
+                  aria-label="最大 Token"
+                  @input="patchSettings({ ai: { ...ai, maxTokens: Number(($event.target as HTMLInputElement).value) } })"
+                />
+              </div>
+            </div>
           </template>
-
-          <div class="field">
-            <div class="row-between">
-              <label class="nm-label">模型</label>
-              <button
-                type="button"
-                class="nm-btn nm-btn--sm"
-                :disabled="loadingModels || !auth.isLoggedIn"
-                :title="!auth.isLoggedIn ? LOGIN_REQUIRED_AI : '由服务端代拉可用模型列表'"
-                @click="fetchModels"
-              >
-                <NmIcon name="refresh" :size="12" />
-                {{ loadingModels ? '获取中…' : '获取最新列表' }}
-              </button>
-            </div>
-            <p v-if="modelSource" class="nm-hint">{{ modelSource }}</p>
-            <div class="model-list">
-              <button
-                v-for="m in (modelList.length ? modelList : aiPreset.models)"
-                :key="m"
-                type="button"
-                class="model-chip"
-                :class="{ 'is-on': (ai.models?.length ? ai.models : aiPreset.models).includes(m) }"
-                :title="`启用 / 停用模型 ${m}`"
-                @click="toggleModel(m)"
-              >
-                {{ m }}
-              </button>
-            </div>
-            <p class="nm-hint">点击可多选可用模型；AI 助手中可随时切换。</p>
-          </div>
-
-          <div class="field">
-            <label class="nm-label">默认模型（AI 自动命名等后台任务使用）</label>
-            <select
-              class="nm-input"
-              :value="ai.model"
-              aria-label="默认模型"
-              @change="patchSettings({ ai: { ...ai, model: ($event.target as HTMLSelectElement).value } })"
-            >
-              <option v-for="m in (ai.models?.length ? ai.models : aiPreset.models)" :key="m" :value="m">{{ m }}</option>
-            </select>
-          </div>
-
-          <div class="grid2">
-            <div class="field">
-              <label class="nm-label">Temperature</label>
-              <input
-                class="nm-input"
-                type="number"
-                step="0.1"
-                min="0"
-                max="2"
-                :value="ai.temperature"
-                aria-label="Temperature"
-                @input="patchSettings({ ai: { ...ai, temperature: Number(($event.target as HTMLInputElement).value) } })"
-              />
-            </div>
-            <div class="field">
-              <label class="nm-label">最大 Token</label>
-              <input
-                class="nm-input"
-                type="number"
-                min="256"
-                max="32000"
-                :value="ai.maxTokens"
-                aria-label="最大 Token"
-                @input="patchSettings({ ai: { ...ai, maxTokens: Number(($event.target as HTMLInputElement).value) } })"
-              />
-            </div>
-          </div>
 
           <div class="actions-row">
             <button
@@ -2678,6 +2849,13 @@ void app;
         <!-- 同步 -->
         <section v-else-if="tab === 'sync'" class="pane">
           <h3 class="pane__title">同步与版本</h3>
+          <!--
+            同步状态与操作（1.1.8）：
+            手动同步 / 全部同步 / 自动同步间隔 / 同步方向 / 冲突策略 / 同步日志。
+            组件自包含，不需要额外 props（compact 仅控制内边距）。
+          -->
+          <SyncSettingsSection compact />
+          <div class="nm-divider" />
           <p class="nm-hint">联网登录同一账号后，所有修改会自动同步到云端，无需手动点击同步按钮。</p>
           <div class="field">
             <label class="nm-label">当前平台 / 设备名称（将记录在历史版本中）</label>
@@ -2994,24 +3172,42 @@ void app;
    UI 一起删除（正文颜色已全部由主题变量驱动，不再有独立的配色方案卡片）。 */
 
 .tb-config-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
-  gap: 6px;
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
+  background: var(--bg-sidebar);
 }
 .tb-config-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px;
-}
-.tb-config-Read {
   display: inline-flex;
-  gap: 2px;
+  align-items: center;
+  border-radius: 12px;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+.tb-config-row.is-dragging {
+  opacity: 0.35;
+}
+.tb-config-row.is-drop-before {
+  box-shadow: -2px 0 0 var(--accent);
+}
+.tb-config-row.is-drop-after {
+  box-shadow: 2px 0 0 var(--accent);
+}
+.tb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: grab;
+}
+.tb-config-list.is-reordering .tb-chip {
+  cursor: grabbing;
+}
+.tb-chip__grip {
+  font-size: 11px;
+  opacity: 0.55;
+  letter-spacing: -1px;
 }
 .pane__title {
   margin: 0 0 12px;
@@ -3798,17 +3994,20 @@ code {
   padding: 14px 18px 16px;
   background: var(--bg-elevated);
   color: var(--content-fg, var(--fg));
+  font-family: var(--preview-font-family, var(--font-content, var(--font-ui)));
+  font-size: var(--preview-font-size, var(--content-font-size, 14px));
+  line-height: var(--preview-line-height, var(--content-line-height, 1.75));
 }
 .theme-preview__h {
   margin: 0 0 8px;
-  font-size: 15px;
+  font-size: 1.25em;
   font-weight: 650;
   color: var(--content-fg, var(--fg));
 }
 .theme-preview__p {
   margin: 0 0 10px;
-  font-size: 12.5px;
-  line-height: 1.7;
+  font-size: 1em;
+  line-height: inherit;
 }
 .theme-preview__a {
   color: var(--accent);

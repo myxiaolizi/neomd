@@ -437,11 +437,21 @@ async function copyGuidePrompt(): Promise<void> {
 
 /* ------------------------------ 生命周期 ------------------------------ */
 
-/** 首次打开时按需加载数据，避免未进入插件中心就发请求 */
+/**
+ * 首次打开时按需加载数据，避免未进入插件中心就发请求。
+ *
+ * 1.1.9 修「插件商店标签页打开后空白」：
+ * 原来只 watch `props.open`，而嵌入形态（功能区 → 新标签页）**根本不传 open**
+ * （父组件是 `<PluginCenter embedded />`，`props.open` 恒为 `undefined`）。
+ * `immediate` 首次执行拿到 undefined → 直接 return，`loadMarket()` 永远不跑，
+ * 市场列表一直是空数组，用户看到的就是一片空白。
+ *
+ * 现在把 `embedded` 也纳入判定：嵌入即等价于「已打开」，与模态的 open=true 同义。
+ */
 watch(
-  () => props.open,
-  (open) => {
-    if (!open) {
+  () => [props.open, props.embedded] as const,
+  ([open, embedded]) => {
+    if (!open && !embedded) {
       notice.value = '';
       return;
     }
@@ -823,6 +833,33 @@ const shellProps = computed(() =>
 </template>
 
 <style scoped>
+/*
+ * 嵌入形态外壳（1.1.9 补齐）。
+ *
+ * 改前 `embedded` 只换了标签名（div 而不是 NmModal），**完全没有配套样式**：
+ * - `.plugincenter-shell` 没有任何规则 → div 是块级、宽度被内容决定，
+ *   在 `.shell__panes`（flex 行）里既没有 `flex: 1 1 auto` 也没有 `min-width: 0`，
+ *   于是内容一宽就把整个编辑区横向撑开；
+ * - `.pc` 的 `margin: -4px -20px -18px` 是**给模态内容去掉内边距**用的负外边距，
+ *   在标签页里没有可抵消的内层 padding，负边距直接把内容往左上顶出去（用户说的「穿模」）；
+ * - `.pc` 的 `height: min(76vh, calc(100vh - 190px))` 是为弹窗留的固定高度，
+ *   在标签页里既不铺满也不随容器变化，大屏上永远矮一截、底部露出背景。
+ *
+ * 下面两条规则把嵌入形态改成「铺满父容器、自己管自己的滚动」。
+ */
+.plugincenter-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  overflow: hidden;
+}
+/*
+ * 嵌入时覆盖模态专用的三段样式。
+ * 放在 `.pc` 之后（同权重、后置生效），否则 `margin` / `height` 会被 `.pc` 抢回去。
+ */
 .pc {
   display: grid;
   grid-template-columns: 168px 1fr;
@@ -830,6 +867,18 @@ const shellProps = computed(() =>
   height: min(76vh, calc(100vh - 190px));
   min-height: 0;
   overflow: hidden;
+}
+/*
+ * 嵌入形态覆盖（1.1.9）。理由见文件末尾「嵌入形态外壳」段注释：
+ * 负 margin 是给模态去 padding 用的，固定 height 是给弹窗留的 —— 标签页里都不该有。
+ */
+.pc--embedded {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  border-radius: 0;
 }
 .pc__nav {
   border-right: 1px solid var(--border);

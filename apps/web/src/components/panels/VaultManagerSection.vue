@@ -39,6 +39,9 @@ import {
   detectRuntime,
   getBridge,
   sharedVaultRegistry,
+  Vault,
+  NativeVaultAdapter,
+  BrowserVaultAdapter,
   VaultRegistry,
   type VaultEntry,
   type RemoteVaultDto,
@@ -213,9 +216,14 @@ async function loadRemote(): Promise<void> {
     const res = await vaultsApi.list();
     const list = (res.vaults ?? []) as RemoteVaultDto[];
     remoteIds.value = new Set(list.map((v) => v.vaultId).filter(Boolean));
-    // mergeRemote 会：覆盖已有条目的 name/status/统计；插入「云端独有」的 available:false 条目
+    // mergeRemote 会：覆盖已有条目的 name/status/统计；插入「云端独有」的 available:true 条目
     registry.mergeRemote(list);
+    if (remoteIds.value.size > 0) {
+      const username = auth.user?.username?.trim().toLowerCase() ?? '';
+      registry.prunePseudoCloudVaults(remoteIds.value, username ? [username] : []);
+    }
     syncFromRegistry();
+    app.refreshVaultList();
   } catch (e) {
     // 私有化模式属于预期内，不报错；其余情况给出可读提示但不阻断本机功能
     if (isPrivacyModeError(e)) return;
@@ -316,26 +324,17 @@ async function switchTo(row: VaultRow): Promise<void> {
     flashError(`「${row.name}」已停用，无法切换。请先启用该仓库（数据保留）。`);
     return;
   }
-  if (!row.available) {
-    flashError(
-      `「${row.name}」只存在于云端档案，本机尚未打开过，无法直接切换。请先在「添加仓库」中选择该目录。`,
-    );
-    return;
-  }
+  const targetLoc = row.location || `cloud:${row.vaultId}`;
   busyKey.value = row.key;
   errorMsg.value = '';
   try {
-    // registry.setCurrent 会写 lastVault（与 app.openVault 内的行为一致），
-    // 但需要在 openVault 之后调用 —— 它按 vaultId 找条目，而 vaultId 要打开后才确定。
-    await app.openVault(row.location, row.name);
-    localStorage.setItem('neomd.lastVault', row.location);
-    // 打开后 Vault 实例有了真实 vaultId，用它校正 registry 里的占位 id
+    await app.switchVault(targetLoc, row.name);
     const liveVaultId = currentVaultId.value;
     if (liveVaultId) {
-      registry.attachVaultId(row.location, liveVaultId, row.name);
+      registry.attachVaultId(app.vaultLocation || targetLoc, liveVaultId, row.name);
       registry.setCurrent(liveVaultId);
     }
-    undelete(row.vaultId, row.location, row.name);
+    undelete(row.vaultId, targetLoc, row.name);
     flashInfo(`已切换到「${row.name}」`);
     await refresh();
   } catch (e) {
@@ -346,14 +345,89 @@ async function switchTo(row: VaultRow): Promise<void> {
 }
 
 /* ------------------------------------------------------------------ */
-/* 操作：添加仓库                                                      */
+/* 操作：同步单个仓库 / 全部同步                                       */
 /* ------------------------------------------------------------------ */
+
+async function syncOne(row: VaultRow): Promise<void> {
+  if (busyKey.value) return;
+  if (statusOf(row) === 'disabled') {
+    flashError(`「${row.name}」已停用，无法同步。`);
+    return;
+  }
+  busyKey.value = row.key;
+  errorMsg.value = '';
+  try {
+    const ok = await app.syncVaultById(row.vaultId || row.location);
+    if (ok) flashInfo(`「${row.name}」已同步完成`);
+    await refresh();
+  } catch (e) {
+    flashError(`同步失败：${(e as Error).message}`);
+  } finally {
+    busyKey.value = '';
+  }
+}
+
+async function syncAll(): Promise<void> {
+  if (loading.value || busyKey.value) return;
+  loading.value = true;
+  errorMsg.value = '';
+  try {
+    const res = await app.syncAllVaults();
+    flashInfo(`全部仓库同步完成：${res.synced} 个成功${res.skipped ? `，${res.skipped} 个跳过或失败` : ''}`);
+  } catch (e) {
+    flashError(`全部同步失败：${(e as Error).message}`);
+  } finally {
+    loading.value = false;
+    await refresh();
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* 操作：新建仓库 / 添加仓库                                           */
+/* ------------------------------------------------------------------ */
+
+async function createNewVault(): Promise<void> {
+  if (busyKey.value) return;
+  try {
+    /*
+     * 这里把 bridge 与 pickDirectory 先取到局部变量再做判空。
+     *
+     * 为什么不用 `bridge!.dialog.pickDirectory()`：`canPickDirectory` 是个 computed，
+     * TypeScript 无法从它反推出 `bridge` 非空（跨表达式不传递收窄），
+     * 于是必须用 `!` 断言 —— 一旦将来 getBridge() 的返回类型或调用时机变化，
+     * 这个断言就会变成「静默的运行时 undefined 调用」。显式判空更安全，
+     * 也顺带消掉了 vue-tsc 的 TS2532。
+     */
+    const pickDirectory = bridge?.dialog?.pickDirectory;
+    if (isDesktop.value && canPickDirectory.value && pickDirectory) {
+      const picked = await pickDirectory();
+      if (!picked) return;
+      const defaultName = picked.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '新仓库';
+      const name = await app.askInput('新建仓库', '确认或修改新仓库名称（数据保存在所选文件夹）', '例如：工作笔记', defaultName);
+      const finalName = (name ?? defaultName).trim() || defaultName;
+      undelete(`pending:${picked}`, picked, finalName);
+      const created = await app.createAndSwitchVault(finalName, picked);
+      if (created) {
+        flashInfo(`已在文件夹「${picked}」创建仓库「${finalName}」`);
+        await refresh();
+      }
+      return;
+    }
+    const name = await app.askInput('新建云端仓库', '输入新仓库名称', '例如：知识库', '');
+    if (!name || !name.trim()) return;
+    const created = await app.createAndSwitchVault(name.trim());
+    if (created) {
+      flashInfo(`已创建仓库「${name.trim()}」`);
+      await refresh();
+    }
+  } catch (e) {
+    flashError(`创建仓库失败：${(e as Error).message}`);
+  }
+}
 
 async function addVault(): Promise<void> {
   if (isBrowserOnly.value) {
-    flashError(
-      '网页端仅支持云端仓库，无法访问本机任意目录。请在 PC 客户端使用「添加仓库」选择本地文件夹。',
-    );
+    await createNewVault();
     return;
   }
   const pick = bridge?.dialog?.pickDirectory;
@@ -365,12 +439,22 @@ async function addVault(): Promise<void> {
     const picked = await pick();
     if (!picked) return;
     const name = picked.split(/[\\/]/).filter(Boolean).pop() || picked;
-    // registry.register 按 location 去重；先给一个占位 vaultId，
-    // 等真正打开该仓库时由 attachVaultId() 换成 .neomd/vault.json 里的真实 id
-    const entry = registry.register({ vaultId: `pending:${picked}`, name, location: picked });
+    // 立即打开一次该文件夹以生成/读取 .neomd/vault.json 的真实 vaultId，并统计文档数与同步到云端
+    const adapter = isDesktop.value && bridge ? new NativeVaultAdapter(bridge, 'desktop-fs') : new BrowserVaultAdapter();
+    const tmp = new Vault(adapter);
+    await tmp.open(picked);
+    const docsList = tmp.list();
+    const bytes = docsList.reduce((sum, d) => sum + (d.size ?? 0), 0);
+    const entry = registry.register({ vaultId: tmp.vaultId, name, location: picked });
+    registry.attachVaultId(picked, tmp.vaultId, name);
+    registry.updateStats(tmp.vaultId, { docCount: docsList.length, bytes });
     undelete(entry.vaultId, picked, name);
     syncFromRegistry();
-    flashInfo(`已添加仓库「${name}」，可在列表中切换。`);
+    app.refreshVaultList();
+    if (app.canSync()) {
+      await app.syncVaultById(tmp.vaultId, { silent: true });
+    }
+    flashInfo(`已关联本地仓库「${name}」（${docsList.length} 篇文档），并已同步到云端。`);
     await refresh();
   } catch (e) {
     flashError(`选择目录失败：${(e as Error).message}`);
@@ -780,20 +864,36 @@ function ellipsisPath(p: string): string {
       <div class="vm-head__actions">
         <button
           type="button"
+          class="nm-btn nm-btn--primary nm-btn--sm"
+          :title="isDesktop ? '选择电脑文件夹创建新仓库并同步到云端' : '创建新云端仓库'"
+          data-testid="vm-create"
+          @click="createNewVault"
+        >
+          <NmIcon name="plus" :size="12" />
+          新建仓库
+        </button>
+        <button
+          v-if="!isBrowserOnly"
+          type="button"
           class="nm-btn nm-btn--sm"
           :disabled="!canPickDirectory"
-          :title="
-            isBrowserOnly
-              ? '网页端仅支持云端仓库，无法访问本机目录'
-              : canPickDirectory
-                ? '选择本机文件夹作为新仓库'
-                : '当前环境不支持目录选择'
-          "
+          title="选择本机已有文件夹加入仓库列表并同步"
           data-testid="vm-add"
           @click="addVault"
         >
-          <NmIcon name="plus" :size="12" />
-          添加仓库
+          <NmIcon name="folder" :size="12" />
+          关联本地文件夹
+        </button>
+        <button
+          type="button"
+          class="nm-btn nm-btn--sm"
+          :disabled="loading || !app.canSync()"
+          title="将全部仓库立即与云端同步"
+          data-testid="vm-sync-all"
+          @click="syncAll"
+        >
+          <NmIcon name="sync" :size="12" />
+          全部同步
         </button>
         <button
           type="button"
@@ -906,6 +1006,16 @@ function ellipsisPath(p: string): string {
             @click="switchTo(row)"
           >
             切换
+          </button>
+          <button
+            type="button"
+            class="nm-btn nm-btn--sm"
+            :disabled="statusOf(row) === 'disabled' || busyKey === row.key || !app.canSync()"
+            title="立即将该仓库与云端同步"
+            data-testid="vm-sync"
+            @click="syncOne(row)"
+          >
+            {{ busyKey === row.key ? '同步中…' : '同步' }}
           </button>
           <button
             type="button"

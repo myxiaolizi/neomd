@@ -161,6 +161,13 @@ const dropId = ref('');
  * 否则永远只能插到目标前面，跨位拖动的手感会很别扭。
  */
 const dropSide = ref<'before' | 'after'>('before');
+/**
+ * 本次按下之后是否真的发生了拖动。
+ *
+ * 用途：拖放结束后部分浏览器会补发 click，若不拦截就会「拖走按钮顺带触发该命令」；
+ * 同理 `overflow-item` 这类点击即执行的项目也要按它区分「点击」与「拖拽」。
+ */
+const dragMoved = ref(false);
 
 /** 工具栏右键菜单状态 */
 const toolMenu = ref<{ open: boolean; x: number; y: number; id: string; label: string }>({
@@ -171,8 +178,40 @@ const toolMenu = ref<{ open: boolean; x: number; y: number; id: string; label: s
   label: '',
 });
 
+function onToolMouseDown(): void {
+  /*
+   * 这里**绝不能** preventDefault()。
+   *
+   * 1.1.9 之前的实现是 `@mousedown.prevent`（初衷是防止点工具栏时编辑器失焦）。
+   * 但 Chromium / Electron 的规则是：mousedown 的默认行为一旦被取消，浏览器就**不会**
+   * 启动 HTML5 拖放（dragstart 不触发）。于是 `draggable="true"` 形同虚设，
+   * 顶部工具栏按钮根本无法拖动排序 —— 这正是用户报的「工具栏只能点箭头、不能拖」。
+   *
+   * 编辑器选区的保护改由「命令执行前重新 focus」负责：ProseMirror 的 selection 保存在
+   * 编辑器内部 state 中，DOM 失焦并不会清掉它，`chain().focus()` 会把选区恢复回来。
+   * 因此 mousedown 阶段不需要拦截默认行为。
+   */
+  dragMoved.value = false;
+}
+
+/**
+ * 点击工具栏按钮执行命令。
+ *
+ * 为什么要判断 `dragMoved`：一次成功的拖放之后，部分浏览器仍会补发一次 click。
+ * 若不拦截，用户「把加粗按钮拖到别处」会顺带把正文加粗 —— 这是拖拽排序上线后
+ * 最容易踩的副作用。
+ */
+function runTool(id: string, arg?: string): void {
+  if (dragMoved.value) {
+    dragMoved.value = false;
+    return;
+  }
+  emit('cmd', id, arg);
+}
+
 function onDragStart(e: DragEvent, id: string): void {
   dragId.value = id;
+  dragMoved.value = true;
   dropId.value = '';
   // 必须设置 dataTransfer，否则部分浏览器不触发 drop
   e.dataTransfer?.setData('text/plain', id);
@@ -197,23 +236,85 @@ function onDrop(_e: DragEvent, targetId: string): void {
   dragId.value = '';
   dropId.value = '';
   if (!from || from === targetId) return;
-  const list = [...(props.toolbarItems && props.toolbarItems.length ? props.toolbarItems : DEFAULT_TOOLBAR_ITEMS)];
-  const i = list.indexOf(from);
-  const j = list.indexOf(targetId);
-  if (i < 0 || j < 0) return;
   // 先摘除源，再按「目标当前索引 ± 侧别」插入。
   // 注意摘除后目标索引可能前移一位，所以 after 情形要重新算一次。
+  applyReorder(from, targetId, side);
+}
+
+/**
+ * 把 `fromId` 移动到 `targetId` 的指定一侧并提交新的顺序。
+ *
+ * 抽出来是因为有两个拖放区域共用同一套排序语义：
+ * 工具栏可见按钮（横向，按 clientX 判左右）与「更多」溢出菜单（纵向，按 clientY 判上下）。
+ * 若各写一份，两边很容易在某次改动后出现「一处能拖、另一处顺序算错」。
+ */
+function applyReorder(fromId: string, targetId: string, side: 'before' | 'after'): void {
+  const list = [...(props.toolbarItems && props.toolbarItems.length ? props.toolbarItems : DEFAULT_TOOLBAR_ITEMS)];
+  const i = list.indexOf(fromId);
+  const j = list.indexOf(targetId);
+  if (i < 0 || j < 0) return;
   list.splice(i, 1);
   const targetIdx = list.indexOf(targetId);
   const insertAt = side === 'after' ? targetIdx + 1 : targetIdx;
-  list.splice(insertAt < 0 ? list.length : insertAt, 0, from);
+  list.splice(insertAt < 0 ? list.length : insertAt, 0, fromId);
   emit('reorderTools', list);
+}
+
+/* ---------------- 溢出菜单（「更多」）内的拖动排序（1.1.9） ---------------- */
+
+/**
+ * 为什么必须单独支持：工具栏在窄窗口 / 右侧栏展开时只放得下 5~6 个按钮，
+ * 其余十几个全部折叠进「更多」菜单。如果只有可见按钮能拖，
+ * 用户想调整「加粗和斜体的先后」这类都在菜单里的项目时完全无从下手（只能先右键隐藏再想办法）。
+ *
+ * 纵向列表用 clientY 判断落点在目标的上半 / 下半，与横向的 clientX 逻辑对称。
+ */
+const overflowDropId = ref('');
+const overflowDropSide = ref<'before' | 'after'>('before');
+
+function onOverflowDragOver(e: DragEvent, id: string): void {
+  if (!dragId.value) return;
+  overflowDropId.value = id;
+  const rect = (e.currentTarget as HTMLElement | null)?.getBoundingClientRect();
+  if (rect) overflowDropSide.value = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+}
+
+function onOverflowDragLeave(id: string): void {
+  if (overflowDropId.value === id) overflowDropId.value = '';
+}
+
+function onOverflowDrop(_e: DragEvent, targetId: string): void {
+  const from = dragId.value;
+  const side = overflowDropSide.value;
+  dragId.value = '';
+  overflowDropId.value = '';
+  if (!from || from === targetId) return;
+  applyReorder(from, targetId, side);
+}
+
+/** 溢出菜单项点击执行命令（拖放后浏览器会补发 click，交给 runTool 吞掉） */
+function runOverflowTool(id: string, arg?: string): void {
+  const wasDragged = dragMoved.value;
+  overflowOpen.value = false;
+  if (wasDragged) {
+    dragMoved.value = false;
+    return;
+  }
+  emit('cmd', id, arg);
 }
 
 function onDragEnd(): void {
   dragId.value = '';
   dropId.value = '';
   dropSide.value = 'before';
+  /*
+   * 拖放结束后浏览器可能补发 click。这里延迟复位 dragMoved：
+   * click 在 dragend 之后同步派发，用 setTimeout(0) 让 runTool 先看到 true 并吞掉这一次，
+   * 再复位，避免「下一次正常点击被误吞」。
+   */
+  window.setTimeout(() => {
+    dragMoved.value = false;
+  }, 0);
 }
 
 function openToolMenu(e: MouseEvent, id: string): void {
@@ -298,7 +399,8 @@ const toolMenuStyle = computed(() => {
         }"
         :title="`${b.title}（可拖动排序，右键可隐藏）`"
         draggable="true"
-        @mousedown.prevent="emit('cmd', b.id, b.arg)"
+        @mousedown="onToolMouseDown"
+        @click="runTool(b.id, b.arg)"
         @dragstart="onDragStart($event, b.id)"
         @dragover.prevent="onDragOver($event, b.id)"
         @dragleave="onDragLeave(b.id)"
@@ -311,16 +413,33 @@ const toolMenuStyle = computed(() => {
       </button>
 
       <div v-if="overflowTools.length" class="overflow-wrap">
-        <button class="tbtn" title="更多编辑工具" @mousedown.prevent="overflowOpen = !overflowOpen">
+        <button
+          class="tbtn"
+          :title="`更多编辑工具（${overflowTools.length} 个，可拖动排序；把窗口或右侧栏拖窄会折叠更多）`"
+          @mousedown.prevent="overflowOpen = !overflowOpen"
+        >
           <NmIcon name="more" :size="15" />
         </button>
         <div v-if="overflowOpen" class="overflow-menu" @mousedown.stop>
+          <div class="overflow-hint">可拖动调整顺序 · 拖宽编辑区可显示更多</div>
           <button
             v-for="b in overflowTools"
             :key="b.id"
             class="overflow-item"
-            :title="b.title"
-            @mousedown.prevent="overflowOpen = false; emit('cmd', b.id, b.arg)"
+            :class="{
+              'is-dragging': dragId === b.id,
+              'is-drop-before': overflowDropId === b.id && overflowDropSide === 'before' && dragId !== b.id,
+              'is-drop-after': overflowDropId === b.id && overflowDropSide === 'after' && dragId !== b.id,
+            }"
+            :title="`${b.title}（可拖动排序）`"
+            draggable="true"
+            @mousedown="onToolMouseDown"
+            @click="runOverflowTool(b.id, b.arg)"
+            @dragstart="onDragStart($event, b.id)"
+            @dragover.prevent="onOverflowDragOver($event, b.id)"
+            @dragleave="onOverflowDragLeave(b.id)"
+            @drop.prevent="onOverflowDrop($event, b.id)"
+            @dragend="onDragEnd"
           >
             <span v-if="b.textIcon" class="tbtn__h">{{ b.textIcon }}</span>
             <NmIcon v-else :name="b.icon" :size="14" />
@@ -686,5 +805,29 @@ const toolMenuStyle = computed(() => {
 .overflow-item:hover {
   background: var(--bg-hover);
   color: var(--accent);
+}
+/*
+ * 溢出菜单内的拖动反馈（1.1.9）。
+ * 纵向列表用「上/下边框线」而不是横向的「左/右 inset 阴影」，
+ * 这样用户一眼就知道松手后会插到上一行还是下一行。
+ */
+.overflow-item.is-dragging {
+  opacity: 0.35;
+  cursor: grabbing;
+}
+.overflow-item.is-drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.overflow-item.is-drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+/* 菜单顶部提示：说明这十几个按钮为什么被折叠、以及怎么让它们出来 */
+.overflow-hint {
+  padding: 3px 10px 6px;
+  font-size: 10.5px;
+  color: var(--fg-3);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  white-space: nowrap;
 }
 </style>

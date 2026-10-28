@@ -31,17 +31,13 @@ const avatar = computed(() => auth.user?.avatarUrl ?? '');
 const privacyMode = computed(() => settingsStore.privacyMode);
 
 function toggle(): void {
-  if (privacyMode.value) {
-    // 私有化模式下不提供登录：账号体系依赖服务端，直接给出说明而不是弹登录框
-    app.notify('已开启数据私有化模式，登录与账号同步不可用', 'info');
-    return;
-  }
-  if (!auth.isLoggedIn) {
-    loginError.value = '';
-    loginOpen.value = true;
-    return;
-  }
   open.value = !open.value;
+}
+
+function openLoginModal(): void {
+  open.value = false;
+  loginError.value = '';
+  loginOpen.value = true;
 }
 
 async function doLogin(): Promise<void> {
@@ -74,9 +70,9 @@ async function logout(): Promise<void> {
  * 由 `EditorPage` 打开设置标签页。不在这里直接路由跳转：桌面端设置是应用内标签页，
  * 不是独立页面。
  */
-function openSettingsFromMenu(): void {
+function openSettingsFromMenu(tab?: string): void {
   open.value = false;
-  emit('openSettings');
+  emit('openSettings', tab);
 }
 
 function go(path: string): void {
@@ -117,76 +113,107 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
 
 <template>
   <div class="usermenu">
-    <!-- 数据私有化模式徽标：替代登录入口，明确告知不连服务器 -->
-    <span
+    <!-- 数据私有化模式徽标：点击同样可展开菜单进入设置 -->
+    <button
       v-if="privacyMode"
+      type="button"
       class="privbadge"
-      title="数据私有化模式已开启：编辑器不连接服务器，仅使用本地文件夹与对象存储同步"
+      title="数据私有化模式已开启（点击打开设置与菜单）"
+      @click="toggle"
     >
       <NmIcon name="shield" :size="13" />
       <span>私有化模式</span>
-    </span>
-
-    <button v-else-if="!auth.isLoggedIn" class="loginbtn" title="登录后可在多设备同步" @click="toggle">
-      <NmIcon name="user" :size="13" />
-      <span>登录</span>
     </button>
 
-    <button v-else class="avatar" :title="auth.user?.username" @click="toggle">
+    <button v-else-if="!auth.isLoggedIn" type="button" class="loginbtn" title="点击打开用户菜单与设置" @click="toggle">
+      <NmIcon name="user" :size="13" />
+      <span>未登录</span>
+    </button>
+
+    <button v-else type="button" class="avatar" :title="auth.user?.username" @click="toggle">
       <img v-if="avatar" :src="avatar" alt="avatar" />
       <span v-else>{{ initial }}</span>
     </button>
 
-    <div v-if="open && auth.isLoggedIn && !privacyMode" class="menu" :class="{ 'menu--left': props.align === 'left' }">
-      <div class="menu__head">
-        <div class="menu__avatar">
-          <img v-if="avatar" :src="avatar" alt="avatar" />
-          <span v-else>{{ initial }}</span>
+    <div v-if="open" class="menu" :class="{ 'menu--left': props.align === 'left' }">
+      <template v-if="auth.isLoggedIn && !privacyMode">
+        <div class="menu__head">
+          <div class="menu__avatar">
+            <img v-if="avatar" :src="avatar" alt="avatar" />
+            <span v-else>{{ initial }}</span>
+          </div>
+          <div class="menu__id">
+            <strong>{{ auth.user?.nickname || auth.user?.username }}</strong>
+            <span>{{ auth.user?.email }}</span>
+          </div>
         </div>
-        <div class="menu__id">
-          <strong>{{ auth.user?.nickname || auth.user?.username }}</strong>
-          <span>{{ auth.user?.email }}</span>
+        <div class="menu__credits">
+          <NmIcon name="zap" :size="13" />
+          <span>积分</span>
+          <strong>{{ app.credits !== null ? formatCompactNumber(app.credits) : '—' }}</strong>
+          <button class="menu__topup" @click="go('/account?tab=credits')">充值</button>
         </div>
-      </div>
-      <div class="menu__credits">
-        <NmIcon name="zap" :size="13" />
-        <span>积分</span>
-        <strong>{{ app.credits !== null ? formatCompactNumber(app.credits) : '—' }}</strong>
-        <button class="menu__topup" @click="go('/account?tab=credits')">充值</button>
-      </div>
+      </template>
+      <template v-else-if="privacyMode">
+        <div class="menu__head">
+          <div class="menu__avatar menu__avatar--priv">
+            <NmIcon name="shield" :size="16" />
+          </div>
+          <div class="menu__id">
+            <strong>数据私有化模式</strong>
+            <span>仅使用本地文件夹与对象存储</span>
+          </div>
+        </div>
+        <button class="menu__item" @click="openSettingsFromMenu('server')">
+          <NmIcon name="server" :size="14" /><span>管理服务器与私有化…</span>
+        </button>
+      </template>
+      <template v-else>
+        <div class="menu__head">
+          <div class="menu__avatar">
+            <NmIcon name="user" :size="16" />
+          </div>
+          <div class="menu__id">
+            <strong>未登录账号</strong>
+            <span>登录后可跨端同步设置与数据</span>
+          </div>
+        </div>
+        <button class="menu__item menu__item--primary" @click="openLoginModal">
+          <NmIcon name="user" :size="14" /><span>立即登录 / 注册…</span>
+        </button>
+      </template>
       <div class="menu__sep" />
       <!--
-        「设置」入口（1.1.7 需求）。
-        用户要求：设置按钮从功能区移到用户菜单，点击头像后弹出即可进入。
-        原先这里只有「个人中心 / AI 服务设置 / 对象存储设置」等分散入口，
-        没有统一的应用设置入口，与需求不符，故补上该项并置于最前（最常用）。
-        `openSettings` 事件早已在 emits 中声明，父组件也已接住，只是模板漏了按钮。
+        「设置」入口（1.1.9 强化）：
+        设置按钮统一收口在用户头像菜单内，无论是否登录或开启私有化模式均始终可用。
       -->
       <button class="menu__item" @click="openSettingsFromMenu()">
         <NmIcon name="settings" :size="14" /><span>设置</span>
       </button>
-      <button class="menu__item" @click="goAccountSection('profile')">
+      <button v-if="auth.isLoggedIn && !privacyMode" class="menu__item" @click="goAccountSection('profile')">
         <NmIcon name="user" :size="14" /><span>个人中心（资料与改密）</span>
       </button>
-      <button class="menu__item" @click="goAccountSection('ai')">
+      <button class="menu__item" @click="openSettingsFromMenu('ai')">
         <NmIcon name="sparkles" :size="14" /><span>AI 服务设置</span>
       </button>
-      <button class="menu__item" @click="goAccountSection('storage')">
+      <button class="menu__item" @click="openSettingsFromMenu('storage')">
         <NmIcon name="cloud" :size="14" /><span>对象存储设置</span>
       </button>
-      <button class="menu__item" @click="go('/account?tab=plugins')">
+      <button v-if="!privacyMode" class="menu__item" @click="go('/account?tab=plugins')">
         <NmIcon name="layers" :size="14" /><span>插件开放平台</span>
       </button>
-      <button class="menu__item" @click="go('/account?tab=shares')">
+      <button v-if="auth.isLoggedIn && !privacyMode" class="menu__item" @click="go('/account?tab=shares')">
         <NmIcon name="share" :size="14" /><span>分享与备份记录</span>
       </button>
-      <button v-if="auth.isAdmin" class="menu__item" @click="go('/admin')">
+      <button v-if="auth.isAdmin && !privacyMode" class="menu__item" @click="go('/admin')">
         <NmIcon name="shield" :size="14" /><span>管理后台</span>
       </button>
-      <div class="menu__sep" />
-      <button class="menu__item menu__item--danger" @click="logout">
-        <NmIcon name="logout" :size="14" /><span>退出登录</span>
-      </button>
+      <template v-if="auth.isLoggedIn && !privacyMode">
+        <div class="menu__sep" />
+        <button class="menu__item menu__item--danger" @click="logout">
+          <NmIcon name="logout" :size="14" /><span>退出登录</span>
+        </button>
+      </template>
     </div>
   </div>
 
@@ -249,8 +276,18 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
   color: #0e9f6e;
   background: rgba(14, 159, 110, 0.1);
   border: 1px solid rgba(14, 159, 110, 0.32);
-  cursor: default;
+  cursor: pointer;
   user-select: none;
+}
+.privbadge:hover {
+  background: rgba(14, 159, 110, 0.18);
+}
+.menu__avatar--priv {
+  background: linear-gradient(135deg, #0e9f6e, #34d399);
+}
+.menu__item--primary {
+  color: var(--accent);
+  font-weight: 600;
 }
 .avatar {
   width: 22px;

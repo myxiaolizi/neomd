@@ -1,14 +1,34 @@
 /**
  * Neo MD 桌面端主进程。
- * - 加载同一份 Web 构建产物（file:// 加载 dist/index.html）
+ * - 加载同一份 Web 构建产物（neomd:// 协议托管 dist）
  * - 通过 preload 暴露受控的文件系统 / 加密 / 打印 / 对话框能力
- * - 单实例 + .md 文件关联打开
+ * - 单实例（单进程）+ 多窗口：同一进程内可以同时开任意多个独立窗口
+ *
+ * 1.1.9 多窗口架构说明（重要，改代码前先读）：
+ * 1.1.7/1.1.8 用单个全局变量 `mainWindow` 记窗口，每开一个新窗口就把它覆盖，
+ * 于是 B 窗口点「选择文件夹」时对话框可能挂在 A 窗口上；主窗口一关 `mainWindow = null`，
+ * 其余窗口的对话框/导出 PDF 就全部失效；系统主题变更也只发给那一个窗口。
+ * 现在改为「窗口登记表（WindowRegistry）+ 按 IPC 发送方定位」：
+ * - 所有需要窗口上下文的 IPC 都用 BrowserWindow.fromWebContents(event.sender) 找发起方，找不到就报错/降级，
+ *   绝不借用别的窗口（借窗口正是"对话框跑到另一个窗口"的根因）；
+ * - 需要广播的事件（主题变更）遍历登记表里所有未销毁窗口；
+ * - 登记表里每个窗口地位平等，没有"主窗口"特权，关掉任意一个都不影响其它窗口。
+ * `requestSingleInstanceLock()` 限制的是「第二个应用进程」，与「同进程多窗口」不冲突，因此保留。
  */
 const { app, BrowserWindow, ipcMain, dialog, shell, safeStorage, nativeTheme, protocol, net, screen } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const { pathToFileURL } = require('node:url');
+const {
+  DEFAULT_SIZE,
+  MIN_SIZE,
+  nextCascadeOffset,
+  computeCascadeBounds,
+  normalizeNewWindowArgs,
+  buildWindowRoute,
+} = require('./window-utils.cjs');
+const { WindowRegistry, isUsableWindow, safeBounds } = require('./window-registry.cjs');
 
 const isDev = process.argv.includes('--dev');
 const APP_VERSION = require('./package.json').version;
@@ -42,7 +62,15 @@ process.on('unhandledRejection', (err) => {
 
 /** 待打开的文件（来自命令行或文件关联） */
 let pendingOpenFile = null;
-let mainWindow = null;
+
+/**
+ * 所有存活窗口的登记表。
+ * 不再有 `mainWindow` 单例：窗口一律按「IPC 发送方」定位，广播类事件遍历登记表。
+ */
+const windows = new WindowRegistry({
+  // BrowserWindow.fromWebContents 在窗口销毁过程中可能抛错，WindowRegistry 内部已 try/catch
+  fromWebContents: (wc) => BrowserWindow.fromWebContents(wc),
+});
 
 /**
  * 自定义标题栏高度（px）。
@@ -83,7 +111,7 @@ html[data-runtime='desktop'] .nm-drag .no-drag {
  * 供 `app:window-state` 事件与 IPC 主动调用复用，避免多处各写一份。
  */
 function pushWindowState(win) {
-  if (!win || win.isDestroyed()) return;
+  if (!isUsableWindow(win)) return;
   try {
     win.webContents.send('app:window-state', { maximized: win.isMaximized() });
   } catch {
@@ -157,30 +185,31 @@ function resolveWebDist() {
 }
 
 /**
- * 创建应用窗口。
+ * 创建应用窗口（多窗口架构：每次调用都是一个完全独立的窗口，互不影响）。
  *
- * 1.1.7 起支持传参，用于「移动到新窗口」：
- * - `cascade`：级联偏移像素。多个窗口完全重叠时用户会以为"没打开"，偏移一点更直观；
- * - `from`：参考窗口的 bounds（父窗口位置），以它为基准做级联；
- * - `route`：追加到 URL 上的查询串（如 `?doc=<docId>`），新窗口启动后据此打开指定文档。
+ * 参数（全部可选）：
+ * - `cascade`：级联偏移像素，默认按当前窗口数自动递增（见 nextCascadeOffset）；
+ * - `from`：参考窗口 bounds，以它为锚点做级联；null 表示以主屏工作区为锚点；
+ * - `docId` / `fresh`：交给新窗口的文档参数，最终拼成 `?doc=<docId>&fresh=1`；
+ * - `route`：直接指定查询串（优先于 docId/fresh，供老调用方兼容）。
  *
- * 之所以用 URL 传文档 id、而不是 `webContents.send`：新窗口此刻还没 did-finish-load，
+ * 为什么用 URL 传参而不是 `webContents.send`：新窗口此刻还没 did-finish-load，
  * 直接 send 会丢事件；URL 是窗口自身加载时就带的，最稳。
- *
- * 每次调用都会新建一个独立 BrowserWindow，因此天然支持多窗口同时运行。
- * （`app.requestSingleInstanceLock()` 限制的是"第二个应用进程"，不影响同一进程内多窗口。）
  */
 function createWindow(opts) {
   const options = opts && typeof opts === 'object' ? opts : {};
-  const cascade = Number.isFinite(options.cascade) ? options.cascade : 0;
-  const from = options.from && typeof options.from === 'object' ? options.from : null;
-  const route = typeof options.route === 'string' ? options.route : '';
+  const from = safeBounds(options.from) || null;
+  const cascade = Number.isFinite(options.cascade) ? Math.max(0, Math.trunc(options.cascade)) : 0;
+  const route =
+    typeof options.route === 'string' && options.route
+      ? options.route
+      : buildWindowRoute({ docId: options.docId, fresh: options.fresh });
 
   const windowOptions = {
-    width: 1280,
-    height: 840,
-    minWidth: 720,
-    minHeight: 520,
+    width: DEFAULT_SIZE.width,
+    height: DEFAULT_SIZE.height,
+    minWidth: MIN_SIZE.width,
+    minHeight: MIN_SIZE.height,
     show: false,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#14171c' : '#f7f8fa',
     titleBarStyle: process.platform === 'win32' ? 'hidden' : 'default',
@@ -198,6 +227,7 @@ function createWindow(opts) {
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      // 安全基线：渲染层拿不到 Node，只能通过 preload 的白名单 API 访问系统能力
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -206,16 +236,19 @@ function createWindow(opts) {
     },
   };
 
-  // 多窗口级联定位：以父窗口（或主屏）左上角为基准偏移，并夹在工作区内避免跑出屏幕
+  // 多窗口级联定位：以父窗口（或工作区）左上角为基准偏移，再由 computeCascadeBounds 收敛进工作区，
+  // 保证在任何分辨率/多显示器/缩放下都不会把窗口推到屏幕外（用户会以为"没打开"）。
   if (cascade > 0) {
     const area = from ? screen.getDisplayMatching(from).workArea : screen.getPrimaryDisplay().workArea;
-    const anchorX = from ? from.x : area.x;
-    const anchorY = from ? from.y : area.y;
-    windowOptions.x = Math.max(area.x, Math.min(anchorX + cascade, area.x + area.width - windowOptions.width));
-    windowOptions.y = Math.max(area.y, Math.min(anchorY + cascade, area.y + area.height - windowOptions.height));
+    const bounds = computeCascadeBounds({ from, workArea: area, cascade, size: DEFAULT_SIZE });
+    windowOptions.x = bounds.x;
+    windowOptions.y = bounds.y;
+    windowOptions.width = bounds.width;
+    windowOptions.height = bounds.height;
   }
 
   const win = new BrowserWindow(windowOptions);
+  windows.add(win);
 
   // 显式确认窗口可移动（Windows/macOS 均支持），排除被外部代码误禁用的可能
   try {
@@ -225,23 +258,23 @@ function createWindow(opts) {
   }
 
   const dist = resolveWebDist();
-  log('web dist =', dist);
   webRoot = dist;
+  log('createWindow', `id=${win.id}`, `cascade=${cascade}`, `route=${route || '(none)'}`, `dist=${dist}`);
   // 通过自定义协议在根路径托管前端，本机版直接进入 /app 编辑器，不展示网页营销首页。
-  // route 用于「移动到新窗口」时把文档 id 带过去。
+  // route 用于「移动到新窗口」时把文档参数带过去（doc=<docId>&fresh=1）。
   const targetUrl = `${APP_SCHEME}://neomd/app${route}`;
   win.loadURL(targetUrl).catch((e) => {
     log('loadURL failed', String(e && e.stack ? e.stack : e));
     dialog.showErrorBox('启动失败', String(e && e.message ? e.message : e));
   });
   win.webContents.on('did-fail-load', (_e, code, desc) => {
-    log('did-fail-load', code, desc);
+    log('did-fail-load', win.id, code, desc);
   });
   win.webContents.on('render-process-gone', (_e, details) => {
-    log('render-process-gone', JSON.stringify(details));
+    log('render-process-gone', win.id, JSON.stringify(details));
   });
   win.webContents.on('console-message', (_e, level, message) => {
-    log('renderer:', level, message);
+    log('renderer:', win.id, level, message);
   });
 
   win.once('ready-to-show', () => win.show());
@@ -277,7 +310,7 @@ function createWindow(opts) {
     normalBoundsBeforeZoom = null;
     if (!target || process.platform !== 'win32') return;
     setTimeout(() => {
-      if (win.isDestroyed() || win.isMaximized() || win.isFullScreen()) return;
+      if (!isUsableWindow(win) || win.isMaximized() || win.isFullScreen()) return;
       try {
         const cur = win.getBounds();
         const area = screen.getDisplayMatching(cur).workArea;
@@ -298,12 +331,16 @@ function createWindow(opts) {
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
+    // 非 http(s) 一律拒绝：应用跑在自定义协议下，window.open 开不出可用窗口，
+    // 「移动至新窗口」必须走 window:newWindow IPC（见 preload 的 win.newWindow）。
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
 
+  // 窗口关闭只把自己从登记表移除；其它窗口的所有能力（对话框/打印/主题）都不受影响。
   win.on('closed', () => {
-    if (mainWindow === win) mainWindow = null;
+    windows.remove(win);
+    log('window closed', `id=${win.id}`, `remaining=${windows.count()}`);
   });
 
   if (isDev) win.webContents.openDevTools({ mode: 'detach' });
@@ -313,11 +350,13 @@ function createWindow(opts) {
   if (shotIdx > -1) {
     const shotPath = process.argv[shotIdx + 1];
     const routeIdx = process.argv.indexOf('--route');
-    const route = routeIdx > -1 ? process.argv[routeIdx + 1] : '';
-    if (route) {
+    const shotRoute = routeIdx > -1 ? process.argv[routeIdx + 1] : '';
+    if (shotRoute) {
       win.webContents.once('did-finish-load', () => {
         setTimeout(() => {
-          win.webContents.executeJavaScript(`location.hash = ''; history.pushState({}, '', ${JSON.stringify(route)}); location.reload();`).catch(() => undefined);
+          win.webContents
+            .executeJavaScript(`location.hash = ''; history.pushState({}, '', ${JSON.stringify(shotRoute)}); location.reload();`)
+            .catch(() => undefined);
         }, 800);
       });
     }
@@ -339,7 +378,7 @@ function createWindow(opts) {
           log('screenshot failed', String(e && e.stack ? e.stack : e));
         }
         app.exit(0);
-      }, route ? 9000 : 6000);
+      }, shotRoute ? 9000 : 6000);
     });
   }
 
@@ -414,34 +453,60 @@ ipcMain.handle('fs:list', async (_e, p) => {
 
 /* ---------------- IPC：窗口控制（自定义标题栏用） ---------------- */
 
+/**
+ * 取发起 IPC 调用的那个窗口。
+ * 这是多窗口改造的核心：1.1.7 的 `senderWindow(event) { return ... ?? mainWindow }`
+ * 在解析失败时会借用"主窗口"，导致操作落到别的窗口上；现在解析失败就返回 null，
+ * 调用方自行降级（不弹框 / 不发消息），绝不串窗口。
+ */
 function senderWindow(event) {
-  return BrowserWindow.fromWebContents(event.sender) ?? mainWindow;
+  return windows.resolveSender(event);
 }
 
-ipcMain.handle('window:isMaximized', (event) => senderWindow(event)?.isMaximized() ?? false);
+ipcMain.handle('window:isMaximized', (event) => {
+  const win = senderWindow(event);
+  if (!isUsableWindow(win)) return false;
+  try {
+    return win.isMaximized();
+  } catch {
+    // 窗口正在销毁时读状态会抛错，按"未最大化"处理即可（渲染层只用来画按钮样式）
+    return false;
+  }
+});
 
 /**
- * 新建一个独立的应用窗口（1.1.7，多窗口）。
+ * 新建一个独立的应用窗口（多窗口）。
  *
  * 用户原话：「修复标签栏右键在移动至新窗口功能不可用的问题，可同时打开程序多个窗口」。
  *
  * 关键点：
  * 1. `createWindow()` 每次都会新建一个 BrowserWindow，多窗口天然可行；
- *    `mainWindow` 只用于「第二个实例激活时聚焦哪个窗口」等兜底，不限制窗口数量。
- * 2. 传进来的 `docId` / `route` 通过 URL hash 交给新窗口，渲染层启动后自行打开该文档。
- *    用 query 而不是 IPC 推送，是因为新窗口的 webContents 此时还没加载完，直接 send 会丢。
- * 3. 位置做级联偏移，避免多个窗口完全重叠、用户以为"没打开"。
+ *    单实例锁只限制"第二个应用进程"，不限制同进程内的窗口数量。
+ * 2. 文档参数通过 URL 交给新窗口：`neomd://neomd/app?doc=<docId>&fresh=1`。
+ *    `fresh=1` 表示渲染层**不要恢复旧标签**，只打开这一篇文档
+ *    （1.1.7 的缺陷：新窗口恢复出全部旧标签，看起来像把旧窗口克隆了一份）。
+ * 3. 位置按父窗口级联偏移并收敛进工作区，避免多窗口完全重叠。
+ *
+ * @param {string|{docId?:string,fresh?:boolean}} [docOrOptions] 旧渲染层传 docId 字符串，新渲染层可传对象
  */
-ipcMain.handle('window:newWindow', async (event, docId) => {
-  log('window:newWindow', 'docId=' + String(docId ?? ''));
+ipcMain.handle('window:newWindow', async (event, docOrOptions, maybeOptions) => {
+  // 兼容三种调用：newWindow(docId) / newWindow(docId, {fresh}) / newWindow({docId, fresh})
+  const payload =
+    maybeOptions && typeof maybeOptions === 'object'
+      ? { docId: docOrOptions, ...maybeOptions }
+      : docOrOptions && typeof docOrOptions === 'object'
+        ? docOrOptions
+        : { docId: docOrOptions };
+  const { docId, fresh } = normalizeNewWindowArgs(payload);
   const parent = senderWindow(event);
-  const cascade = (BrowserWindow.getAllWindows().length % 8) * 28;
+  const cascade = nextCascadeOffset(windows.count());
   const win = createWindow({
     cascade,
-    // 以父窗口当前位置为基准做级联，多窗口不会叠在一起
-    from: parent && !parent.isDestroyed() ? parent.getBounds() : null,
-    route: docId ? `?doc=${encodeURIComponent(String(docId))}` : '',
+    from: parent ? parent.getBounds() : null,
+    docId: docId || null,
+    fresh,
   });
+  log('window:newWindow', `docId=${docId || ''}`, `fresh=${fresh}`, `parent=${parent ? parent.id : 'none'}`, `new=${win.id}`);
   return win.id;
 });
 
@@ -454,7 +519,7 @@ ipcMain.handle('window:newWindow', async (event, docId) => {
  */
 ipcMain.handle('window:toggleMaximize', (event) => {
   const win = senderWindow(event);
-  if (!win || win.isDestroyed()) return false;
+  if (!isUsableWindow(win)) return false;
   const next = !win.isMaximized();
   try {
     if (next) win.maximize();
@@ -468,30 +533,48 @@ ipcMain.handle('window:toggleMaximize', (event) => {
 });
 
 ipcMain.handle('window:minimize', (event) => {
-  senderWindow(event)?.minimize();
+  const win = senderWindow(event);
+  if (!isUsableWindow(win)) return false;
+  win.minimize();
+  return true;
 });
 
 ipcMain.handle('window:close', (event) => {
-  senderWindow(event)?.close();
+  const win = senderWindow(event);
+  if (!isUsableWindow(win)) return false;
+  win.close();
+  return true;
 });
 
 /* ---------------- IPC：对话框与系统 ---------------- */
 
-ipcMain.handle('dialog:pickDirectory', async () => {
-  const res = await dialog.showOpenDialog(mainWindow ?? undefined, { properties: ['openDirectory', 'createDirectory'] });
+/**
+ * 对话框统一入口：父窗口 = 发起调用的窗口自身。
+ * `windows.resolveDialogParent` 在没有 sender（主进程内部调用）时退化为聚焦窗口，
+ * sender 已销毁时返回 null（无父窗口弹出），不会把对话框挂到别人的窗口上。
+ */
+function dialogParent(event) {
+  return windows.resolveDialogParent(event);
+}
+
+ipcMain.handle('dialog:pickDirectory', async (event) => {
+  const parent = dialogParent(event);
+  const res = await dialog.showOpenDialog(parent ?? undefined, { properties: ['openDirectory', 'createDirectory'] });
   return res.canceled ? null : (res.filePaths[0] ?? null);
 });
 
-ipcMain.handle('dialog:pickFile', async (_e, filters) => {
-  const res = await dialog.showOpenDialog(mainWindow ?? undefined, {
+ipcMain.handle('dialog:pickFile', async (event, filters) => {
+  const parent = dialogParent(event);
+  const res = await dialog.showOpenDialog(parent ?? undefined, {
     properties: ['openFile'],
     filters: (filters ?? ['md']).map((ext) => ({ name: ext.toUpperCase(), extensions: [ext] })),
   });
   return res.canceled ? null : (res.filePaths[0] ?? null);
 });
 
-ipcMain.handle('dialog:saveFile', async (_e, defaultName) => {
-  const res = await dialog.showSaveDialog(mainWindow ?? undefined, { defaultPath: defaultName });
+ipcMain.handle('dialog:saveFile', async (event, defaultName) => {
+  const parent = dialogParent(event);
+  const res = await dialog.showSaveDialog(parent ?? undefined, { defaultPath: defaultName });
   return res.canceled ? null : (res.filePath ?? null);
 });
 
@@ -535,7 +618,7 @@ ipcMain.handle('shell:showItemInFolder', async (_e, p) => {
 ipcMain.handle('app:version', async () => APP_VERSION);
 
 /** 用打印引擎生成真正的 PDF */
-ipcMain.handle('app:printToPdf', async (_e, html, title) => {
+ipcMain.handle('app:printToPdf', async (event, html, title) => {
   const tmpDir = await fs.mkdtemp(path.join(app.getPath('temp'), 'neomd-pdf-'));
   const htmlPath = path.join(tmpDir, 'doc.html');
   await fs.writeFile(htmlPath, String(html), 'utf8');
@@ -548,7 +631,8 @@ ipcMain.handle('app:printToPdf', async (_e, html, title) => {
       margins: { top: 0.7, bottom: 0.7, left: 0.6, right: 0.6 },
     });
     const safeTitle = String(title || 'document').replace(/[\\/:*?"<>|]/g, ' ');
-    const res = await dialog.showSaveDialog(mainWindow ?? undefined, {
+    // 保存对话框挂在「点导出 PDF 的那个窗口」上，而不是某个全局主窗口
+    const res = await dialog.showSaveDialog(dialogParent(event) ?? undefined, {
       defaultPath: `${safeTitle}.pdf`,
       filters: [{ name: 'PDF', extensions: ['pdf'] }],
     });
@@ -573,13 +657,35 @@ function extractFileArg(argv) {
   return null;
 }
 
-function openFileInWindow(filePath) {
-  if (!mainWindow) return;
-  if (mainWindow.webContents.isLoading()) {
-    mainWindow.webContents.once('did-finish-load', () => mainWindow.webContents.send('app:open-file', filePath));
-  } else {
-    mainWindow.webContents.send('app:open-file', filePath);
+/**
+ * 把外部文件交给某个窗口打开。
+ * 目标窗口：优先当前聚焦窗口（用户正在看的那个），否则最早创建的存活窗口；
+ * 一个窗口都没有时返回 false，由调用方负责先建窗口。
+ */
+function openFileInWindow(filePath, preferred) {
+  const target = isUsableWindow(preferred) ? preferred : windows.focused();
+  if (!target) return false;
+  try {
+    if (target.webContents.isLoading()) {
+      target.webContents.once('did-finish-load', () => {
+        if (isUsableWindow(target)) target.webContents.send('app:open-file', filePath);
+      });
+    } else {
+      target.webContents.send('app:open-file', filePath);
+    }
+    return true;
+  } catch (e) {
+    log('openFileInWindow failed', String(e));
+    return false;
   }
+}
+
+/** 系统主题变更：广播给所有未销毁窗口（1.1.7 只发给 mainWindow，其它窗口不跟随） */
+function broadcastTheme() {
+  const theme = nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+  const sent = windows.broadcast('app:theme-changed', theme);
+  log('theme broadcast', theme, `windows=${sent}`);
+  return sent;
 }
 
 const gotLock = app.requestSingleInstanceLock();
@@ -588,29 +694,45 @@ if (!gotLock) {
 } else {
   app.on('second-instance', (_e, argv) => {
     const file = extractFileArg(argv);
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-      if (file) openFileInWindow(file);
+    if (file) {
+      // 有文件关联参数：优先交给当前聚焦窗口打开；没有窗口才新建
+      const focused = windows.focused();
+      if (focused) {
+        if (focused.isMinimized()) focused.restore();
+        focused.focus();
+        openFileInWindow(file, focused);
+        return;
+      }
+      const win = createWindow({ cascade: nextCascadeOffset(windows.count()) });
+      win.webContents.once('did-finish-load', () => {
+        if (isUsableWindow(win)) win.webContents.send('app:open-file', file);
+      });
+      return;
     }
+    // 用户再次双击桌面图标 / 启动程序（无关联文件参数）→ 新建一个独立窗口，支持同时打开多个程序窗口
+    const ref = windows.focused();
+    createWindow({
+      cascade: nextCascadeOffset(windows.count()),
+      from: ref ? ref.getBounds() : null,
+    });
   });
 
   app.whenReady().then(() => {
     log('--- start ---', 'argv=' + JSON.stringify(process.argv), 'resourcesPath=' + process.resourcesPath);
     registerProtocolHandler();
     pendingOpenFile = extractFileArg(process.argv);
-    mainWindow = createWindow();
+    const first = createWindow();
     if (pendingOpenFile) {
-      mainWindow.webContents.once('did-finish-load', () => {
-        mainWindow.webContents.send('app:open-file', pendingOpenFile);
-        pendingOpenFile = null;
+      const file = pendingOpenFile;
+      pendingOpenFile = null;
+      first.webContents.once('did-finish-load', () => {
+        if (isUsableWindow(first)) first.webContents.send('app:open-file', file);
       });
     }
-    nativeTheme.on('updated', () => {
-      mainWindow?.webContents.send('app:theme-changed', nativeTheme.shouldUseDarkColors ? 'dark' : 'light');
-    });
+    nativeTheme.on('updated', () => broadcastTheme());
     app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
+      // macOS 点 Dock 图标：一个窗口都没有时才新建
+      if (windows.count() === 0) createWindow();
     });
   });
 
@@ -618,3 +740,17 @@ if (!gotLock) {
     if (process.platform !== 'darwin') app.quit();
   });
 }
+
+/**
+ * 仅测试用导出（tools/verify-119-multiwindow.mjs 会 require 本文件后驱动真实窗口）。
+ * 生产运行不会读取这些导出，因此不影响打包行为。
+ */
+module.exports = {
+  createWindow,
+  windows,
+  senderWindow,
+  broadcastTheme,
+  openFileInWindow,
+  buildWindowRoute,
+  normalizeNewWindowArgs,
+};

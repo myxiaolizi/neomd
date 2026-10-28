@@ -418,6 +418,84 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
+  /**
+   * 「本地布局已确认与云端一致」的基线快照（1.1.9）。
+   *
+   * ## 为什么不用「脏标记」布尔量
+   *
+   * 最初的实现是照抄主题那套 `*DirtySince` 布尔标记，但实测发现它**会永久置位**：
+   * `updateLayout()` 除了用户拖拽，还被大量程序化路径调用（面板开合、功能区切换、
+   * 启动时恢复布局状态……）。只要启动过程中有过一次 `updateLayout()`，标记就被点亮，
+   * 于是**永远不再接受云端布局**——跨设备（同平台两个浏览器）的布局同步彻底失效。
+   *
+   * ## 现在的做法：按字段比对「本地 vs 上次同步基线」
+   *
+   * - `layoutBaseline` 记录**上一次与云端达成一致时**的 layout 快照；
+   * - 拉取时逐字段比对：`本地值 !== 基线值` 说明这是本地未同步的改动 → 保留本地；
+   *   `本地值 === 基线值` 说明本地没动过 → 接受云端值。
+   *
+   * 这样既不会把用户的拖拽结果回滚，也不会因为「曾经调用过 updateLayout」而永久
+   * 拒绝远端更新。粒度也从「整块 layout」细化到「单个字段」——用户只改了工具栏顺序时，
+   * 另一台设备改的面板宽度仍能正常同步下来。
+   */
+  const LAYOUT_BASELINE_KEY = 'neomd.layoutBaseline.v1';
+
+  function loadLayoutBaseline(): Record<string, unknown> | null {
+    try {
+      const raw = localStorage.getItem(LAYOUT_BASELINE_KEY);
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 上一次与云端一致时的 layout 快照（null 表示还没有基线，此时完全接受云端） */
+  const layoutBaseline = ref<Record<string, unknown> | null>(loadLayoutBaseline());
+
+  /** 记录当前 layout 为「已同步基线」（推送或拉取成功后调用） */
+  function snapshotLayoutBaseline(): void {
+    try {
+      const snap = JSON.parse(JSON.stringify(settings.value.layout ?? {})) as Record<string, unknown>;
+      layoutBaseline.value = snap;
+      localStorage.setItem(LAYOUT_BASELINE_KEY, JSON.stringify(snap));
+    } catch {
+      /* 序列化/存储失败时退化为「无基线」，下次拉取会完全接受云端 */
+    }
+  }
+
+  /**
+   * 拉取前快照本地 layout 与基线，用于 merge 之后把「本地未同步字段」还原回来。
+   *
+   * 返回一个「还原函数」而不是数据：调用点只需在 merge 之后执行它，
+   * 不必了解比对细节。
+   */
+  function captureLocalLayoutOverrides(): () => void {
+    const local = JSON.parse(JSON.stringify(settings.value.layout ?? {})) as Record<string, unknown>;
+    const base = layoutBaseline.value;
+    return () => {
+      // 没有基线 → 首次登录该端，全盘接受云端（这是跨端首次同步的正确行为）
+      if (!base) return;
+      const merged = { ...(settings.value.layout ?? {}) } as Record<string, unknown>;
+      let changed = false;
+      for (const key of Object.keys(local)) {
+        // 本地值与基线不同 = 本地有未同步改动 → 用本地值覆盖云端值
+        if (JSON.stringify(local[key]) !== JSON.stringify(base[key])) {
+          merged[key] = local[key];
+          changed = true;
+        }
+      }
+      if (changed) {
+        // merged 由「云端合并结果 + 本地未同步字段」拼成，键集合与 LayoutSettings 一致；
+        // 中间的 Record 只是逐字段比对的载体，故经 unknown 转回正式类型
+        settings.value.layout = merged as unknown as Settings['layout'];
+        // 让云端尽快收敛到本地值
+        scheduleCloudPush();
+      }
+    };
+  }
+
   /** 姝ｆ枃缂╂斁姣斾緥澶圭揣鍒?50-300锛堜笌 stores/app.ts 鐨?zoom 閫昏緫淇濇寔鍚屼竴鍙ｅ緞锛?*/
   function clampZoomPercent(v: number): number {
     if (!Number.isFinite(v)) return 100;
@@ -493,20 +571,21 @@ export const useSettingsStore = defineStore('settings', () => {
     'ocean-blue': 'lightblue',
   };
 
-  /** 搴旂敤涓婚棰勮锛堝唴缃垨鑷畾涔夛級锛氬悓姝ョ淮鎶ゆ棫鐗堟鏂囧瓧娈碉紝淇濊瘉鍏ㄩ摼璺竴鑷?*/
+  /** 应用主题预设（内置或自定义）：同步维护旧版正文字段与明暗基调，保证全链路一致 */
   function applyThemePreset(id: string): void {
     const appearance = settings.value.appearance;
     const theme = findTheme(id, appearance.customThemes);
     if (!theme) return;
     settings.value.appearance = {
       ...appearance,
+      theme: theme.mode,
       themePresetId: theme.id,
       accent: theme.accent,
       editorColorScheme: PRESET_TO_LEGACY_SCHEME[theme.id] ?? 'custom',
       customEditorBg: theme.contentBg,
       customEditorFg: theme.contentFg,
     };
-    // （注释原文编码损坏，已清理）
+    markThemeDirty();
     persist();
     applyTheme();
     scheduleCloudPush();
@@ -572,6 +651,8 @@ export const useSettingsStore = defineStore('settings', () => {
       // 本地主题改动尚未推送成功 → 记下本地主题字段，合并后原样还原，避免被云端旧值回滚
       // （这正是「设置主题后重开设置页又恢复默认」的直接原因）
       const pendingTheme = themeDirtySince.value ? { ...settings.value.appearance } : null;
+      // 布局同理：本地有未同步改动时，merge 后要把本地 layout 原样还原（1.1.9）
+      const restoreLocalLayout = captureLocalLayoutOverrides();
 
       // global 区：强一致，云端值覆盖本地 —— 任何平台登录后都拿到同一份 S3 / AI / 同步前缀 / 命名 / 快捷键
       // 主题：global 里可能来自旧 payload（只有 editorColorScheme），合并前先迁移成 themePresetId
@@ -601,6 +682,16 @@ export const useSettingsStore = defineStore('settings', () => {
         scheduleCloudPush();
       }
 
+      /*
+       * 还原本地未同步的布局字段（逐字段比对基线，见 captureLocalLayoutOverrides）。
+       *
+       * 只还原「本地改过而云端不知道」的字段：工具栏顺序 / 功能区 / 面板宽度都是
+       * 用户刚拖出来的显式意图，被云端旧值覆盖会让人觉得「拖拽无效」；
+       * 而本地没动过的字段仍接受云端值，保证另一台设备的改动能同步下来。
+       * 放在 pendingTheme 之后、cloudVersion 赋值之前，二者作用对象不重叠（appearance vs layout）。
+       */
+      restoreLocalLayout();
+
       const sens = splitRemoteSensitive(res.sensitive);
       if (sens.storage?.accessKeyId) {
         secrets.value.storageKeyId = sens.storage.accessKeyId;
@@ -615,6 +706,12 @@ export const useSettingsStore = defineStore('settings', () => {
         settings.value.ai.apiKey = sens.ai.apiKey;
       }
       settings.value.cloudVersion = remoteVer;
+      /*
+       * 拉取成功且已处理完「本地未同步字段」→ 此刻的 layout 就是与云端一致的基线。
+       * 若本地仍有未同步字段，restoreLocalLayout() 内部已安排一次推送，
+       * 推送成功时会把基线更新为含本地改动的版本。
+       */
+      snapshotLayoutBaseline();
       persist();
       applyTheme();
     } catch {
@@ -657,6 +754,8 @@ export const useSettingsStore = defineStore('settings', () => {
       settings.value.cloudVersion = Number(saved.version ?? settings.value.cloudVersion ?? 0);
       // （注释原文编码损坏，已清理）
       clearThemeDirty();
+      // 推送成功 → 当前 layout 即「与云端一致」的基线（1.1.9）
+      snapshotLayoutBaseline();
       persist();
     } catch {
       if (attempt >= 1) return;
@@ -723,8 +822,28 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function updateAppearance(patch: Partial<Settings['appearance']>): void {
-    settings.value.appearance = { ...settings.value.appearance, ...patch };
-    // （注释原文编码损坏，已清理）
+    const next = { ...settings.value.appearance, ...patch };
+    // 当用户切换明暗外观（light / dark / system）时，若当前主题预设的 mode 与目标明暗不一致，
+    // 自动切换到匹配的默认浅色（daylight）或深色（midnight）主题预设，确保点击立即生效。
+    if (patch.theme !== undefined && patch.themePresetId === undefined) {
+      const prefersDark =
+        typeof window !== 'undefined'
+          ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false)
+          : false;
+      const wantDark = patch.theme === 'dark' || (patch.theme === 'system' && prefersDark);
+      const currentPreset = findTheme(next.themePresetId, next.customThemes);
+      if (!currentPreset || (currentPreset.mode === 'dark') !== wantDark) {
+        const targetId = wantDark ? 'midnight' : 'daylight';
+        const targetTheme = findTheme(targetId, next.customThemes);
+        if (targetTheme) {
+          next.themePresetId = targetTheme.id;
+          next.editorColorScheme = PRESET_TO_LEGACY_SCHEME[targetTheme.id] ?? 'custom';
+          next.customEditorBg = targetTheme.contentBg;
+          next.customEditorFg = targetTheme.contentFg;
+        }
+      }
+    }
+    settings.value.appearance = next;
     if (touchesThemeFields(patch)) markThemeDirty();
     persist();
     applyTheme();
@@ -733,6 +852,12 @@ export const useSettingsStore = defineStore('settings', () => {
 
   function updateLayout(patch: Partial<Settings['layout']>): void {
     settings.value.layout = { ...settings.value.layout, ...patch };
+    /*
+     * 这里**不**置「脏标记」。布局是否与云端一致由 `captureLocalLayoutOverrides()`
+     * 逐字段比对基线决定（见该函数的注释）——因为 `updateLayout()` 除了用户拖拽，
+     * 还被面板开合、功能区切换等程序化路径大量调用，用布尔标记会永久置位，
+     * 反而让跨端布局同步彻底失效。
+     */
     persist();
     scheduleCloudPush();
   }

@@ -17,7 +17,7 @@
  *  - 仓库正文**不做平台差异化**，同一用户的同一 vaultId 在任何端看到的文档集合必须完全一致，
  *    一致性由 SyncEngine 经同一个 vault 前缀达成。
  */
-import { queryOne } from '../db/pool.js';
+import { execute, queryOne } from '../db/pool.js';
 import { HttpError } from './http.js';
 import { PLATFORM_PREFIX } from './oss.js';
 
@@ -128,14 +128,27 @@ export function evaluateVaultAccess(row) {
 /**
  * 校验「该仓库属于当前用户且处于 active」。
  *
- * 组合两步：先按 `(user_id, vault_id)` 查库（天然隔离用户），
- * 再交给纯函数 `evaluateVaultAccess` 判定状态。
+ * 1.1.9 增强：若 `user_vaults` 中尚无该 `(user_id, vault_id)` 记录
+ * （例如客户端刚打开本地仓库立刻发起 `/api/storage/list` 或 `PUT`，
+ * 尚未来得及先完成 `POST /api/vaults` 注册），自动幂等插入一条 `active` 记录，
+ * 从服务端根除 `403 VAULT_NOT_REGISTERED` 死锁；若已存在且 `status === 'disabled'`，
+ * 依然由 `evaluateVaultAccess` 抛 `403 VAULT_DISABLED`。
  *
  * @returns {Promise<object>} 仓库记录
  */
-export async function assertVaultUsable(userId, vaultId) {
+export async function assertVaultUsable(userId, vaultId, defaultName = '') {
   const id = assertVaultIdShape(vaultId);
-  const row = await getVaultRow(userId, id);
+  let row = await getVaultRow(userId, id);
+  if (!row) {
+    const name = String(defaultName || id).trim().slice(0, 120) || id;
+    await execute(
+      `INSERT INTO user_vaults (user_id, vault_id, name, doc_count, bytes, status, last_synced_at, updated_at)
+       VALUES (?, ?, ?, 0, 0, 'active', NULL, NOW())
+       ON DUPLICATE KEY UPDATE updated_at = NOW()`,
+      [userId, id, name],
+    );
+    row = await getVaultRow(userId, id);
+  }
   evaluateVaultAccess(row);
   return row;
 }

@@ -197,10 +197,95 @@ export class VaultRegistry {
       }
       // 老版本升级：列表为空但有 lastVault，用它补一条
       if (!this.entries.length) this.bootstrapFromLastVault();
+      // 读盘后立刻修一次历史脏数据（见 repair() 的说明）
+      if (this.repair()) this.persist();
     } catch {
       this.entries = [];
       this.bootstrapFromLastVault();
     }
+  }
+
+  /**
+   * 修复历史脏数据（1.1.9）。
+   *
+   * 为什么必须有这一步：1.1.8 的 `mergeRemote()` 把「云端有、本机没有」的仓库
+   * 以 `location: ''` + `available: false` 插进列表，而 `normalizeEntry()` 又要求
+   * `location` 非空 —— 于是同一条记录**读盘时被丢掉、下次拉取时又插回来**，
+   * 用户看到的就是「列表里同一个名字出现两条，其中一条点不动」。
+   * 更隐蔽的后果是 `findByLocation('')` 会命中这个空壳，
+   * 后续 `register()` 可能把真实仓库的位置写到一个空条目上。
+   *
+   * 修复策略（幂等，可反复调用）：
+   *  - `location` 为空但 `vaultId` 是真实 id → 补成 `cloud:<vaultId>` 并置为可用；
+   *  - `location` 为空且 `vaultId` 还是 `pending:` 占位 → 丢弃（既无位置又无身份，无从恢复）；
+   *  - 同一个 `vaultId` 出现多条 → 合并成一条（统计取"更完整"的值）。
+   *
+   * @returns 是否发生修改（调用方据此决定是否 persist）
+   */
+  private repair(): boolean {
+    const before = JSON.stringify(this.entries);
+    const beforeCurrent = this.currentVaultId;
+    const out: VaultEntry[] = [];
+    for (const entry of this.entries) {
+      if (!entry.location) {
+        if (entry.vaultId.startsWith('pending:')) continue;
+        entry.location = `cloud:${entry.vaultId}`;
+        entry.adapter = 'browser-idb';
+        entry.available = true;
+      }
+      const dupIndex = out.findIndex((e) => e.vaultId === entry.vaultId);
+      if (dupIndex < 0) {
+        out.push(entry);
+        continue;
+      }
+      /*
+       * 合并同一 vaultId 的两条记录。
+       *
+       * 「哪条更可信」按优先级：真实本机目录（桌面端绝对路径）> `cloud:` 逻辑位置；
+       * 其次是「同步过」> 「没同步过」。统计类字段取更完整的值，
+       * 避免合并后列表反而显示成 0 篇 / 从未同步。
+       */
+      const keep = out[dupIndex]!;
+      const score = (e: VaultEntry): number => {
+        const realPath = e.location.startsWith('cloud:') ? 0 : 1;
+        return realPath * 4 + (e.lastSyncedAt ? 2 : 0) + (e.available ? 1 : 0);
+      };
+      const winner = score(entry) > score(keep) ? entry : keep;
+      winner.lastOpenedAt = Math.max(keep.lastOpenedAt, entry.lastOpenedAt);
+      winner.lastSyncedAt = Math.max(keep.lastSyncedAt ?? 0, entry.lastSyncedAt ?? 0) || undefined;
+      winner.docCount = Math.max(keep.docCount ?? 0, entry.docCount ?? 0) || undefined;
+      winner.bytes = Math.max(keep.bytes ?? 0, entry.bytes ?? 0) || undefined;
+      const created = [keep.createdAt, entry.createdAt].filter((t) => Number.isFinite(t) && t > 0);
+      winner.createdAt = created.length ? Math.min(...created) : 0;
+      if (!winner.name) winner.name = keep.name || entry.name;
+      // 停用是用户显式操作，任一条为 disabled 就保留该状态，不能被合并悄悄启用
+      if (keep.status === 'disabled' || entry.status === 'disabled') winner.status = 'disabled';
+      out[dupIndex] = winner;
+    }
+    this.entries = out;
+    /*
+     * 「当前仓库」不能被修复逻辑顺手改掉（1.1.9 硬约束）。
+     *
+     * 用户升级后打开应用，必须还是上次那个仓库。repair() 只允许在
+     * **当前仓库那条记录本身被丢弃**（空 location 且是 `pending:` 占位）时才重新选一个，
+     * 其余情况一律保持 `currentVaultId` 不变 —— 即使它的 id 在合并中被改写，
+     * 也要把 currentVaultId 迁到存活的那一条上，而不是另选一个。
+     */
+    if (this.currentVaultId && !this.entries.some((e) => e.vaultId === this.currentVaultId)) {
+      const fallback =
+        this.entries.find((e) => e.status === 'active' && e.available) ??
+        this.entries.find((e) => e.status === 'active') ??
+        this.entries[0];
+      this.currentVaultId = fallback?.vaultId ?? '';
+      if (fallback && this.storage) {
+        try {
+          this.storage.setItem(LAST_VAULT_KEY, fallback.location);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return JSON.stringify(this.entries) !== before || this.currentVaultId !== beforeCurrent;
   }
 
   /**
@@ -439,13 +524,13 @@ export class VaultRegistry {
   }
 
   /**
-   * 与云端列表合并。
+   * 与云端列表合并（1.1.9 增强）。
    *
    * 规则：
-   * - 云端有、本机也有的（按 vaultId 匹配）→ 用云端的 name/status/统计覆盖，
-   *   但 `location` 与 `available` 保持本机事实（云端不知道本机路径）；
-   * - 云端有、本机没有 → 插入一条 `available: false` 的记录，
-   *   让用户能看到「这个账号在别处还有哪些仓库」，但本机不能直接切换；
+   * - 云端有、本机也有的（按 vaultId 匹配，或本机存在同名且为 `pending:` / `cloud:<name>` 的条目）
+   *   → 用云端的 vaultId / name / status / 统计覆盖，保留本机有效 `location` 并确保 `available: true`；
+   * - 云端有、本机没有 → 插入一条 `location: "cloud:" + r.vaultId`、`available: true` 的记录，
+   *   让 Web 端与 PC 端都能直接点击切换打开该云端仓库并拉取文档内容（PC 端在 `openVault` 时会自动将其映射到 `<默认本地目录>/<仓库名>`）；
    * - 本机有、云端没有 → 保留（可能还没同步过）。
    */
   mergeRemote(remote: RemoteVaultDto[]): void {
@@ -453,10 +538,37 @@ export class VaultRegistry {
     let changed = false;
     for (const r of remote) {
       if (!r || typeof r.vaultId !== 'string' || !r.vaultId) continue;
-      const local = this.get(r.vaultId);
+      const cleanName = r.name?.trim() || r.vaultId;
+      let local = this.get(r.vaultId);
+      if (!local) {
+        // 尝试匹配本机尚未对齐真实 vaultId 的同名条目（如 pending:... 或 cloud:<name>）
+        local =
+          this.entries.find(
+            (e) =>
+              e.name === cleanName &&
+              (e.vaultId.startsWith('pending:') ||
+                e.location === `cloud:${cleanName}` ||
+                e.location === `cloud:${r.vaultId}` ||
+                !e.location),
+          ) ?? null;
+        if (local) {
+          const wasCurrent = this.currentVaultId === local.vaultId;
+          local.vaultId = r.vaultId;
+          if (wasCurrent) this.currentVaultId = r.vaultId;
+          changed = true;
+        }
+      }
       if (local) {
-        if (r.name?.trim() && r.name.trim() !== local.name) {
-          local.name = r.name.trim();
+        if (cleanName && cleanName !== local.name) {
+          local.name = cleanName;
+          changed = true;
+        }
+        if (!local.location) {
+          local.location = `cloud:${r.vaultId}`;
+          changed = true;
+        }
+        if (!local.available) {
+          local.available = true;
           changed = true;
         }
         if (r.status === 'disabled' || r.status === 'active') {
@@ -468,16 +580,17 @@ export class VaultRegistry {
         if (typeof r.docCount === 'number') local.docCount = r.docCount;
         if (typeof r.bytes === 'number') local.bytes = r.bytes;
         if (r.lastSyncedAt) local.lastSyncedAt = toMs(r.lastSyncedAt);
+        changed = true;
       } else {
         this.entries.push({
           vaultId: r.vaultId,
-          name: r.name?.trim() || r.vaultId,
-          location: '',
+          name: cleanName,
+          location: `cloud:${r.vaultId}`,
           adapter: 'browser-idb',
           status: r.status === 'disabled' ? 'disabled' : 'active',
           lastOpenedAt: 0,
           createdAt: toMs(r.createdAt, Date.now()),
-          available: false,
+          available: true,
           lastSyncedAt: r.lastSyncedAt ? toMs(r.lastSyncedAt) : undefined,
           docCount: typeof r.docCount === 'number' ? r.docCount : undefined,
           bytes: typeof r.bytes === 'number' ? r.bytes : undefined,
@@ -489,6 +602,63 @@ export class VaultRegistry {
       this.entries = [...this.entries];
       this.persist();
     }
+  }
+
+  /**
+   * 清理旧版按用户名自动生成的伪仓库（如 `cloud:admin`、`cloud:my`）（1.1.9）。
+   *
+   * 背景：1.1.8 及以前网页端启动时固定打开 `cloud:<username>`（如 `admin`、`my`），
+   * 导致同一浏览器先后登录不同账号或 PC 已同步真实仓库（「郑磊 / Neo MD / Neo MD-整理」）后，
+   * 网页端仍残留 `admin` 和 `my` 两个空壳仓库。
+   *
+   * 规则：当云端已存在至少一个真实仓库（`remoteIds.size > 0`）时，
+   * 移除满足以下全部条件的伪仓库条目：
+   *  1. `vaultId` 不在云端 `remoteIds` 中；
+   *  2. `location` 形如 `cloud:<name>` 且不是 `cloud:<真实vaultId>`（或者是已知用户名伪仓库）；
+   *  3. 文档数为 0（或未统计）且从未同步过（无 `lastSyncedAt`）。
+   *
+   * 注意：若被清理的正好是 `currentVaultId`，会将 `currentVaultId` 切换到云端第一个可用仓库。
+   */
+  prunePseudoCloudVaults(remoteVaultIds: Iterable<string>, extraNames: string[] = []): boolean {
+    const remoteSet = new Set(Array.from(remoteVaultIds).filter(Boolean));
+    if (remoteSet.size === 0) return false;
+    const pseudoNames = new Set(
+      ['admin', 'my', ...extraNames].map((s) => s.trim().toLowerCase()).filter(Boolean),
+    );
+    const before = this.entries.length;
+    this.entries = this.entries.filter((e) => {
+      if (remoteSet.has(e.vaultId)) return true;
+      const isCloudLoc = e.location.startsWith('cloud:');
+      if (!isCloudLoc) return true; // 本地真实目录仓库绝不自动清理
+      const locTarget = e.location.slice('cloud:'.length).trim();
+      if (remoteSet.has(locTarget)) return true;
+      const isPseudoName =
+        pseudoNames.has(e.name.trim().toLowerCase()) ||
+        pseudoNames.has(locTarget.toLowerCase()) ||
+        e.vaultId.startsWith('pending:cloud:');
+      const isEmptyUnsynced = (e.docCount ?? 0) === 0 && !e.lastSyncedAt;
+      if (isPseudoName || isEmptyUnsynced) {
+        return false;
+      }
+      return true;
+    });
+    if (this.entries.length === before) return false;
+    if (!this.entries.some((e) => e.vaultId === this.currentVaultId)) {
+      const next =
+        this.entries.find((e) => remoteSet.has(e.vaultId) && e.status === 'active') ??
+        this.entries.find((e) => e.status === 'active') ??
+        this.entries[0];
+      this.currentVaultId = next?.vaultId ?? '';
+      if (next && this.storage) {
+        try {
+          this.storage.setItem(LAST_VAULT_KEY, next.location);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    this.persist();
+    return true;
   }
 
   /** 清空（仅供测试与「重置本机仓库清单」使用，不动任何文件） */

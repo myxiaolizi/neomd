@@ -44,24 +44,24 @@ const PRESIGN_TTL = 6 * 60 * 60;
  */
 export const DOWNLOAD_FILES = [
   {
-    file: 'NeoMD-1.1.7-win-x64.zip',
+    file: 'NeoMD-1.1.8-win-x64.zip',
     title: 'Windows x64 绿色版',
     platform: 'windows',
-    size: 159244288,
+    size: 159275205,
     proxy: false,
   },
   {
-    file: 'NeoMD-1.1.7-setup.exe',
+    file: 'NeoMD-1.1.8-setup.exe',
     title: 'Windows x64 安装包',
     platform: 'windows',
-    size: 113126415,
+    size: 113158359,
     proxy: false,
   },
   {
-    file: 'NeoMD-1.1.7.apk',
+    file: 'NeoMD-1.1.8.apk',
     title: 'Android APK',
     platform: 'android',
-    size: 4307512,
+    size: 4338972,
     proxy: true,
   },
 ];

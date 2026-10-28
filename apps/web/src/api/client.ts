@@ -135,6 +135,31 @@ export const DEFAULT_REQUEST_TIMEOUT_MS = 8000;
 
 let refreshing: Promise<boolean> | null = null;
 
+/**
+ * 跨窗口令牌刷新协调（1.1.9）。
+ *
+ * 背景（真实缺陷，桌面端「移动至新窗口」与多标签页都会踩）：
+ * 服务端 `/api/auth/refresh` 在签发新令牌的同时会**吊销旧的 refresh token**
+ * （见 services/api/src/routes/auth.js:196 `UPDATE refresh_tokens SET revoked_at = NOW()`）。
+ * 于是两个窗口同时刷新时，先到的那次成功并吊销旧令牌，后到的那次必然拿到
+ * `REFRESH_REVOKED` → 该窗口被踢出登录，表现是「切到另一个窗口就要求重新登录」。
+ *
+ * ## 设计原则：不新增任何凭证存储
+ *
+ * 最初实现曾把「新 access token」写进一个额外的 localStorage key 供其它窗口采用，
+ * 这是**错误的**：那等于把凭证明文多存一份，而且登出时若忘记清理，
+ * 就会出现「A 用户退出、B 用户登录后读到 A 的 access token」这种跨用户泄漏。
+ *
+ * 现在的做法是**零新增凭证存储**：利用一个本来就存在的事实 ——
+ * 刷新成功后 `setTokens()` 会把新 refresh token 写回 `neomd.refresh`（应用的既有唯一存放点）。
+ * 因此「别的窗口是否已经刷过」可以**直接对比当前 `neomd.refresh` 与本次用的旧令牌**：
+ *  - 相同 → 没人刷过，本次失败就是真失败；
+ *  - 不同 → 别的窗口刚刷过，用**它写下的新令牌**再刷一次即可，无需任何镜像存储。
+ *
+ * 代价是多一次网络往返（仅发生在并发刷新的罕见场景），换来的是零凭证暴露面，
+ * 以及「登出/换用户时无需额外清理」这一天然的隔离性 —— 换用户必然写入新令牌，
+ * 对比逻辑自然失效，不可能读到上一个用户的会话。
+ */
 async function tryRefresh(): Promise<boolean> {
   // 私有化模式下不刷新令牌（也不会走到这里，双重保险）
   if (isPrivacyMode()) return false;
@@ -142,16 +167,44 @@ async function tryRefresh(): Promise<boolean> {
   if (!refresh) return false;
   if (!refreshing) {
     refreshing = (async () => {
-      try {
+      /** 用指定 refresh token 请求一次；返回是否成功 */
+      const requestRefresh = async (token: string): Promise<{ ok: boolean; revoked: boolean }> => {
         const res = await fetch(resolveApiUrl('/api/auth/refresh'), {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ refreshToken: refresh }),
+          body: JSON.stringify({ refreshToken: token }),
         });
-        const json = (await res.json()) as ApiEnvelope<{ accessToken: string; refreshToken: string }>;
-        if (!json.ok || !json.data) return false;
-        setTokens(json.data.accessToken, json.data.refreshToken);
-        return true;
+        let json: ApiEnvelope<{ accessToken: string; refreshToken: string }> | null = null;
+        try {
+          json = (await res.json()) as ApiEnvelope<{ accessToken: string; refreshToken: string }>;
+        } catch {
+          json = null;
+        }
+        if (res.ok && json?.ok && json.data?.accessToken) {
+          setTokens(json.data.accessToken, json.data.refreshToken ?? token);
+          return { ok: true, revoked: false };
+        }
+        const code = json?.error?.code ?? '';
+        return { ok: false, revoked: /REFRESH_REVOKED|REFRESH_EXPIRED|401/.test(code) || res.status === 401 };
+      };
+
+      try {
+        const first = await requestRefresh(refresh);
+        if (first.ok) return true;
+        if (!first.revoked) return false;
+        /*
+         * 令牌已被吊销 —— 大概率是另一个窗口刚刷过（并发刷新）。
+         * 检查 `neomd.refresh` 是否已被别的窗口更新：若变了，说明它拿到了新令牌，
+         * 用它再试一次即可恢复，用户完全无感。
+         *
+         * 安全性说明：这里读的是**本应用既有的 refresh token 存放点**，
+         * 不是任何新增的镜像存储；换用户登录时该 key 会被新会话覆盖，
+         * 因此不存在读到上一个用户会话的可能。
+         */
+        const latest = getRefreshToken();
+        if (!latest || latest === refresh) return false;
+        const second = await requestRefresh(latest);
+        return second.ok;
       } catch {
         return false;
       } finally {
@@ -162,6 +215,22 @@ async function tryRefresh(): Promise<boolean> {
     })();
   }
   return refreshing;
+}
+
+/**
+ * 供**不走 `api()` 入口**的原始 `fetch` 调用方复用令牌刷新（1.1.9）。
+ *
+ * 为什么必须复用而不是各写一份：同步链路的 `proxyTransport` 需要读原始字节，
+ * 不能走 `api()`（后者会 `res.json()`）。它原先自己抄了一遍刷新逻辑，于是出现三个问题：
+ *  1. **没有并发去重** —— 一轮同步有几十个请求同时 401 时会并发刷新几十次，
+ *     而服务端每次刷新都吊销旧令牌，结果除了第一个全都失败；
+ *  2. **不知道「别的窗口刚刷过」** —— 多窗口场景必然被踢出登录；
+ *  3. 两处逻辑长期分叉，改一处忘另一处。
+ *
+ * 统一到这里后，`api()` 与 `proxyTransport` 共享同一份刷新状态与跨窗口协调。
+ */
+export async function refreshAccessToken(): Promise<boolean> {
+  return tryRefresh();
 }
 
 export async function api<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -419,25 +488,44 @@ export interface Paged<T> {
 
 export const adminApi = {
   stats: () => api<AdminStats>('/api/admin/stats', { auth: true }),
-  users: (query: { page?: number; size?: number; search?: string }) => {
+  users: (query: { page?: number; size?: number; pageSize?: number; search?: string; sort?: string; status?: string }) => {
     const q = new URLSearchParams();
     if (query.page) q.set('page', String(query.page));
-    if (query.size) q.set('size', String(query.size));
+    const ps = query.pageSize ?? query.size;
+    if (ps) q.set('pageSize', String(ps));
     if (query.search) q.set('search', query.search);
+    if (query.sort) q.set('sort', query.sort);
+    if (query.status) q.set('status', query.status);
     return api<Paged<UserDto>>(`/api/admin/users?${q}`, { auth: true });
   },
   updateUser: (id: number, body: { role?: string; status?: string; quotaBytes?: number }) =>
     api<{ ok: boolean }>(`/api/admin/users/${id}`, { method: 'PUT', body, auth: true }),
   resetPassword: (id: number) => api<{ password: string }>(`/api/admin/users/${id}/reset-password`, { method: 'POST', auth: true }),
   deleteUser: (id: number) => api<{ ok: boolean }>(`/api/admin/users/${id}`, { method: 'DELETE', auth: true }),
-  shares: (query: { page?: number; size?: number }) =>
-    api<Paged<Record<string, unknown>>>(`/api/admin/shares?page=${query.page ?? 1}&size=${query.size ?? 20}`, { auth: true }),
+  shares: (query: { page?: number; size?: number; pageSize?: number; search?: string }) => {
+    const q = new URLSearchParams();
+    q.set('page', String(query.page ?? 1));
+    q.set('pageSize', String(query.pageSize ?? query.size ?? 20));
+    if (query.search) q.set('search', query.search);
+    return api<Paged<Record<string, unknown>>>(`/api/admin/shares?${q}`, { auth: true });
+  },
   revokeShare: (id: number) => api<{ ok: boolean }>(`/api/admin/shares/${id}`, { method: 'DELETE', auth: true }),
-  publishes: (query: { page?: number; size?: number }) =>
-    api<Paged<Record<string, unknown>>>(`/api/admin/publishes?page=${query.page ?? 1}&size=${query.size ?? 20}`, { auth: true }),
+  publishes: (query: { page?: number; size?: number; pageSize?: number; search?: string }) => {
+    const q = new URLSearchParams();
+    q.set('page', String(query.page ?? 1));
+    q.set('pageSize', String(query.pageSize ?? query.size ?? 20));
+    if (query.search) q.set('search', query.search);
+    return api<Paged<Record<string, unknown>>>(`/api/admin/publishes?${q}`, { auth: true });
+  },
   revokePublish: (id: number) => api<{ ok: boolean }>(`/api/admin/publishes/${id}`, { method: 'DELETE', auth: true }),
-  audit: (query: { page?: number; size?: number }) =>
-    api<Paged<Record<string, unknown>>>(`/api/admin/audit?page=${query.page ?? 1}&size=${query.size ?? 30}`, { auth: true }),
+  audit: (query: { page?: number; size?: number; pageSize?: number; search?: string; action?: string }) => {
+    const q = new URLSearchParams();
+    q.set('page', String(query.page ?? 1));
+    q.set('pageSize', String(query.pageSize ?? query.size ?? 30));
+    if (query.search) q.set('search', query.search);
+    if (query.action) q.set('action', query.action);
+    return api<Paged<Record<string, unknown>>>(`/api/admin/audit?${q}`, { auth: true });
+  },
   comments: (query: { page?: number; size?: number }) =>
     api<Paged<Record<string, unknown>>>(`/api/admin/comments?page=${query.page ?? 1}&size=${query.size ?? 20}`, { auth: true }),
   setCommentStatus: (id: number, status: 'visible' | 'hidden') =>
@@ -518,8 +606,8 @@ export interface VaultDto {
 export const vaultsApi = {
   /** 列出当前账号下的全部仓库档案 */
   list: () => api<{ vaults: VaultDto[] }>('/api/vaults', { auth: true }),
-  /** 新建或更新仓库档案（首次上报时用） */
-  upsert: (body: { vaultId: string; name: string; docCount?: number; bytes?: number }) =>
+  /** 新建或更新仓库档案（首次上报或同步完成后更新统计/lastSyncedAt） */
+  upsert: (body: { vaultId: string; name: string; docCount?: number; bytes?: number; markSynced?: boolean }) =>
     api<{ vault: VaultDto }>('/api/vaults', { method: 'POST', body, auth: true }),
   /** 改名 / 停用启用 */
   update: (vaultId: string, body: { name?: string; status?: 'active' | 'disabled' }) =>
@@ -673,16 +761,39 @@ export const adminApiV2 = {
       providers: Array<{
         provider: string;
         name: string;
+        isCustom?: boolean;
         baseUrl: string;
         enabled: boolean;
         priority?: number;
         apiKeySet: boolean;
         models: string[];
+        signupUrl?: string;
+        docsUrl?: string;
+        note?: string;
+        sortOrder?: number;
         updatedAt: string;
       }>;
     }>('/api/admin/ai', { auth: true }),
-  saveAi: (provider: string, body: { baseUrl?: string; enabled?: boolean; priority?: number; models?: string[]; apiKey?: string }) =>
-    api<{ ok: boolean }>(`/api/admin/ai/${provider}`, { method: 'PUT', body, auth: true }),
+  saveAi: (
+    provider: string,
+    body: {
+      name?: string;
+      baseUrl?: string;
+      enabled?: boolean;
+      priority?: number;
+      models?: string[];
+      apiKey?: string;
+      signupUrl?: string;
+      docsUrl?: string;
+      note?: string;
+      sortOrder?: number;
+    },
+  ) => api<{ ok: boolean }>(`/api/admin/ai/${encodeURIComponent(provider)}`, { method: 'PUT', body, auth: true }),
+  deleteAi: (provider: string) =>
+    api<{ provider: string; deleted: boolean }>(`/api/admin/ai/${encodeURIComponent(provider)}`, {
+      method: 'DELETE',
+      auth: true,
+    }),
   billing: () =>
     api<{
       creditPerYuan: number;

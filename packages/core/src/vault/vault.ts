@@ -84,16 +84,61 @@ export class Vault {
    *   2000 篇文档时约 800ms，是首屏最大的单一瓶颈；它只影响「磁盘新增/删除/改动」
    *   这类边角情况，不该挡住用户看文件列表。
    *
+   * 1.1.9 跨端仓库 ID 对齐：
+   * - 支持传入 `expectedVaultId` 与 `expectedName`。当打开从云端发现的仓库
+   *   （如 `cloud:<vaultId>` 或 PC 端新映射的云端仓库目录）且本地尚无 `.neomd/vault.json` 时，
+   *   直接使用 `expectedVaultId` 落盘，保证跨端 `vaultId` 100% 一致。
+   *
    * @param location 仓库位置
    * @param options.deferReconcile 为 true 时对账不阻塞打开，结果挂到 {@link reconcileDeferred}
+   * @param options.expectedVaultId 云端已知的仓库 id（本地未初始化时优先采用）
+   * @param options.expectedName 云端或调用方指定的仓库显示名
+   * @param options.forceVaultId 强制采用 `expectedVaultId`，即使本地磁盘/索引里已有另一个 id
    */
-  async open(location: string, options: { deferReconcile?: boolean } = {}): Promise<void> {
+  async open(
+    location: string,
+    options: {
+      deferReconcile?: boolean;
+      expectedVaultId?: string;
+      expectedName?: string;
+      forceVaultId?: boolean;
+    } = {},
+  ): Promise<void> {
     await this.adapter.open(location);
-    this.name = basename(location) || 'Neo MD';
-    this.vaultId = (await this.readVaultId()) ?? uid('vault');
-    await this.writeVaultId(this.vaultId);
+    const inferredFromCloud =
+      location.startsWith('cloud:') && /^[A-Za-z0-9_-]{4,64}$/.test(location.slice(6).trim())
+        ? location.slice(6).trim()
+        : '';
+    const candidateId = (options.expectedVaultId?.trim() || inferredFromCloud).replace(/^pending:/, '');
+    const validExpectedId = /^[A-Za-z0-9_-]{4,64}$/.test(candidateId) ? candidateId : '';
+
+    this.name = options.expectedName?.trim() || basename(location) || 'Neo MD';
+    const diskVaultId = await this.readVaultId();
     // 读缓存索引：文件列表立即就绪（用户所见的那一屏数据全部来自这里）
     await this.loadIndex();
+    /*
+     * 1.1.9 修复「网页端随机 vaultId」：
+     *
+     * `forceVaultId` 为 true 表示调用方已经从服务端 `/api/vaults` 拿到了该仓库的
+     * **权威 id**，此时必须覆盖本地磁盘上的旧 id —— 否则会出现
+     * 「服务端登记的是 admin，本机却是 vaultmvs96oocjltn7zwu」这种两端前缀不一致，
+     * 表现为同一账号 PC 端与 Web 端永远看不到彼此的文档。
+     *
+     * 覆盖只改 `vaultId`（决定云端前缀），**不动任何 docId 与文件内容**，
+     * 因此不会造成本地文档丢失；旧前缀下的云端对象仍留在对象存储里，
+     * 但不再被新前缀引用（属于历史遗留，需要单独迁移）。
+     */
+    this.vaultId = options.forceVaultId && validExpectedId
+      ? validExpectedId
+      : diskVaultId || validExpectedId || this.vaultId || uid('vault');
+    const overwrite = Boolean(
+      validExpectedId && diskVaultId !== validExpectedId && (options.forceVaultId || this.files.size === 0),
+    );
+    await this.writeVaultId(this.vaultId, overwrite);
+    if (overwrite) {
+      // vault.json 换了 id，索引里也要同步，否则下次启动 loadIndex() 会把旧 id 读回来
+      await this.saveIndex();
+    }
     this.loaded = true;
 
     if (options.deferReconcile) {
@@ -113,8 +158,9 @@ export class Vault {
     }
   }
 
-  private async writeVaultId(id: string): Promise<void> {
-    if (await this.adapter.exists(`${META_DIR}/vault.json`)) return;
+  private async writeVaultId(id: string, forceOverwrite = false): Promise<void> {
+    if (!forceOverwrite && (await this.adapter.exists(`${META_DIR}/vault.json`))) return;
+    await this.adapter.mkdirp(META_DIR);
     await this.adapter.writeText(
       `${META_DIR}/vault.json`,
       JSON.stringify({ id, name: this.name, createdAt: nowMs() }, null, 2),
@@ -498,6 +544,36 @@ export class Vault {
   async restoreVersion(docId: string, storageKey: string): Promise<DocMeta> {
     const content = await this.adapter.readText(storageKey);
     return this.save(docId, content, 'restore');
+  }
+
+  /**
+   * 清理本地超期或超出数量上限的历史版本（1.1.9）。
+   *
+   * @param maxDays 保留天数（<=0 表示不按天数限制）
+   * @param maxCount 每篇最多保留版本数（<=0 表示不按数量限制）
+   * @returns 实际删除的版本文件数
+   */
+  async pruneVersions(maxDays = 30, maxCount = 50): Promise<number> {
+    let removed = 0;
+    const cutoff = maxDays > 0 ? nowMs() - maxDays * 86_400_000 : 0;
+    for (const doc of this.listAll()) {
+      const versions = await this.listVersions(doc.docId);
+      if (!versions.length) continue;
+      for (let i = 0; i < versions.length; i += 1) {
+        const v = versions[i]!;
+        const overCount = maxCount > 0 && i >= maxCount;
+        const overAge = cutoff > 0 && v.createdAt > 0 && v.createdAt < cutoff;
+        if ((overCount || overAge) && v.storageKey) {
+          try {
+            await this.adapter.remove(v.storageKey);
+            removed += 1;
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    }
+    return removed;
   }
 
   /* ---------------- 用量 ---------------- */

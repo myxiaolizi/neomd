@@ -1,4 +1,5 @@
 import type { StorageClient } from '../storage/types';
+import { isObjectMissingError } from '../storage/types';
 import type { SyncConflict, SyncEntryConfig, SyncLogEntry } from '@neomd/shared';
 import { sha256Hex, mapLimit, sleep } from '../util/hash';
 
@@ -183,6 +184,15 @@ export class SyncEngine {
       const toPull: ManifestEntry[] = [];
       const conflicts: ManifestEntry[] = [];
       /**
+       * 「陈旧索引自愈」集合（1.1.9）。
+       *
+       * 拉取阶段若发现「索引/manifest 说有、blob 实际不存在」，说明这条远端记录是坏的
+       * （1.1.8 在 `direction = 'download'` 时会把未上传的文档写进设备索引，正是成因）。
+       * 记下这些 docId，推送阶段**无视**「已同步、无改动」的判断强制重传，
+       * 让坏记录自愈；否则它会永久留在云端，每次同步都重复一次 404。
+       */
+      const staleRemoteDocIds = new Set<string>();
+      /**
        * 同步方向（1.1.8）：`upload` 模式跳过整个拉取阶段。
        * 注意仍然要读 manifest（上面已读），因为它用于判断「远端有什么」以决定推送，
        * 但**不把远端内容写回本地**，避免用户「只想上传」时被远端覆盖。
@@ -242,6 +252,28 @@ export class SyncEngine {
           this.callbacks.markSynced(entry.docId, entry.rev);
           result.pulled += 1;
         } catch (e) {
+          /*
+           * 对象不存在 ≠ 同步失败（1.1.9 关键修复）。
+           *
+           * 成因：`loadRemoteManifest()` 会同时读「设备索引」与「逐文档 manifest」。
+           * 1.1.8 在 `direction = 'download'`（仅下载）时把本地未上传的文档也写进了
+           * 设备索引，于是索引声称「远端有这篇」，但对应的 blob 从未上传 → GET 404。
+           *
+           * 正确处置：把它当作**陈旧索引**，跳过并计入 `skipped`，
+           * 而不是塞进 `errors`。否则用户会看到「同步部分失败：拉取 xxx 失败」，
+           * 而配置（仅下载）其实完全按预期工作 —— 这是纯粹的假故障。
+           *
+           * 注意仍然要记一条 warn 日志，便于排查真实的"数据缺失"问题。
+           */
+          if (isObjectMissingError(e)) {
+            result.skipped += 1;
+            staleRemoteDocIds.add(entry.docId);
+            this.log(
+              'warn',
+              `跳过陈旧索引：${entry.path}（云端缺少正文对象，稍后会自动重新上传）`,
+            );
+            return;
+          }
           result.errors.push(`拉取 ${entry.path} 失败: ${(e as Error).message}`);
         } finally {
           done += 1;
@@ -299,6 +331,11 @@ export class SyncEngine {
         }
         const r = remote.get(docId);
         if (!r) {
+          toPush.push(l);
+          continue;
+        }
+        if (staleRemoteDocIds.has(docId)) {
+          // 远端 manifest 存在但正文缺失 → 强制重传，修掉坏索引
           toPush.push(l);
           continue;
         }
@@ -374,31 +411,65 @@ export class SyncEngine {
       });
 
       /* ---------- 更新设备索引 ---------- */
+      /*
+       * 设备索引只登记「**云端确实存在正文**」的文档（1.1.9 修复）。
+       *
+       * 为什么必须这样过滤 —— 这是「同步部分失败 / 拉取 xxx 失败 404」的根因之一：
+       * 索引是**其它设备**判断「远端有什么」的主要依据（`loadRemoteManifest` 会先读它）。
+       * 但 1.1.8 之前这里无条件把 `listLocal()` 的全部文档写进索引，于是：
+       *  - `direction = 'download'`（仅下载）时推送阶段被整体跳过，
+       *    本地文档的 blob **从未上传**，却照样被写进索引；
+       *  - 之后任何设备（包括自己下次启动）读到这条索引，就会去拉
+       *    `docs/<docId>/<rev>-<hash>.md` —— 对象不存在 → GET 404；
+       *  - `SyncEngine` 把它记进 `result.errors`，界面显示「同步部分失败：1 个错误」。
+       * 用户看到的是"同步失败"，但实际配置（仅下载）完全按预期工作。
+       *
+       * 过滤判据（三条任一成立即认为云端有正文）：
+       *  1. 本次推送成功（`newManifests` 里有它）；
+       *  2. 远端已有同 hash 的 manifest（说明之前推过，或别人推过）；
+       *  3. 远端有该 docId 的非删除 manifest。
+       * 本地尚未上云的文档**不进索引**，等真正推送成功后的下一轮再登记。
+       */
+      const localNow = this.callbacks.listLocal().filter((d) => !d.deletedAt);
+      const indexable = localNow.filter((d) => {
+        if (newManifests[d.docId]) return true;
+        const r = remote.get(d.docId);
+        return Boolean(r && !r.deletedAt);
+      });
+      const skippedFromIndex = localNow.length - indexable.length;
       const index: RemoteIndex = {
         deviceId: this.config.deviceId,
         deviceName,
         updatedAt: Date.now(),
         entries: Object.fromEntries(
-          this.callbacks
-            .listLocal()
-            .filter((d) => !d.deletedAt)
-            .map((d) => [
+          indexable.map((d) => {
+            // 优先用「云端已知的那份元数据」，本地 rev/hash 可能还没同步上云
+            const r = remote.get(d.docId);
+            const merged = newManifests[d.docId] ?? r;
+            return [
               d.docId,
               {
                 docId: d.docId,
-                rev: d.rev,
-                hash: d.hash,
+                rev: merged?.rev ?? d.rev,
+                hash: merged?.hash ?? d.hash,
                 path: d.path,
                 title: d.title,
-                size: d.size,
+                size: merged?.size ?? d.size,
                 createdAt: d.createdAt,
-                updatedAt: d.updatedAt,
+                updatedAt: merged?.updatedAt ?? d.updatedAt,
                 deviceId: this.config.deviceId,
                 deletedAt: null,
               } satisfies ManifestEntry,
-            ]),
+            ];
+          }),
         ),
       };
+      if (skippedFromIndex > 0) {
+        this.log(
+          'info',
+          `设备索引已跳过 ${skippedFromIndex} 篇尚未上传的本地文档（避免其它端拉到不存在的正文）`,
+        );
+      }
       await this.putJson(indexKey(root, this.config.deviceId), index);
 
       this.log(result.errors.length ? 'warn' : 'info', `同步完成：拉取 ${result.pulled}，推送 ${result.pushed}，冲突 ${result.conflicts}`);

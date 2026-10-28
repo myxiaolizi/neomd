@@ -291,7 +291,22 @@ export interface AppearanceSettings {
   /** 编辑器最大列宽（字符数），full 模式下忽略 */
   pageWidth: PageWidth;
   showLineNumbers: boolean;
+  /**
+   * 浏览器原生拼写检查（`.ProseMirror` 的 spellcheck 属性）。
+   * 1.1.9 起在设置页「编辑器 → 拼写检查」可切换，实时生效。
+   */
   spellcheck: boolean;
+  /**
+   * 打字机模式（光标行垂直居中）。
+   *
+   * **1.1.9 未实现**：全仓没有消费点，设置页也不暴露入口。
+   * 保留字段**仅为云端设置的向后兼容** —— 老用户的 payload 里可能带着这个键，
+   * 删掉会导致 `mergeSettings()` 的浅合并把它当未知字段处理、并在推回云端时丢失；
+   * 更重要的是，若未来实现该功能，老数据可以直接复用。
+   *
+   * 产品决定：**不要**在 UI 上暴露它。一个改了没有任何效果的开关，
+   * 比没有这个开关更糟（用户会反复尝试并认为产品坏了）。
+   */
   typewriterMode: boolean;
   /** 正文编辑器配色方案 */
   editorColorScheme?: EditorColorScheme;

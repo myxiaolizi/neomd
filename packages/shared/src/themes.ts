@@ -262,8 +262,23 @@ export function resolveTheme(
       ? (input as { appearance?: Partial<AppearanceSettings> }).appearance
       : (input as Partial<AppearanceSettings> | undefined);
 
+  const mode = appearance?.theme;
+  const prefersDark = options?.prefersDark ?? false;
+  const wantDark = mode === 'dark' || (mode === 'system' && prefersDark);
+
   const byId = findTheme(appearance?.themePresetId, appearance?.customThemes);
-  if (byId) return byId;
+  if (byId) {
+    // 若用户显式指定了 light / dark（或 system 跟随系统）且當前还是默认内置主题且明暗不符，回落到匹配明暗的默认主题
+    if (
+      (mode === 'dark' && byId.id === DEFAULT_THEME_ID) ||
+      (mode === 'light' && byId.id === 'midnight') ||
+      (mode === 'system' && byId.id === DEFAULT_THEME_ID && wantDark) ||
+      (mode === 'system' && byId.id === 'midnight' && !wantDark)
+    ) {
+      return (getTheme(wantDark ? 'midnight' : DEFAULT_THEME_ID) ?? byId) as ThemePreset;
+    }
+    return byId;
+  }
 
   const scheme = appearance?.editorColorScheme;
   if (scheme === 'custom') return legacyCustomTheme(appearance);
@@ -272,10 +287,7 @@ export function resolveTheme(
     if (mapped) return mapped;
   }
 
-  const mode = appearance?.theme;
-  const prefersDark = options?.prefersDark ?? false;
-  const dark = mode === 'dark' || (mode === 'system' && prefersDark);
-  return (getTheme(dark ? 'midnight' : DEFAULT_THEME_ID) ?? BUILTIN_THEMES[0]) as ThemePreset;
+  return (getTheme(wantDark ? 'midnight' : DEFAULT_THEME_ID) ?? BUILTIN_THEMES[0]) as ThemePreset;
 }
 
 /** 该主题是否为内置主题（内置不可删除 / 不可编辑） */

@@ -335,6 +335,21 @@ function expandAll(): void {
   flash('已展开全部');
 }
 
+/**
+ * 展开指定节点（画布上点 `+N` 角标时触发，1.1.9）。
+ *
+ * 与 `toggleCollapse` 分开的原因：角标点击的语义是「我要看到被藏起来的子节点」，
+ * 是**单向展开**；而工具栏按钮是开关。若复用 toggle，用户点角标时若该节点恰好
+ * 处于展开态就会被折叠，行为与预期相反。
+ */
+function expandNode(id: string): void {
+  doc.value = {
+    ...doc.value,
+    nodes: doc.value.nodes.map((n) => (n.id === id ? { ...n, collapsed: false } : n)),
+    updatedAt: Date.now(),
+  };
+}
+
 /* ------------------------------ 自动布局 ------------------------------ */
 
 /** 按当前方向重排（内部复用引擎的 layout） */
@@ -739,8 +754,10 @@ onBeforeUnmount(() => {
         <DiagramCanvas
           ref="canvasRef"
           :doc="visibleDoc"
+          :collapsed-count="collapsedCount"
           @update:doc="(d) => (doc = d)"
           @selection-change="(ids) => (selection = ids)"
+          @expand-node="expandNode"
           @viewport-change="(v) => (zoomLabel = Math.round(v.zoom * 100))"
         />
         <div v-if="notice" class="mind__notice">{{ notice }}</div>
@@ -984,13 +1001,18 @@ onBeforeUnmount(() => {
 .mind__body {
   flex: 1 1 auto;
   min-height: 0;
+  /* 同 FlowchartEditor.flow__body：父容器不解除 min-width:auto，
+     子项的 min-width:0 无效，画布会被固定侧栏挤到几乎 0 宽（1.1.9 修复） */
+  min-width: 0;
+  overflow: hidden;
   display: flex;
 }
 
 /* 左侧结构树 */
 .mind__tree {
-  width: 200px;
-  flex: 0 0 200px;
+  /* 可缩小 + 有下限：固定 200px 会在窄容器下把画布挤没（1.1.9） */
+  flex: 0 1 200px;
+  min-width: 140px;
   border-right: 1px solid var(--border);
   background: var(--bg-sidebar);
   display: flex;
@@ -1079,8 +1101,9 @@ onBeforeUnmount(() => {
 
 /* 画布 */
 .mind__canvas {
+  /* 画布是唯一不可牺牲区域：给下限，宁可外层滚动也保证可操作（1.1.9） */
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 260px;
   position: relative;
 }
 .mind__notice {
@@ -1099,8 +1122,9 @@ onBeforeUnmount(() => {
 
 /* 右侧样式面板 */
 .mind__props {
-  width: 280px;
-  flex: 0 0 280px;
+  /* 同 .mind__tree：可缩小 + 有下限（1.1.9） */
+  flex: 0 1 280px;
+  min-width: 180px;
   border-left: 1px solid var(--border);
   background: var(--bg-sidebar);
   display: flex;

@@ -32,6 +32,8 @@ const emit = defineEmits<{
   openDoc: [string];
   openVersion: [];
   openDaily: [string];
+  /** 关闭本子窗口（1.1.9）：由 EditorPage 收到后从 rightPanelSections 移除本区块 */
+  close: [];
 }>();
 
 /* ---------------- 反向链接：扫描全库中的 [[当前标题]] ---------------- */
@@ -98,7 +100,20 @@ const titles: Record<string, string> = {
   <section class="rsection">
     <header class="rsection__head">
       <NmIcon :name="section === 'outline' ? 'outline' : section === 'backlinks' ? 'link' : section === 'tags' ? 'tag' : section === 'history' ? 'history' : section === 'stats' ? 'chart' : 'calendar'" :size="13" />
-      <span>{{ titles[section] ?? section }}</span>
+      <span class="rsection__label">{{ titles[section] ?? section }}</span>
+      <!--
+        每个子窗口标题栏的独立关闭按钮（1.1.9）。
+        多区块堆叠时，用户需要能只关掉其中一个（比如关掉日历、留下大纲），
+        而不是只能通过顶部小图标反选、或干脆关掉整个右侧栏。
+      -->
+      <button
+        class="rsection__close"
+        :title="`关闭「${titles[section] ?? section}」子窗口`"
+        :aria-label="`关闭「${titles[section] ?? section}」子窗口`"
+        @click="emit('close')"
+      >
+        <NmIcon name="close" :size="12" />
+      </button>
     </header>
 
     <!-- 大纲 -->
@@ -202,6 +217,29 @@ const titles: Record<string, string> = {
   font-weight: 600;
   color: var(--fg-3);
   flex: 0 0 auto;
+}
+.rsection__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/*
+ * 子窗口标题栏的关闭按钮（1.1.9）。
+ * 用 margin-left: auto 贴右，与 AiPanel 的 `.ai__close` 保持同样的点击热区高度（20px）。
+ */
+.rsection__close {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: var(--fg-3);
+  flex: 0 0 auto;
+}
+.rsection__close:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
 }
 .rsection__body {
   flex: 1 1 auto;

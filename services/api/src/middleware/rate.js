@@ -116,9 +116,36 @@ export function userRateLimit(name, overrides = {}) {
 export const globalRateLimitConfig = {
   max: config.rateLimits.global.max,
   timeWindow: config.rateLimits.global.timeWindowMs,
-  allowList: (req) => req.url === '/api/health',
+  /*
+   * 全局兜底限流**不覆盖存储同步接口**（1.1.9 修复）。
+   *
+   * 为什么：一次仓库同步的请求数是 `2N + 2`（N 篇文档 = N 次 PUT + N 次 GET，
+   * 外加 1 次列举与 1 次设备索引写入）。全局桶只有 300 次/分钟，于是**约 150 篇
+   * 文档的仓库在首次全量同步时就会撞上全局限流**，表现为同步到一半报错、
+   * 用户以为数据丢了。
+   *
+   * 而 `/api/storage/*` 本来就有自己的专用桶（`storageRateLimit`，900 次/分钟，
+   * 见 routes/storage.js），既按用户维度计费又贴合同步的请求量特征。
+   * 让两层同时生效只会让「较严的那层」说了算，等于专用桶形同虚设。
+   *
+   * 因此这里把存储前缀排除出全局桶，交由专用桶治理 —— 安全性没有下降
+   * （专用桶仍然限流，且按 `user:<id>` 分桶，比按 IP 更精确）。
+   */
+  allowList: (req) =>
+    req.url === '/api/health' || req.url.startsWith('/api/storage/'),
   keyGenerator: (req) => clientIp(req),
+  /*
+   * `statusCode: 429` **必须显式给出**。
+   *
+   * 为什么：这个返回值会被 `server.js` 的 `setErrorHandler` 统一包装，而该处理器
+   * 只认 `error.statusCode` —— 缺失时一律当 500 处理（"服务内部错误"）。
+   * 于是限流本该返回 429，实际返回的却是 500：客户端无法区分「请慢一点」与
+   * 「服务坏了」，既不会退避重试，还会把限流误报成服务端故障，
+   * 在监控里制造大量假告警（本地压测时实测复现：连续请求后 `/api/settings`
+   * 返回 `500 INTERNAL_ERROR`，而服务端日志里的真实原因是 `RATE_LIMITED`）。
+   */
   errorResponseBuilder: (req, context) => ({
+    statusCode: 429,
     ok: false,
     error: {
       code: 'RATE_LIMITED',

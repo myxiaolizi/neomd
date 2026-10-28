@@ -615,7 +615,24 @@ onMounted(loadAll);
           <div class="grid2">
             <div class="field">
               <label class="nm-label">显示昵称</label>
-              <input v-model="profile!.nickname" class="nm-input" maxlength="64" placeholder="输入您的显示昵称" />
+              <!--
+                `v-model="profile!.nickname"` 是运行时报错的来源（1.1.9 修复）。
+                `profile` 初值为 null（要等 `GET /api/profile` 回来才填充），而 `profile!`
+                只是**编译期**非空断言，Vue 运行时依然会对 null 取 `.nickname`，
+                于是首帧渲染直接抛 `Cannot read properties of null (reading 'nickname')`。
+                表现就是「个人中心」页白屏（后台模块巡检里 len=0 的那个）。
+
+                修法：给整个表单加 `v-if="profile"`，数据未就绪时渲染占位，
+                既不报错也不会让用户看到空表单。
+              -->
+              <input
+                v-if="profile"
+                v-model="profile.nickname"
+                class="nm-input"
+                maxlength="64"
+                placeholder="输入您的显示昵称"
+              />
+              <input v-else class="nm-input" value="" placeholder="加载中…" disabled />
             </div>
             <div class="field">
               <label class="nm-label">用户名（个人云仓库标识）</label>

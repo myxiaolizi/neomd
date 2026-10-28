@@ -5,7 +5,10 @@
  * 序列化与导出必须先在算法层站得住，UI 才有意义。
  */
 import { describe, expect, it } from 'vitest';
-import { boundsOf, createNode as _createNode, edgePath, pointInNode } from '../diagram/geometry';
+// 注意：`createNode` 由下面的 `../diagram/serialize` 提供。
+// 这里曾额外从 geometry 里 import 一次并重命名为 `_createNode`（geometry 并未导出它，
+// 且该别名全文件未被使用）——纯死引用，会让 tsc 报 TS2305。删除即可。
+import { boundsOf, edgePath, pointInNode } from '../diagram/geometry';
 import { hitTest, nodesInRect } from '../diagram/hit-test';
 import { alignNodes, distributeNodes, snapPoint } from '../diagram/align';
 import { addChildNode, autoLayoutMindmap, collapseSubtree } from '../diagram/mindmap-layout';

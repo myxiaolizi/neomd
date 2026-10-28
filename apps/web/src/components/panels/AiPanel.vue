@@ -632,11 +632,12 @@ watch(isPlatformMode, () => void loadCreditInfo());
 </script>
 
 <template>
-  <aside class="ai">
-    <header class="ai__head">
+  <aside class="ai" :class="{ 'ai--section': Boolean(props.activeTab) }">
+    <header class="ai__head" :class="{ 'ai__head--section': Boolean(props.activeTab) }">
       <!--
-        受控时（父级传入 activeTab）这套内部标签就不渲染了：父级顶部图标条已经是统一的
-        标签栏，再显示一行会变成"标签套标签"。非受控时保持原有外观。
+        受控时（父级传入 activeTab，即作为右侧栏独立操作区窗口渲染）不再渲染内嵌切换标签，
+        而是渲染与 RightSection.vue 完全同构的区块标题栏（图标 + 名称），
+        彻底解决「打开 AI 和文件操作是标签切换，打开其他功能是上下窗口」的不一致问题。
       -->
       <div v-if="!props.activeTab" class="ai__tabs">
         <button
@@ -658,9 +659,23 @@ watch(isPlatformMode, () => void loadCreditInfo());
           <span>文件操作</span>
         </button>
       </div>
-      <span v-else class="ai__title">{{ rightTab === 'file' ? '文件操作' : 'AI 助手' }}</span>
-      <button class="ai__close" title="关闭右侧边栏" @click="emit('close')">
-        <NmIcon name="close" :size="15" />
+      <div v-else class="ai__sectitle">
+        <NmIcon :name="rightTab === 'file' ? 'folder' : 'sparkles'" :size="13" />
+        <span>{{ rightTab === 'file' ? '文件操作' : 'AI 助手' }}</span>
+      </div>
+      <!--
+        关闭按钮在两种形态下都要有（1.1.9 补）：
+        受控栈模式下原来被 `v-if="!props.activeTab"` 藏掉了，用户只能关掉整个右侧栏，
+        没法只关「文件操作」这一个子窗口。受控模式下这里 emit 的 close 由 EditorPage
+        接到 `toggleRightSection(secId)`，语义正好是「只移除此子窗口」。
+      -->
+      <button
+        class="ai__close"
+        :title="props.activeTab ? '关闭此子窗口' : '关闭右侧边栏'"
+        :aria-label="props.activeTab ? '关闭此子窗口' : '关闭右侧边栏'"
+        @click="emit('close')"
+      >
+        <NmIcon name="close" :size="props.activeTab ? 13 : 15" />
       </button>
     </header>
 
@@ -854,11 +869,18 @@ watch(isPlatformMode, () => void loadCreditInfo());
   align-items: center;
   gap: 4px;
 }
-/* 受控模式下只显示当前区块名（顶部图标条已承担标签切换职责） */
-.ai__title {
-  font-size: 12px;
+.ai__head--section {
+  height: 28px;
+  padding: 0 10px;
+  border-bottom: none;
+}
+.ai__sectitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
   font-weight: 600;
-  color: var(--fg-2);
+  color: var(--fg-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

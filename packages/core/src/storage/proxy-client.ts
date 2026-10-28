@@ -86,12 +86,32 @@ export interface ProxyClientOptions {
    * 作为 `x-vault-id` 请求头随每笔请求发出。
    */
   vaultId?: string;
+  /**
+   * 同步根前缀（1.1.9 新增，如 `mdadmin/neomd/users/admin/vaults/admin/`）。
+   *
+   * 为什么需要它 —— 这是「客户端与服务端谁负责拼前缀」的归属问题：
+   * `SyncEngine` 内部一律使用**完整 key**（`rootPrefix + docs/...`），这是它与
+   * `S3StorageClient` 共用的协议，不能为了走代理而改。但服务端代理接口的契约是
+   * **相对 key**（服务端自己拼 `users/<user>/vaults/<vaultId>/`，客户端不该知道）。
+   *
+   * 1.1.8 之前两端都没做归一：客户端把完整 key 原样发过去，服务端靠
+   * `toRelativeKey()` 反向剥离前缀兜着。能用，但很脆 —— 只要客户端的 rootPrefix
+   * 与服务端拼出来的作用域有任何一个字符差异（末尾斜杠、大小写、vaultId 不一致），
+   * 剥离就失败，key 会变成双前缀，表现为「上传成功但永远读不回来」。
+   *
+   * 现在由本类**在边界处单向归一**：出站一律剥成相对 key，入站（list 返回的 key）
+   * 一律补回完整 key。这样 `SyncEngine` 继续用完整 key，网络上永远是相对 key，
+   * 服务端的反向剥离退化为「防御性兜底」而不再是主路径。
+   */
+  rootPrefix?: string;
 }
 
 export class RemoteProxyStorageClient implements StorageClient {
   private readonly basePath: string;
   private readonly maxObjectBytes: number;
   private readonly vaultId: string;
+  /** 同步根前缀（末尾保证带 `/`；为空表示不启用归一） */
+  private readonly rootPrefix: string;
 
   constructor(
     private readonly transport: ProxyTransport,
@@ -100,6 +120,34 @@ export class RemoteProxyStorageClient implements StorageClient {
     this.basePath = (options.basePath ?? '/api/storage').replace(/\/+$/, '');
     this.maxObjectBytes = options.maxObjectBytes ?? 25 * 1024 * 1024;
     this.vaultId = options.vaultId ?? '';
+    const root = (options.rootPrefix ?? '').trim();
+    this.rootPrefix = root && !root.endsWith('/') ? `${root}/` : root;
+  }
+
+  /**
+   * 完整 key → 相对 key（出站方向）。
+   *
+   * 已经是相对 key 的原样返回，因此本类对「上游传完整 key」和「上游传相对 key」
+   * 两种调用都兼容 —— 这点很重要：`listObjects()` 返回的对象 key 有时被上游直接
+   * 再传给 `getObject()`，若只认一种形态就会出现「列举得到但读不到」。
+   */
+  private toRelative(key: string): string {
+    if (!this.rootPrefix) return key;
+    if (key.startsWith(this.rootPrefix)) return key.slice(this.rootPrefix.length);
+    return key;
+  }
+
+  /**
+   * 相对 key → 完整 key（入站方向）。
+   *
+   * 只用于**服务端返回的列举结果**：服务端按契约只返回相对 key，
+   * 而 `SyncEngine` 后续要拿这些 key 继续调 `getObjectText()` 并与其他
+   * 完整 key 做比较（例如 `blobKey()` 拼出来的 key），所以必须补回完整前缀，
+   * 否则会出现「同一对象在内存里有两种 key 表示」而导致的重复上传/误判缺失。
+   */
+  private toAbsolute(key: string): string {
+    if (!this.rootPrefix) return key;
+    return key.startsWith(this.rootPrefix) ? key : `${this.rootPrefix}${key}`;
   }
 
   /**
@@ -125,11 +173,13 @@ export class RemoteProxyStorageClient implements StorageClient {
       );
     }
     // 用 octet-stream 直传原始字节：相比 base64 省 33% 流量，也省一次编解码
-    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(key)}`, {
+    const rel = this.toRelative(key);
+    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(rel)}`, {
       method: 'PUT',
       headers: this.headers({
         'content-type': 'application/octet-stream',
-        'x-object-key': key,
+        // 同时带上相对 key：服务端优先取 query，这里只是给 multipart 等场景留的兜底
+        'x-object-key': rel,
         'x-object-content-type': contentType,
         }),
       body: bytes as unknown as BodyInit,
@@ -140,7 +190,8 @@ export class RemoteProxyStorageClient implements StorageClient {
   /* ------------------------------ 读取 ------------------------------ */
 
   async getObject(key: string): Promise<Uint8Array> {
-    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(key)}`, { method: 'GET', headers: this.headers() });
+    const rel = this.toRelative(key);
+    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(rel)}`, { method: 'GET', headers: this.headers() });
     if (!res.ok) throw new Error(await readError(res, '下载失败'));
     return new Uint8Array(await res.arrayBuffer());
   }
@@ -157,14 +208,16 @@ export class RemoteProxyStorageClient implements StorageClient {
    * 对象不存在时返回 null（与 S3StorageClient 语义一致，不抛错）。
    */
   async headObject(key: string): Promise<S3ObjectMeta | null> {
-    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(key)}`, { method: 'HEAD', headers: this.headers() });
+    const rel = this.toRelative(key);
+    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(rel)}`, { method: 'HEAD', headers: this.headers() });
     if (res.status === 404) return null;
     if (!res.ok) {
       // 网络/权限类错误向上抛，让 SyncEngine 记进 errors 而不是静默当作「对象不存在」
       throw new Error(await readError(res, '读取对象信息失败'));
     }
     return {
-      key,
+      // 返回**完整 key**：调用方拿它继续比较时用的是完整 key（见 toAbsolute 说明）
+      key: this.toAbsolute(key),
       // content-length 属于 CORS 安全列表头，浏览器可直接读
       size: Number(res.headers.get('content-length') ?? 0),
       // etag 非安全列表头，跨域下可能读不到；同步协议不依赖它，读不到就留空
@@ -176,7 +229,8 @@ export class RemoteProxyStorageClient implements StorageClient {
   /* ------------------------------ 删除 ------------------------------ */
 
   async deleteObject(key: string): Promise<void> {
-    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(key)}`, { method: 'DELETE', headers: this.headers() });
+    const rel = this.toRelative(key);
+    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(rel)}`, { method: 'DELETE', headers: this.headers() });
     // 404 视为已删除（幂等），与 S3StorageClient 一致
     if (!res.ok && res.status !== 404) throw new Error(await readError(res, '删除失败'));
   }
@@ -185,9 +239,10 @@ export class RemoteProxyStorageClient implements StorageClient {
 
   async listObjects(prefix: string, maxKeys = 1000): Promise<S3ObjectMeta[]> {
     const limit = Math.min(1000, Math.max(1, Math.trunc(maxKeys) || 1000));
+    const relPrefix = this.toRelative(prefix);
     const res = await this.transport.fetch(
-      `${this.basePath}/list?prefix=${q(prefix)}&maxKeys=${limit}`,
-      { method: 'GET' },
+      `${this.basePath}/list?prefix=${q(relPrefix)}&maxKeys=${limit}`,
+      { method: 'GET', headers: this.headers() },
     );
     if (!res.ok) throw new Error(await readError(res, '列举失败'));
     // 服务端返回 { ok, data: { objects: [...], truncated, prefix } }
@@ -203,7 +258,8 @@ export class RemoteProxyStorageClient implements StorageClient {
     }
     const objects = Array.isArray(payload?.objects) ? payload.objects : [];
     return objects.map((obj) => ({
-      key: String(obj.key ?? ''),
+      // 服务端按契约返回相对 key；这里补回完整前缀，保证本类对外只暴露一种 key 表示
+      key: this.toAbsolute(String(obj.key ?? '')),
       size: Number(obj.size ?? 0),
       etag: String(obj.etag ?? '').replace(/"/g, ''),
       lastModified: Number(obj.lastModified ?? 0),
@@ -217,7 +273,7 @@ export class RemoteProxyStorageClient implements StorageClient {
       method: 'POST',
       headers: this.headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({
-        key,
+        key: this.toRelative(key),
         method,
         expiresSeconds: Math.min(604800, Math.max(60, Math.trunc(expiresSeconds) || 3600)),
         ...(contentType ? { contentType } : {}),
@@ -251,7 +307,7 @@ export class RemoteProxyStorageClient implements StorageClient {
    * 注意它不是真正公开的——访问时仍需登录，语义上更接近「可分享给你自己的链接」。
    */
   publicUrl(key: string): string {
-    return this.transport.resolveUrl(`${this.basePath}/object?key=${q(key)}`);
+    return this.transport.resolveUrl(`${this.basePath}/object?key=${q(this.toRelative(key))}`);
   }
 }
 

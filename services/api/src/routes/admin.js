@@ -13,20 +13,26 @@ import { audit } from '../lib/audit.js';
 import { adminPrefix, deletePlatformObject, platformConfig, platformPublicUrl, probePlatformStorage } from '../lib/oss.js';
 import { listObjects } from '../lib/s3.js';
 import { invalidateUserCache } from '../middleware/auth.js';
+// 管理员令牌治理复用用户侧投影，保证两个视角字段完全一致（见 knowledge.js 的 tokenItem 注释）
+import { tokenItem } from './knowledge.js';
 import {
   PLATFORM_PROVIDERS,
   MODEL_SETTING_LIMITS,
   addCredits,
   adminProviderItem,
+  deleteProvider,
   findProvider,
+  getProviderRow,
   ledgerItem,
   listPlatformModels,
   listProviderRows,
   loadBilling,
+  mergeAllProviderDefs,
   normalizeModelSettings,
   normalizePaymentMethods,
   normalizePrices,
   resolveModelSetting,
+  resolveProviderDef,
   saveProvider,
   setConfigValue,
 } from '../lib/platform.js';
@@ -50,11 +56,17 @@ const auditQuerySchema = paginationSchema.extend({
   userId: z.coerce.number().int().min(1).optional(),
 });
 
-/** 用户列表查询：分页 + 搜索 + 排序 + 状态筛选 */
-const usersQuerySchema = paginationSchema.extend({
-  sort: z.enum(['created', 'lastLogin', 'credits', 'documents']).optional().default('created'),
-  status: z.enum(['active', 'disabled']).optional(),
-});
+/** 用户列表查询：分页 + 搜索 + 排序 + 状态筛选（兼容 size 与 pageSize 两种参数名） */
+const usersQuerySchema = paginationSchema
+  .extend({
+    size: z.coerce.number().int().min(1).max(100).optional(),
+    sort: z.enum(['created', 'lastLogin', 'credits', 'documents']).optional().default('created'),
+    status: z.enum(['active', 'disabled']).optional(),
+  })
+  .transform((v) => ({
+    ...v,
+    pageSize: v.size ?? v.pageSize,
+  }));
 
 const adjustCreditsSchema = z.object({
   amount: z.coerce
@@ -67,6 +79,7 @@ const adjustCreditsSchema = z.object({
 
 const aiProviderSchema = z
   .object({
+    name: z.string().trim().min(1, { message: '供应商名称不能为空' }).max(80, { message: '供应商名称最多 80 个字符' }).optional(),
     baseUrl: z
       .string()
       .trim()
@@ -106,6 +119,7 @@ const aiProviderSchema = z
   })
   .refine(
     (v) =>
+      v.name !== undefined ||
       v.baseUrl !== undefined ||
       v.enabled !== undefined ||
       v.priority !== undefined ||
@@ -283,6 +297,17 @@ const ledgerQuerySchema = paginationSchema.extend({
 });
 
 /**
+ * 知识库令牌治理列表查询（1.1.9）。
+ *
+ * status 只接受三种与 `tokenItem()` 完全对齐的取值，不接受「全部」以外的高自由度字符串，
+ * 避免前端传个拼写错误就静默返回全量。
+ */
+const knowledgeTokenQuerySchema = paginationSchema.extend({
+  userId: z.coerce.number().int().min(1).optional(),
+  status: z.enum(['active', 'revoked', 'expired']).optional(),
+});
+
+/**
  * 配置中心批量写入。
  * 值统一按字符串传输（多层 JSON 由前端序列化），服务端不做结构假设，
  * 因此新增配置项不需要改后端。限制条数与单项长度防止超大请求。
@@ -380,6 +405,42 @@ function usageItem(row) {
     cost: Number(row.cost ?? 0),
     createdAt: row.created_at ?? null,
   };
+}
+
+/** 令牌「长期未用」判定阈值（天）：超过这个天数没被用过，视为可回收 */
+const TOKEN_STALE_DAYS = 90;
+
+/**
+ * 知识库令牌风险审计（1.1.9 后台治理）。
+ *
+ * 只输出**可解释的信号**（前端把信号翻译成人话），不做打分黑箱：
+ *  - `owner_disabled`：所属账号已停用，但令牌还能鉴权 → 最高优先级，应立即吊销；
+ *  - `write_scope`  ：可写权限令牌，一旦泄露影响面大于只读；
+ *  - `never_expires`：没有过期时间，长期有效的凭据不符合最小权限原则；
+ *  - `never_used`   ：创建后从未使用，大概率是误建或已废弃；
+ *  - `stale`        ：超过 90 天没用过。
+ *
+ * level 取最高那一条：disabled 相关 → high；其余 → medium；都没有 → none。
+ * 已吊销 / 已过期的令牌不再判风险（它们已经不可用，标记只会造成噪声）。
+ */
+function auditTokenRisk(item, row) {
+  const signals = [];
+  if (!item.usable) {
+    return { level: 'none', signals };
+  }
+  const ownerDisabled = row.user_status !== null && row.user_status !== undefined && row.user_status !== 'active';
+  if (ownerDisabled) signals.push('owner_disabled');
+  if (item.scope === 'write') signals.push('write_scope');
+  if (!item.expiresAt) signals.push('never_expires');
+  if (!item.lastUsedAt) signals.push('never_used');
+  else {
+    const last = new Date(item.lastUsedAt).getTime();
+    if (Number.isFinite(last) && Date.now() - last > TOKEN_STALE_DAYS * 24 * 60 * 60 * 1000) {
+      signals.push('stale');
+    }
+  }
+  const level = signals.includes('owner_disabled') ? 'high' : signals.length > 0 ? 'medium' : 'none';
+  return { level, signals };
 }
 
 /** 生成唯一兑换码，冲突时自动重试 */
@@ -815,30 +876,46 @@ export async function adminRoutes(app) {
 
   /* ------------------------------ AI 平台代付 ------------------------------ */
 
-  // 平台 AI 供应商配置（密钥只回布尔值）
+  // 平台 AI 供应商配置（密钥只回布尔值，包含内置供应商与后台新增自定义供应商）
   app.get('/api/admin/ai', adminOnly, async (_req, reply) => {
     const rows = await listProviderRows();
     const map = new Map(rows.map((row) => [row.provider, row]));
+    const allDefs = mergeAllProviderDefs(rows);
     return ok(reply, {
-      providers: PLATFORM_PROVIDERS.map((def) => adminProviderItem(map.get(def.provider), def)),
+      providers: allDefs.map((def) => adminProviderItem(map.get(def.provider), def)),
     });
   });
 
-  // 修改单个供应商（apiKey 传空串表示清除）
+  // 修改或新增单个供应商（apiKey 传空串表示清除；支持自定义供应商标识）
   app.put('/api/admin/ai/:provider', adminOnly, async (req, reply) => {
     const providerId = String(req.params.provider ?? '').trim();
-    const def = findProvider(providerId);
-    if (!def) throw notFound(`未知的 AI 供应商：${providerId}`, 'UNKNOWN_PROVIDER');
+    if (!/^[a-z0-9][a-z0-9-_]{1,39}$/i.test(providerId)) {
+      throw badRequest(`供应商标识格式不正确：${providerId}（仅限字母、数字、短横线、下划线，2-40位）`, 'INVALID_PROVIDER_ID');
+    }
     const body = parse(aiProviderSchema, req.body, '供应商配置');
 
-    const saved = await saveProvider(def.provider, body);
-    await audit(req, 'admin.ai.update', `ai:${def.provider}`, {
+    const saved = await saveProvider(providerId, body);
+    if (!saved) throw notFound(`未知的 AI 供应商：${providerId}`, 'UNKNOWN_PROVIDER');
+    await audit(req, 'admin.ai.update', `ai:${saved.provider}`, {
+      name: saved.name,
       baseUrl: saved.baseUrl,
       enabled: saved.enabled,
       apiKeyChanged: body.apiKey !== undefined,
       apiKeyCleared: body.apiKey === '',
     });
     return ok(reply, { provider: saved });
+  });
+
+  // 删除后台新增的自定义供应商（内置供应商不可删除）
+  app.delete('/api/admin/ai/:provider', adminOnly, async (req, reply) => {
+    const providerId = String(req.params.provider ?? '').trim();
+    if (findProvider(providerId)) {
+      throw badRequest('系统内置供应商不可删除，若不使用可将其禁用', 'BUILTIN_PROVIDER');
+    }
+    const deleted = await deleteProvider(providerId);
+    if (!deleted) throw notFound(`自定义供应商不存在：${providerId}`, 'UNKNOWN_PROVIDER');
+    await audit(req, 'admin.ai.delete', `ai:${providerId}`);
+    return ok(reply, { provider: providerId, deleted: true });
   });
 
   /* ------------------- AI 供应商展示元数据（1.1.7） ------------------- */
@@ -853,10 +930,12 @@ export async function adminRoutes(app) {
   app.get('/api/admin/ai-providers-meta', adminOnly, async (_req, reply) => {
     const rows = await listProviderRows();
     const map = new Map(rows.map((row) => [row.provider, row]));
-    const items = PLATFORM_PROVIDERS.map((def) => adminProviderItem(map.get(def.provider), def))
+    const allDefs = mergeAllProviderDefs(rows);
+    const items = allDefs.map((def) => adminProviderItem(map.get(def.provider), def))
       .map((item) => ({
         provider: item.provider,
         name: item.name,
+        isCustom: item.isCustom,
         enabled: item.enabled,
         signupUrl: item.signupUrl,
         docsUrl: item.docsUrl,
@@ -877,16 +956,17 @@ export async function adminRoutes(app) {
    *
    * 请求体：`{ providers: [{ provider, enabled?, signupUrl?, docsUrl?, note?, sortOrder? }] }`
    * 每个 `provider` 只更新传入的字段；字符串传空串表示「恢复默认」（落库 NULL）。
-   * 任一 provider 未知则整体拒绝（避免静默丢配置）。
    */
   app.put('/api/admin/ai-providers-meta', adminOnly, async (req, reply) => {
     const body = parse(aiProvidersMetaSchema, req.body, '供应商展示配置');
+    const rows = await listProviderRows();
+    const rowMap = new Map(rows.map((r) => [r.provider, r]));
 
     // 先全部校验，确认无未知 provider 与重复项，再落库
     const seen = new Set();
     for (const item of body.providers) {
       const providerId = String(item.provider ?? '').trim();
-      if (!findProvider(providerId)) {
+      if (!findProvider(providerId) && !rowMap.has(providerId)) {
         throw notFound(`未知的 AI 供应商：${providerId}`, 'UNKNOWN_PROVIDER');
       }
       if (seen.has(providerId)) {
@@ -929,14 +1009,16 @@ export async function adminRoutes(app) {
   app.get('/api/admin/ai-models', adminOnly, async (_req, reply) => {
     const rows = await listProviderRows();
     const map = new Map(rows.map((row) => [row.provider, row]));
+    const allDefs = mergeAllProviderDefs(rows);
 
-    const providers = PLATFORM_PROVIDERS.map((def) => {
+    const providers = allDefs.map((def) => {
       const row = map.get(def.provider) ?? null;
       const item = adminProviderItem(row, def);
       const models = item.models ?? [];
       return {
         provider: item.provider,
         name: item.name,
+        isCustom: item.isCustom,
         enabled: item.enabled,
         apiKeySet: item.apiKeySet,
         models,
@@ -964,14 +1046,16 @@ export async function adminRoutes(app) {
    */
   app.put('/api/admin/ai-models/:provider', adminOnly, async (req, reply) => {
     const providerId = String(req.params.provider ?? '').trim();
-    const def = findProvider(providerId);
-    if (!def) throw notFound(`未知的 AI 供应商：${providerId}`, 'UNKNOWN_PROVIDER');
+    const currentRow = await getProviderRow(providerId);
+    const def = resolveProviderDef(providerId, currentRow);
+    if (!def || (!findProvider(providerId) && !currentRow)) {
+      throw notFound(`未知的 AI 供应商：${providerId}`, 'UNKNOWN_PROVIDER');
+    }
     const body = parse(aiModelConfigSchema, req.body, '平台模型配置');
 
     // defaultModel 必须在模型列表内（避免前台预选到一个不存在的模型）
     if (body.defaultModel !== undefined && body.defaultModel !== '') {
       // 模型列表以「本次提交的 models」优先，否则取库里现值
-      const currentRow = (await listProviderRows()).find((x) => x.provider === def.provider) ?? null;
       const currentItem = adminProviderItem(currentRow, def);
       const effectiveModels = body.models !== undefined ? body.models : currentItem.models;
       if (effectiveModels.length > 0 && !effectiveModels.includes(body.defaultModel)) {
@@ -1668,6 +1752,444 @@ export async function adminRoutes(app) {
         inflow: Number(summaryRow?.inflow ?? 0),
         outflow: Number(summaryRow?.outflow ?? 0),
       },
+    });
+  });
+
+  /* ------------------------- 知识库令牌治理（1.1.9） ------------------------- */
+
+  /**
+   * 管理员视角的知识库令牌列表。
+   *
+   * 为什么需要：用户侧的 `/api/knowledge/tokens` 只能看到自己的令牌，
+   * 一旦出现「某账号的令牌在外部被滥用」「离职账号还留着有效令牌」这类问题，
+   * 运营没有任何入口。本接口补齐全局视角：分页 + 按用户/状态/名称筛选 + 风险标记。
+   *
+   * 安全约定（与用户侧一致，直接复用 `tokenItem` 投影）：
+   * **绝不返回 token_hash 或明文**，只有前 12 位前缀用于人工辨认。
+   */
+  app.get('/api/admin/knowledge-tokens', adminOnly, async (req, reply) => {
+    const { page, pageSize, search, userId, status } = parse(knowledgeTokenQuerySchema, req.query, '令牌查询参数');
+    const filters = [];
+    const params = [];
+    if (userId) {
+      filters.push('t.user_id = ?');
+      params.push(userId);
+    }
+    /*
+     * 状态筛选的三元互斥判定必须与 `tokenItem()` 完全一致：
+     * revoked 优先于 expired（已吊销的令牌即使同时过期，也按「已吊销」归类），
+     * 否则同一枚令牌会在两个筛选项里同时出现。
+     */
+    if (status === 'active') {
+      filters.push('t.revoked_at IS NULL AND (t.expires_at IS NULL OR t.expires_at > NOW())');
+    } else if (status === 'revoked') {
+      filters.push('t.revoked_at IS NOT NULL');
+    } else if (status === 'expired') {
+      filters.push('t.revoked_at IS NULL AND t.expires_at IS NOT NULL AND t.expires_at <= NOW()');
+    }
+    if (search) {
+      filters.push('(t.name LIKE ? OR t.token_prefix LIKE ? OR u.username LIKE ? OR u.email LIKE ?)');
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
+    }
+    const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+    const offset = (page - 1) * pageSize;
+
+    const [rows, totalRow, summaryRow] = await Promise.all([
+      query(
+        `SELECT t.*, u.username, u.email, u.status AS user_status
+         FROM knowledge_tokens t LEFT JOIN users u ON u.id = t.user_id
+         ${where}
+         ORDER BY t.id DESC LIMIT ? OFFSET ?`,
+        [...params, pageSize, offset],
+      ),
+      queryOne(`SELECT COUNT(*) AS total FROM knowledge_tokens t LEFT JOIN users u ON u.id = t.user_id ${where}`, params),
+      /*
+       * 汇总永远是**全库**口径（不受筛选影响），
+       * 这样管理员在筛选某个用户时，顶部仍然能看到全局风险总量。
+       */
+      queryOne(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW()) THEN 1 ELSE 0 END) AS active,
+                SUM(CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END) AS revoked,
+                SUM(CASE WHEN revoked_at IS NULL AND expires_at IS NOT NULL AND expires_at <= NOW() THEN 1 ELSE 0 END) AS expired,
+                SUM(CASE WHEN scope = 'write' THEN 1 ELSE 0 END) AS write_scope,
+                COUNT(DISTINCT user_id) AS users
+         FROM knowledge_tokens`,
+      ),
+    ]);
+
+    const items = rows.map((row) => {
+      const item = tokenItem(row);
+      return {
+        ...item,
+        userId: Number(row.user_id),
+        username: row.username ?? null,
+        email: row.email ?? null,
+        ownerStatus: row.user_status ?? null,
+        /** 风险审计标记（见下方 riskLevel 的判定顺序） */
+        risk: auditTokenRisk(item, row),
+      };
+    });
+
+    return ok(reply, {
+      items,
+      page,
+      pageSize,
+      total: Number(totalRow?.total ?? 0),
+      summary: {
+        total: Number(summaryRow?.total ?? 0),
+        active: Number(summaryRow?.active ?? 0),
+        revoked: Number(summaryRow?.revoked ?? 0),
+        expired: Number(summaryRow?.expired ?? 0),
+        writeScope: Number(summaryRow?.write_scope ?? 0),
+        users: Number(summaryRow?.users ?? 0),
+        // 风险计数基于当前页样本，仅作「有没有异常」的直观提示，详细排查靠筛选 + 风险列
+        riskyOnPage: items.filter((it) => it.risk.level !== 'none').length,
+        writeScopeOnPage: items.filter((it) => it.risk.signals.includes('write_scope')).length,
+        neverUsedOnPage: items.filter((it) => it.risk.signals.includes('never_used')).length,
+        ownerDisabledOnPage: items.filter((it) => it.risk.signals.includes('owner_disabled')).length,
+      },
+    });
+  });
+
+  /**
+   * 管理员吊销任意用户的知识库令牌（软删除，保留审计痕迹）。
+   *
+   * 与用户侧 `DELETE /api/knowledge/tokens/:id` 的差别只有一处：
+   * 不校验 owner（管理员跨用户操作），但必须写一条带 `byAdmin` 的审计日志，
+   * 事后能追到「谁在什么时候吊销了谁的令牌」。
+   */
+  app.delete('/api/admin/knowledge-tokens/:id', adminOnly, async (req, reply) => {
+    const id = parseId(req.params.id, '令牌编号');
+    const row = await queryOne('SELECT * FROM knowledge_tokens WHERE id = ? LIMIT 1', [id]);
+    if (!row) throw notFound('令牌不存在', 'TOKEN_NOT_FOUND');
+
+    if (row.revoked_at) {
+      // 幂等：已吊销的重复吊销直接返回当前状态，不重复写审计
+      return ok(reply, { item: tokenItem(row), alreadyRevoked: true });
+    }
+
+    await execute('UPDATE knowledge_tokens SET revoked_at = NOW() WHERE id = ?', [id]);
+    await audit(req, 'admin.knowledge_token.revoke', `kb-token:${id}`, {
+      ownerUserId: Number(row.user_id),
+      name: row.name,
+      scope: row.scope,
+      tokenPrefix: row.token_prefix ?? '',
+      byAdmin: true,
+    });
+
+    const saved = await queryOne('SELECT * FROM knowledge_tokens WHERE id = ? LIMIT 1', [id]);
+    return ok(reply, { item: tokenItem(saved), alreadyRevoked: false });
+  });
+
+  /* ---------------------- AI 运营分析（1.1.9） ---------------------- */
+
+  /**
+   * AI 运营分析：按天 / 模型 / 供应商三个维度，给出调用量、失败率、
+   * 平均与 **p95** 延迟、token 与积分消耗。
+   *
+   * 与 `/api/admin/dashboard` 的分工：
+   *  - dashboard 是「首页概览」，指标以今日/累计为主，够用即可；
+   *  - 本接口是「运营分析」，允许指定 7 / 30 天窗口，并且要把长尾延迟（p95）
+   *    与模型维度成本单独拆出来 —— 这才是判断「哪个模型在拖慢/烧钱」的依据。
+   *
+   * p95 用 MySQL 8 窗口函数计算（ROW_NUMBER + 分组计数），
+   * 不用 `PERCENTILE_CONT`（MySQL 只提供窗口形态，聚合形态在 MariaDB/低版本会报语法错），
+   * 也不用「把全部 latency 取回 Node 排序」（数据量一大就把内存打爆）。
+   */
+  app.get('/api/admin/ai-analytics', adminOnly, async (req, reply) => {
+    const { days } = parse(dashboardQuerySchema, req.query, '分析查询参数');
+    const span = Math.max(0, days - 1);
+
+    /**
+     * 延迟统计片段：给定分组表达式，返回 {group, samples, avgLatency, p95Latency}。
+     * 只统计 status='ok' 且 latency_ms > 0 的样本（失败调用的耗时不代表模型性能）。
+     */
+    const latencySql = (groupExpr, partitionExpr) => `
+      SELECT ${groupExpr} AS grp, COUNT(*) AS samples,
+             ROUND(AVG(latency_ms)) AS avg_latency,
+             MAX(CASE WHEN rn = GREATEST(1, CEIL(cnt * 0.95)) THEN latency_ms END) AS p95_latency
+      FROM (
+        SELECT ${partitionExpr === groupExpr ? groupExpr : `${groupExpr}, ${partitionExpr}`}, latency_ms,
+               ROW_NUMBER() OVER (PARTITION BY ${partitionExpr} ORDER BY latency_ms) AS rn,
+               COUNT(*) OVER (PARTITION BY ${partitionExpr}) AS cnt
+        FROM ai_usage
+        WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ${span} DAY)
+          AND status = 'ok' AND latency_ms > 0
+          AND ${partitionExpr} IS NOT NULL AND ${partitionExpr} <> ''
+      ) s
+      GROUP BY ${groupExpr}`;
+
+    const [
+      totalsRow,
+      dailyRows,
+      modelRows,
+      providerRows,
+      // 模型 → 实际承载它的供应商（同一模型可能被多个供应商承载，取调用量最高的那个）
+      modelProviderRows,
+      modelLatencyRows,
+      providerLatencyRows,
+      tokenHealthRow,
+      conversionRow,
+      lowBalanceRows,
+    ] = await Promise.all([
+      queryOne(
+        `SELECT COUNT(*) AS calls,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+                COALESCE(SUM(in_tokens), 0) AS in_tokens,
+                COALESCE(SUM(out_tokens), 0) AS out_tokens,
+                COALESCE(SUM(cost), 0) AS cost,
+                COUNT(DISTINCT user_id) AS users
+         FROM ai_usage WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)`,
+        [span],
+      ).catch(() => null),
+      query(
+        `WITH RECURSIVE day_series AS (
+           SELECT DATE_SUB(CURDATE(), INTERVAL ? DAY) AS d
+           UNION ALL
+           SELECT DATE_ADD(d, INTERVAL 1 DAY) FROM day_series WHERE d < CURDATE()
+         )
+         SELECT DATE_FORMAT(ds.d, '%Y-%m-%d') AS day,
+                COALESCE(u.calls, 0) AS calls,
+                COALESCE(u.errors, 0) AS errors,
+                COALESCE(u.in_tokens, 0) AS in_tokens,
+                COALESCE(u.out_tokens, 0) AS out_tokens,
+                COALESCE(u.cost, 0) AS cost,
+                COALESCE(u.avg_latency, 0) AS avg_latency,
+                COALESCE(u.p95_latency, 0) AS p95_latency
+         FROM day_series ds
+         LEFT JOIN (
+           SELECT DATE(created_at) AS d, COUNT(*) AS calls,
+                  SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+                  COALESCE(SUM(in_tokens), 0) AS in_tokens,
+                  COALESCE(SUM(out_tokens), 0) AS out_tokens,
+                  COALESCE(SUM(cost), 0) AS cost,
+                  ROUND(AVG(CASE WHEN status = 'ok' AND latency_ms > 0 THEN latency_ms END)) AS avg_latency,
+                  MAX(CASE WHEN rn = GREATEST(1, CEIL(cnt * 0.95)) THEN latency_ms END) AS p95_latency
+           FROM (
+             SELECT created_at, status, in_tokens, out_tokens, cost, latency_ms,
+                    CASE WHEN status = 'ok' AND latency_ms > 0
+                         THEN ROW_NUMBER() OVER (PARTITION BY DATE(created_at) ORDER BY latency_ms) END AS rn,
+                    CASE WHEN status = 'ok' AND latency_ms > 0
+                         THEN COUNT(*) OVER (PARTITION BY DATE(created_at)) END AS cnt
+             FROM ai_usage WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+           ) raw
+           GROUP BY DATE(created_at)
+         ) u ON u.d = ds.d
+         ORDER BY ds.d ASC`,
+        [span, span],
+      ).catch(() => []),
+      query(
+        `SELECT model, COUNT(*) AS calls,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+                COALESCE(SUM(in_tokens), 0) AS in_tokens,
+                COALESCE(SUM(out_tokens), 0) AS out_tokens,
+                COALESCE(SUM(cost), 0) AS cost,
+                COUNT(DISTINCT user_id) AS users
+         FROM ai_usage
+         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+           AND model IS NOT NULL AND model <> ''
+         GROUP BY model ORDER BY cost DESC, calls DESC LIMIT 30`,
+        [span],
+      ).catch(() => []),
+      query(
+        `SELECT provider, COUNT(*) AS calls,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+                COALESCE(SUM(in_tokens), 0) AS in_tokens,
+                COALESCE(SUM(out_tokens), 0) AS out_tokens,
+                COALESCE(SUM(cost), 0) AS cost,
+                COUNT(DISTINCT user_id) AS users
+         FROM ai_usage
+         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+           AND provider IS NOT NULL AND provider <> ''
+         GROUP BY provider ORDER BY cost DESC, calls DESC LIMIT 20`,
+        [span],
+      ).catch(() => []),
+      query(
+        // 模型 → 承载它的供应商：同一模型可能被多个供应商承载，ORDER BY calls DESC 让第一条就是主力渠道
+        `SELECT model, provider, COUNT(*) AS calls
+         FROM ai_usage
+         WHERE created_at >= DATE_SUB(CURDATE(), INTERVAL ? DAY)
+           AND model IS NOT NULL AND model <> '' AND provider IS NOT NULL AND provider <> ''
+         GROUP BY model, provider ORDER BY model ASC, calls DESC`,
+        [span],
+      ).catch(() => []),
+      query(latencySql('model', 'model'), []).catch(() => []),
+      query(latencySql('provider', 'provider'), []).catch(() => []),
+      // 令牌健康（全库口径，与时间窗口无关）
+      queryOne(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW()) THEN 1 ELSE 0 END) AS active,
+                SUM(CASE WHEN revoked_at IS NOT NULL THEN 1 ELSE 0 END) AS revoked,
+                SUM(CASE WHEN revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())
+                              AND last_used_at IS NULL THEN 1 ELSE 0 END) AS never_used,
+                SUM(CASE WHEN revoked_at IS NULL AND (expires_at IS NULL OR expires_at > NOW())
+                              AND expires_at IS NULL THEN 1 ELSE 0 END) AS never_expires,
+                SUM(CASE WHEN last_used_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS used_7d,
+                COUNT(DISTINCT user_id) AS users
+         FROM knowledge_tokens`,
+      ).catch(() => null),
+      // 付费转化：有过充值流水的用户数 / 总用户数
+      queryOne(
+        `SELECT (SELECT COUNT(*) FROM users) AS users,
+                (SELECT COUNT(DISTINCT user_id) FROM credit_ledger WHERE kind = 'recharge') AS paying,
+                (SELECT COUNT(DISTINCT user_id) FROM credit_ledger WHERE kind IN ('recharge','grant')) AS credited,
+                (SELECT COALESCE(SUM(delta), 0) FROM credit_ledger WHERE kind = 'recharge') AS recharged_credits`,
+      ).catch(() => null),
+      // 低余额用户（余额 < 50 且仍活跃），提示运营主动跟进
+      query(
+        `SELECT id, username, email, credits FROM users
+         WHERE credits < 50 AND status = 'active'
+         ORDER BY credits ASC, id ASC LIMIT 20`,
+      ).catch(() => []),
+    ]);
+
+    const latencyOf = (rows, key) => {
+      const map = new Map();
+      for (const row of rows) {
+        map.set(String(row.grp), {
+          avgLatency: Number(row.avg_latency ?? 0),
+          p95Latency: Number(row.p95_latency ?? 0),
+          latencySamples: Number(row.samples ?? 0),
+        });
+      }
+      return (value) => map.get(String(value)) ?? { avgLatency: 0, p95Latency: 0, latencySamples: 0 };
+    };
+    const modelLatency = latencyOf(modelLatencyRows, 'model');
+    const providerLatency = latencyOf(providerLatencyRows, 'provider');
+    // model -> 主力供应商（modelProviderRows 已按 model ASC, calls DESC 排序，首次出现即为最大）
+    const modelProviderMap = new Map();
+    for (const row of modelProviderRows) {
+      const key = String(row.model);
+      if (!modelProviderMap.has(key)) modelProviderMap.set(key, String(row.provider));
+    }
+
+    const totalCalls = Number(totalsRow?.calls ?? 0);
+    const totalErrors = Number(totalsRow?.errors ?? 0);
+    const totalCost = Number(totalsRow?.cost ?? 0);
+
+    const byModel = modelRows.map((row) => {
+      const calls = Number(row.calls ?? 0);
+      const errors = Number(row.errors ?? 0);
+      const lat = modelLatency(row.model);
+      // 主力供应商：优先取真实调用记录里承载该模型的那个供应商，而不是靠模型名猜
+      const providerId = modelProviderMap.get(String(row.model)) ?? null;
+      const def = providerId ? findProvider(providerId) : null;
+      return {
+        model: row.model,
+        provider: providerId,
+        providerName: def?.name ?? providerId,
+        calls,
+        errors,
+        failRate: calls > 0 ? Math.round((errors / calls) * 10000) / 10000 : 0,
+        inTokens: Number(row.in_tokens ?? 0),
+        outTokens: Number(row.out_tokens ?? 0),
+        cost: Number(row.cost ?? 0),
+        costShare: totalCost > 0 ? Math.round((Number(row.cost ?? 0) / totalCost) * 10000) / 10000 : 0,
+        users: Number(row.users ?? 0),
+        avgLatency: lat.avgLatency,
+        p95Latency: lat.p95Latency,
+        latencySamples: lat.latencySamples,
+      };
+    });
+
+    const byProvider = providerRows.map((row) => {
+      const calls = Number(row.calls ?? 0);
+      const errors = Number(row.errors ?? 0);
+      const lat = providerLatency(row.provider);
+      const def = findProvider(row.provider);
+      return {
+        provider: row.provider,
+        name: def?.name ?? row.provider,
+        calls,
+        errors,
+        failRate: calls > 0 ? Math.round((errors / calls) * 10000) / 10000 : 0,
+        inTokens: Number(row.in_tokens ?? 0),
+        outTokens: Number(row.out_tokens ?? 0),
+        cost: Number(row.cost ?? 0),
+        costShare: totalCost > 0 ? Math.round((Number(row.cost ?? 0) / totalCost) * 10000) / 10000 : 0,
+        users: Number(row.users ?? 0),
+        avgLatency: lat.avgLatency,
+        p95Latency: lat.p95Latency,
+        latencySamples: lat.latencySamples,
+      };
+    });
+
+    // 全窗口的平均/ p95：按天样本做加权（避免「先算每天 p95 再取平均」这种失真做法）
+    const dailySamples = dailyRows.reduce((sum, row) => sum + Number(row.calls ?? 0), 0);
+    const weightedAvg =
+      dailySamples > 0
+        ? Math.round(
+            dailyRows.reduce((sum, row) => sum + Number(row.avg_latency ?? 0) * Number(row.calls ?? 0), 0) / dailySamples,
+          )
+        : 0;
+    const dailyP95 = dailyRows.reduce((max, row) => Math.max(max, Number(row.p95_latency ?? 0)), 0);
+    const peakCalls = dailyRows.reduce((max, row) => Math.max(max, Number(row.calls ?? 0)), 0);
+
+    const tokenHealth = tokenHealthRow
+      ? {
+          total: Number(tokenHealthRow.total ?? 0),
+          active: Number(tokenHealthRow.active ?? 0),
+          revoked: Number(tokenHealthRow.revoked ?? 0),
+          neverUsed: Number(tokenHealthRow.never_used ?? 0),
+          neverExpires: Number(tokenHealthRow.never_expires ?? 0),
+          used7d: Number(tokenHealthRow.used_7d ?? 0),
+          users: Number(tokenHealthRow.users ?? 0),
+        }
+      : { total: 0, active: 0, revoked: 0, neverUsed: 0, neverExpires: 0, used7d: 0, users: 0 };
+
+    const totalUsers = Number(conversionRow?.users ?? 0);
+    const payingUsers = Number(conversionRow?.paying ?? 0);
+
+    return ok(reply, {
+      range: { days, span },
+      totals: {
+        calls: totalCalls,
+        errors: totalErrors,
+        failRate: totalCalls > 0 ? Math.round((totalErrors / totalCalls) * 10000) / 10000 : 0,
+        inTokens: Number(totalsRow?.in_tokens ?? 0),
+        outTokens: Number(totalsRow?.out_tokens ?? 0),
+        cost: totalCost,
+        activeUsers: Number(totalsRow?.users ?? 0),
+        avgLatency: weightedAvg,
+        p95Latency: dailyP95,
+        peakCallsPerDay: peakCalls,
+        /** 日均调用，便于判断容量水位（保留 1 位小数，避免小样本被整数截断成 0） */
+        avgCallsPerDay: dailyRows.length > 0 ? Math.round((totalCalls / dailyRows.length) * 10) / 10 : 0,
+      },
+      daily: dailyRows.map((row) => {
+        const calls = Number(row.calls ?? 0);
+        const errors = Number(row.errors ?? 0);
+        return {
+          date: String(row.day),
+          calls,
+          errors,
+          failRate: calls > 0 ? Math.round((errors / calls) * 10000) / 10000 : 0,
+          inTokens: Number(row.in_tokens ?? 0),
+          outTokens: Number(row.out_tokens ?? 0),
+          cost: Number(row.cost ?? 0),
+          avgLatency: Number(row.avg_latency ?? 0),
+          p95Latency: Number(row.p95_latency ?? 0),
+        };
+      }),
+      byModel,
+      byProvider,
+      knowledgeTokens: tokenHealth,
+      /** 付费转化：付费用户 / 总用户，以及累计充值积分 */
+      conversion: {
+        users: totalUsers,
+        payingUsers,
+        creditedUsers: Number(conversionRow?.credited ?? 0),
+        rate: totalUsers > 0 ? Math.round((payingUsers / totalUsers) * 10000) / 10000 : 0,
+        rechargedCredits: Number(conversionRow?.recharged_credits ?? 0),
+      },
+      lowBalanceUsers: lowBalanceRows.map((row) => ({
+        id: Number(row.id),
+        username: row.username ?? null,
+        email: row.email ?? null,
+        credits: Number(row.credits ?? 0),
+      })),
+      generatedAt: new Date().toISOString(),
     });
   });
 

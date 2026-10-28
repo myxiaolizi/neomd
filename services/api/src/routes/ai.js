@@ -23,10 +23,13 @@ import {
   listPlatformModels,
   listProviderRows,
   loadBilling,
+  mergeAllProviderDefs,
   providerApiKey,
   publicProvider,
   readBalance,
+  resolveModelSetting,
   resolvePlatformCandidates,
+  resolveProviderDef,
   safeJson,
 } from '../lib/platform.js';
 
@@ -107,8 +110,8 @@ function estimateTokens(text) {
   return Math.max(1, Math.ceil(String(text ?? '').length / 4));
 }
 
-/** 记录用量，失败不影响响应（旧库没有 cost 列时自动降级） */
-async function recordUsage(userId, provider, model, inTokens, outTokens, cost = 0) {
+/** 记录用量，失败不影响响应（包含 status / latency_ms / error_code，供后台看板统计失败率与平均响应时间） */
+async function recordUsage(userId, provider, model, inTokens, outTokens, cost = 0, { status = 'ok', latencyMs = 0, errorCode = null } = {}) {
   const base = [
     userId,
     String(provider).slice(0, 40),
@@ -116,19 +119,30 @@ async function recordUsage(userId, provider, model, inTokens, outTokens, cost = 
     Math.max(0, Math.round(inTokens)),
     Math.max(0, Math.round(outTokens)),
   ];
+  const safeCost = Math.max(0, Math.round(cost));
+  const safeStatus = status === 'error' ? 'error' : 'ok';
+  const safeLatency = Math.max(0, Math.round(latencyMs));
+  const safeErrCode = errorCode ? String(errorCode).slice(0, 64) : null;
   try {
     await execute(
-      'INSERT INTO ai_usage (user_id, provider, model, in_tokens, out_tokens, cost, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
-      [...base, Math.max(0, Math.round(cost))],
+      'INSERT INTO ai_usage (user_id, provider, model, in_tokens, out_tokens, cost, status, latency_ms, error_code, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())',
+      [...base, safeCost, safeStatus, safeLatency, safeErrCode],
     );
   } catch {
     try {
       await execute(
-        'INSERT INTO ai_usage (user_id, provider, model, in_tokens, out_tokens, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
-        base,
+        'INSERT INTO ai_usage (user_id, provider, model, in_tokens, out_tokens, cost, created_at) VALUES (?, ?, ?, ?, ?, ?, NOW())',
+        [...base, safeCost],
       );
     } catch {
-      /* 统计失败忽略 */
+      try {
+        await execute(
+          'INSERT INTO ai_usage (user_id, provider, model, in_tokens, out_tokens, created_at) VALUES (?, ?, ?, ?, ?, NOW())',
+          base,
+        );
+      } catch {
+        /* 统计失败忽略 */
+      }
     }
   }
 }
@@ -307,15 +321,18 @@ async function probePlatformChat(candidates, requestedModel) {
 
 export async function aiRoutes(app) {
   /**
-   * 预设供应商（公开，无需登录）。
+   * 供应商目录（公开，无需登录）。
    *
-   * 1.1.7 起返回**后台可配置**的展示信息，前台据此渲染「去申请」链接、状态徽章与说明：
-   *  - `enabled`    ：管理员是否启用该平台供应商（前台据此显示「平台已开通 / 未开通」）
-   *  - `signupUrl`  ：申请 API Key 的地址（后台可改，旧版是写死在内置预设里的）
-   *  - `docsUrl`    ：官方文档地址
-   *  - `note`       ：说明文案
-   *  - `sortOrder`  ：展示排序（升序）
-   *  - `group`      ：`platform`（平台代付）/ `custom`（自建，由客户端预设提供）
+   * 1.1.9 起这份响应的语义被收窄为「**客户端自带 Key 时可选哪些供应商**」：
+   *  - `signupUrl` ：申请 API Key 的地址（后台可改）
+   *  - `docsUrl`   ：官方文档地址
+   *  - `note`      ：说明文案
+   *  - `sortOrder` ：展示排序（升序）
+   *  - `group`     ：`platform`（OpenAI 兼容厂商）/ `custom`（自建，由客户端预设提供）
+   *
+   * **不再返回 `enabled`**：平台是否开通代付，与用户自带 Key 能不能用毫无关系，
+   * 把它放进前台响应只会制造「未开通所以不能用」的误解。
+   * 平台代付的可用模型改由 `/api/ai/platform-models` 表达（空列表 = 暂未开放）。
    *
    * 读库失败时回落到内置默认值，保证前端永远拿得到完整列表。
    */
@@ -324,7 +341,8 @@ export async function aiRoutes(app) {
     try {
       const rows = await listProviderRows();
       const rowMap = new Map(rows.map((row) => [row.provider, row]));
-      providers = PLATFORM_PROVIDERS.map((def) => publicProvider(def, rowMap.get(def.provider) ?? null)).sort(
+      const allDefs = mergeAllProviderDefs(rows);
+      providers = allDefs.map((def) => publicProvider(def, rowMap.get(def.provider) ?? null)).sort(
         (a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id),
       );
     } catch {
@@ -359,7 +377,8 @@ export async function aiRoutes(app) {
     if (params.provider === 'platform') {
       const [rows, billing] = await Promise.all([listProviderRows(), loadBilling()]);
       const rowMap = new Map(rows.map((r) => [r.provider, r]));
-      const enabledDefs = PLATFORM_PROVIDERS.filter((def) => {
+      const allDefs = mergeAllProviderDefs(rows);
+      const enabledDefs = allDefs.filter((def) => {
         const r = rowMap.get(def.provider);
         return r && Number(r.enabled) === 1 && Boolean(providerApiKey(r));
       });
@@ -394,10 +413,9 @@ export async function aiRoutes(app) {
       });
     }
 
-    const def = findProvider(params.provider);
+    const row = await getProviderRow(params.provider);
+    const def = resolveProviderDef(params.provider, row);
     if (!def) throw badRequest(`未知的供应商：${params.provider}`, 'UNKNOWN_PROVIDER');
-
-    const row = await getProviderRow(def.provider);
     const platformKey = row && Number(row.enabled) === 1 ? providerApiKey(row) : null;
     const headerRaw = req.headers['x-user-ai-key'];
     const headerKey = String(Array.isArray(headerRaw) ? headerRaw[0] : headerRaw ?? '').trim() || null;
@@ -542,6 +560,7 @@ export async function aiRoutes(app) {
 
       const isPlatform = Boolean(body.usePlatform || body.provider === 'platform');
       let candidates = [];
+      let modelSetting = null;
       if (isPlatform) {
         const balance = await readBalance(req.user.id);
         if (balance <= 0) {
@@ -555,6 +574,14 @@ export async function aiRoutes(app) {
             '管理员尚未在后台启用并配置任何平台 AI 供应商密钥，请联系管理员或使用个人 API Key',
           );
         }
+        try {
+          const chosen = candidates[0];
+          const row = chosen.row ?? (await getProviderRow(chosen.provider));
+          const def = chosen.def ?? resolveProviderDef(chosen.provider, row);
+          modelSetting = resolveModelSetting(row, def, body.model);
+        } catch {
+          /* 读不到就按无自定义设置处理 */
+        }
       } else {
         candidates = [
           {
@@ -565,6 +592,26 @@ export async function aiRoutes(app) {
         ];
       }
 
+      // 平台模式下：将后台为该模型（或供应商）配置的系统提示词注入到最前面，并对 temperature / maxTokens 按上限夹逼
+      const platformPrompt = isPlatform ? String(modelSetting?.systemPrompt ?? '').trim() : '';
+      const effTemperature =
+        isPlatform && modelSetting && Number.isFinite(Number(modelSetting.temperature))
+          ? Math.min(Number(body.temperature ?? 0.7), Number(modelSetting.temperature))
+          : body.temperature;
+      const effMaxTokens =
+        isPlatform && modelSetting && Number.isFinite(Number(modelSetting.maxTokens))
+          ? Math.min(Number(body.maxTokens ?? 4096), Number(modelSetting.maxTokens))
+          : body.maxTokens;
+
+      const baseMessages = body.messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+        ...(m.name ? { name: m.name } : {}),
+      }));
+      const upstreamMessages = platformPrompt
+        ? [{ role: 'system', content: platformPrompt }, ...baseMessages]
+        : baseMessages;
+
       const controller = new AbortController();
       let clientGone = false;
       req.raw.on('close', () => {
@@ -572,8 +619,10 @@ export async function aiRoutes(app) {
         controller.abort();
       });
 
+      const startedAt = Date.now();
       let upstream = null;
       let chosenProvider = candidates[0].provider;
+      let chosenCandidate = candidates[0];
       let lastError = '';
 
       for (const cand of candidates) {
@@ -588,13 +637,9 @@ export async function aiRoutes(app) {
             },
             body: JSON.stringify({
               model: body.model,
-              messages: body.messages.map((m) => ({
-                role: m.role,
-                content: m.content,
-                ...(m.name ? { name: m.name } : {}),
-              })),
-              temperature: body.temperature,
-              max_tokens: body.maxTokens,
+              messages: upstreamMessages,
+              temperature: effTemperature,
+              max_tokens: effMaxTokens,
               stream: true,
               stream_options: { include_usage: true },
             }),
@@ -603,6 +648,7 @@ export async function aiRoutes(app) {
           if (resp.ok && resp.body) {
             upstream = resp;
             chosenProvider = cand.provider;
+            chosenCandidate = cand;
             break;
           }
           let detail = '';
@@ -618,7 +664,23 @@ export async function aiRoutes(app) {
       }
 
       if (!upstream || !upstream.body) {
+        await recordUsage(req.user.id, chosenProvider, body.model, 0, 0, 0, {
+          status: 'error',
+          latencyMs: Date.now() - startedAt,
+          errorCode: 'AI_UPSTREAM_ERROR',
+        });
         throw new HttpError(502, 'AI_UPSTREAM_ERROR', `AI 服务调用失败（${lastError || '无可用上游'}）`);
+      }
+
+      // 若实际命中的候选供应商不是第一个，重新解析该供应商的模型设置以保证计费准确
+      if (isPlatform && chosenCandidate && chosenCandidate.provider !== candidates[0]?.provider) {
+        try {
+          const row = chosenCandidate.row ?? (await getProviderRow(chosenCandidate.provider));
+          const def = chosenCandidate.def ?? resolveProviderDef(chosenCandidate.provider, row);
+          modelSetting = resolveModelSetting(row, def, body.model);
+        } catch {
+          /* ignore */
+        }
       }
 
       // 进入裸流模式，自行控制 SSE 写出
@@ -641,6 +703,7 @@ export async function aiRoutes(app) {
       let usage = { in: 0, out: 0 };
       let collected = '';
 
+      let streamErrored = false;
       try {
         for await (const chunk of upstream.body) {
           buffer += decoder.decode(chunk, { stream: true });
@@ -674,21 +737,22 @@ export async function aiRoutes(app) {
           }
         }
       } catch (err) {
+        streamErrored = true;
         if (!clientGone) {
           send({ type: 'error', error: `流式读取中断：${err.message}` });
         }
       }
 
-      const promptText = body.messages.map((m) => m.content).join('\n');
+      const promptText = upstreamMessages.map((m) => m.content).join('\n');
       const inTokens = usage.in > 0 ? usage.in : estimateTokens(promptText);
       const outTokens = usage.out > 0 ? usage.out : estimateTokens(collected);
 
-      // 平台代付：按管理员为该模型设置的计费方式（按tokens / 按次 / 免费）结算
+      // 平台代付：优先采用模型治理中为该模型设置的单价，其次按计费规则结算
       let billing = null;
       if (isPlatform) {
         try {
           const billingConfig = await loadBilling();
-          const cost = computeCost(billingConfig.modelPrices, body.model, inTokens, outTokens);
+          const cost = computeCost(billingConfig.modelPrices, body.model, inTokens, outTokens, modelSetting);
           const charged = await chargeCredits(req.user.id, cost, {
             kind: 'consume',
             ref: body.model,
@@ -710,7 +774,11 @@ export async function aiRoutes(app) {
       }
 
       if (!res.writableEnded && !res.destroyed) res.end();
-      await recordUsage(req.user.id, chosenProvider, body.model, inTokens, outTokens, billing?.cost ?? 0);
+      await recordUsage(req.user.id, chosenProvider, body.model, inTokens, outTokens, billing?.cost ?? 0, {
+        status: streamErrored ? 'error' : 'ok',
+        latencyMs: Date.now() - startedAt,
+        errorCode: streamErrored ? 'STREAM_INTERRUPTED' : null,
+      });
       return reply;
     },
   );

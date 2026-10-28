@@ -169,15 +169,130 @@ function toggleGroup(id: string): void {
   collapsedGroups.value = { ...collapsedGroups.value, [id]: !collapsedGroups.value[id] };
 }
 
+/**
+ * 连线工具（1.1.9 修复）。
+ *
+ * 为什么需要这张表：图形库里「箭头」分组的 4 个条目在 `shapes.ts` 里都被标成
+ * `shape: 'rect'`（因为 `DiagramNodeShape` 里没有「线」这种形状），此前
+ * `onShapeDragStart` / `addShapeAtCenter` 只读 `item.shape`，于是用户点击
+ * 「直线箭头 / 虚线箭头 / 双向箭头 / 曲线箭头」时，画布上出现的是一个**矩形节点**
+ * —— 这是「流程图无法使用」里最直观的一条。
+ *
+ * 现在改为按 `item.label` 查这张表：命中则创建一条 `DiagramEdge`（连线），
+ * 未命中才按普通图形创建节点。之所以用 label 而不是给 shapes.ts 加字段：
+ * label 是稳定的用户可见文案，且 shapes.ts 的 `ARROW_GROUP_ID` 导出目前没有任何
+ * 消费方，说明原设计里「靠分组判断」这条路从未接上，用 label 表最直接、改动面最小。
+ */
+interface EdgeToolSpec {
+  /** 线型：实线 / 虚线 */
+  lineStyle: 'solid' | 'dashed';
+  /** 终点箭头 */
+  endArrow: 'arrow' | 'none';
+  /** 起点箭头（双向箭头为 arrow） */
+  startArrow: 'arrow' | 'none';
+  /** 是否曲线 */
+  curved: boolean;
+}
+
+const EDGE_TOOLS: Record<string, EdgeToolSpec> = {
+  直线箭头: { lineStyle: 'solid', endArrow: 'arrow', startArrow: 'none', curved: false },
+  虚线箭头: { lineStyle: 'dashed', endArrow: 'arrow', startArrow: 'none', curved: false },
+  双向箭头: { lineStyle: 'solid', endArrow: 'arrow', startArrow: 'arrow', curved: false },
+  曲线箭头: { lineStyle: 'solid', endArrow: 'arrow', startArrow: 'none', curved: true },
+};
+
+/** 当前选中的连线工具（非空时，画布上「从一个节点拖到另一个节点」会创建该样式的连线） */
+const activeEdgeTool = ref<EdgeToolSpec | null>(null);
+
+/**
+ * 为「点击图形库快速添加」找一个不与现有节点重叠的落点。
+ *
+ * 为什么需要：点击添加不经过鼠标位置，必须自己决定坐标。固定坐标会让第二次添加
+ * 与第一次完全重合（用户以为只加了一个）；按固定步长错开又依赖节点尺寸与画布缩放。
+ * 这里用网格扫描，条件简单且与缩放无关。
+ *
+ * 步长取 (150, 90)：大于默认节点尺寸（约 111×45）并留出间距；行列各 6 格，
+ * 36 个候选位足够覆盖一屏快速添加；都占满时回退到「最右下角再偏一点」，
+ * 保证永远能放下去（宁可重叠也不能点了没反应）。
+ */
+function findFreeSpot(nodes: DiagramNode[]): { x: number; y: number } {
+  const BASE_X = 140;
+  const BASE_Y = 120;
+  const STEP_X = 150;
+  const STEP_Y = 90;
+  const COLS = 6;
+  const ROWS = 6;
+  const overlaps = (x: number, y: number): boolean =>
+    nodes.some((n) => !(x + 140 <= n.x || n.x + n.w <= x || y + 60 <= n.y || n.y + n.h <= y));
+  for (let row = 0; row < ROWS; row += 1) {
+    for (let col = 0; col < COLS; col += 1) {
+      const x = BASE_X + col * STEP_X;
+      const y = BASE_Y + row * STEP_Y;
+      if (!overlaps(x, y)) return { x, y };
+    }
+  }
+  // 全部占满：放到右下角外一点，至少不压住最后一个
+  const last = nodes[nodes.length - 1];
+  return last ? { x: last.x + STEP_X, y: last.y + STEP_Y } : { x: BASE_X, y: BASE_Y };
+}
+
+/**
+ * 用给定样式在画布上放一条连线。
+ *
+ * 落点策略：若已有 ≥2 个节点，直接连「最后两个节点」，让用户立刻看到一个可拖拽的连线，
+ * 而不是给一个「请先选起点」的空状态（图形库点击是「快速插入」，必须立刻可见结果）；
+ * 若不足 2 个节点，就放一条自由端点连线（`fromPoint`/`toPoint`），用户可随后拖动端点。
+ */
+function addEdgeAtCenter(spec: EdgeToolSpec): void {
+  const nodes = doc.value.nodes;
+  let edge: DiagramEdge;
+  if (nodes.length >= 2) {
+    const from = nodes[nodes.length - 2]!;
+    const to = nodes[nodes.length - 1]!;
+    edge = createEdge(from.id, to.id, { edgeStroke: DEFAULT_EDGE_STROKE });
+  } else {
+    // 自由端点：放在视口内一左一右，便于用户直接看到并拖拽
+    edge = {
+      ...createEdge('', '', { edgeStroke: DEFAULT_EDGE_STROKE }),
+      from: undefined,
+      to: undefined,
+      fromPoint: { x: 120, y: 160 },
+      toPoint: { x: 360, y: 160 },
+    };
+  }
+  edge = {
+    ...edge,
+    lineStyle: spec.lineStyle,
+    endArrow: spec.endArrow,
+    startArrow: spec.startArrow,
+    curved: spec.curved,
+  };
+  doc.value = { ...doc.value, edges: [...doc.value.edges, edge], updatedAt: Date.now() };
+  selection.value = [edge.id];
+  // 保持工具选中，方便连续画多条同类连线（再次点击图形库即再放一条）
+  activeEdgeTool.value = spec;
+  flash(`已添加「${spec.lineStyle === 'dashed' ? '虚线' : '直线'}箭头」连线`);
+}
+
 /** 拖拽图形库项到画布：用 HTML5 DnD 传形状类型 */
-function onShapeDragStart(e: DragEvent, shape: DiagramNodeShape): void {
-  e.dataTransfer?.setData('text/plain', `shape:${shape}`);
+function onShapeDragStart(e: DragEvent, shape: DiagramNodeShape, label: string): void {
+  // 连线工具用独立前缀，落点处理器据此分流（不能复用 shape: 前缀，否则会被当成节点）
+  const payload = EDGE_TOOLS[label] ? `edge:${label}` : `shape:${shape}`;
+  e.dataTransfer?.setData('text/plain', payload);
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
 }
 
 /** 计算拖拽落点在画布内的世界坐标（近似：以画布中心为锚点时更稳，这里用落点相对画布的偏移） */
 function onCanvasDrop(e: DragEvent): void {
   const raw = e.dataTransfer?.getData('text/plain') ?? '';
+
+  // 连线工具：拖到画布上直接放一条对应样式的连线
+  if (raw.startsWith('edge:')) {
+    const spec = EDGE_TOOLS[raw.slice(5)];
+    if (spec) addEdgeAtCenter(spec);
+    return;
+  }
+
   if (!raw.startsWith('shape:')) return;
   const shape = raw.slice(6) as DiagramNodeShape;
   const canvasEl = (e.currentTarget as HTMLElement).querySelector('svg');
@@ -198,8 +313,32 @@ function onCanvasDrop(e: DragEvent): void {
 }
 
 /** 点击图形库也能添加（拖不动时的兜底） */
-function addShapeAtCenter(shape: DiagramNodeShape): void {
-  const node = createNode(shape, 240, 160, { nodeFill: DEFAULT_NODE_FILL, nodeStroke: DEFAULT_NODE_STROKE });
+function addShapeAtCenter(shape: DiagramNodeShape, label: string): void {
+  // 连线工具走连线分支，而不是创建一个「长得像箭头的矩形」
+  const spec = EDGE_TOOLS[label];
+  if (spec) {
+    addEdgeAtCenter(spec);
+    return;
+  }
+  /*
+   * 落点必须**避开已有节点**（1.1.9 修复）。
+   *
+   * 原实现固定用 (240, 160)：用户连续点两次「矩形」「菱形」，两个节点**完全重叠**，
+   * 视觉上像「只加了一个」，随后的连线也因两端同点退化成零长度（看不见）。
+   * 用户对「流程图不能用」的第一印象就来自这里。
+   *
+   * 先试过「按节点数阶梯错位 36px」，但两个问题：
+   *  1. 36px 小于节点自身尺寸（约 111×45），仍然重叠；
+   *  2. 画布会 `fitView` 自动缩放，世界坐标的固定错位换算到屏幕后可能又被压小。
+   *
+   * 因此改成**扫描式找空位**：从基准点开始按网格步进，找到第一个与所有已有节点
+   * 都不相交的位置。这样与缩放无关、与节点尺寸无关，且连续添加必然互不遮挡。
+   */
+  const spot = findFreeSpot(doc.value.nodes);
+  const node = createNode(shape, spot.x, spot.y, {
+    nodeFill: DEFAULT_NODE_FILL,
+    nodeStroke: DEFAULT_NODE_STROKE,
+  });
   doc.value = { ...doc.value, nodes: [...doc.value.nodes, node], updatedAt: Date.now() };
   selection.value = [node.id];
   flash(`已添加「${node.text}」节点`);
@@ -517,8 +656,8 @@ onBeforeUnmount(() => {
               class="lib-item"
               :title="`${item.label}（拖到画布，或点击直接添加）`"
               draggable="true"
-              @dragstart="onShapeDragStart($event, item.shape)"
-              @click="addShapeAtCenter(item.shape)"
+              @dragstart="onShapeDragStart($event, item.shape, item.label)"
+              @click="addShapeAtCenter(item.shape, item.label)"
             >
               <svg viewBox="0 0 44 30" class="lib-item__preview">
                 <rect x="2" y="4" width="40" height="22" rx="3" fill="none" stroke="currentColor" stroke-width="1.2" />
@@ -806,13 +945,33 @@ onBeforeUnmount(() => {
 .flow__body {
   flex: 1 1 auto;
   min-height: 0;
+  /*
+   * `min-width: 0` 必须显式给出（1.1.9 修复「画布只剩 10px 宽」）。
+   *
+   * 这是 flex 布局里最经典的陷阱：`.flow__body` 是横向 flex 容器，
+   * 内部左侧图形库固定 200px、右侧属性面板固定 280px、画布 `flex:1 1 auto`。
+   * flex 子项默认 `min-width: auto`，意思是「不得小于内容的最小固有宽度」——
+   * 而画布里有 SVG（宽度 100%）与工具栏，其最小固有宽度会算成一个非零值，
+   * 于是「1fr 的剩余空间」被压到接近 0：实测画布只有 **10px**，
+   * 用户看到的是一片几乎空白的细条，观感就是「流程图页面错乱、没法用」。
+   *
+   * 加 `min-width: 0` 后，画布才真正按「剩余空间」伸缩。
+   * 对照 `.flow__canvas` 本身已写 `min-width: 0`，但父容器不解除，子项再写也没用。
+   */
+  min-width: 0;
+  overflow: hidden;
   display: flex;
 }
 
 /* 左侧图形库 */
 .flow__lib {
-  width: 200px;
-  flex: 0 0 200px;
+  /*
+   * `flex: 0 0 200px` 会让面板**既不放大也不缩小**：容器只有 490px 宽时
+   * （右侧边栏展开、或分屏、或 900px 窄屏），200 + 280 两个固定面板把画布
+   * 挤到只剩 10px。改为「可缩小 + 有下限」，窄容器下优先保画布可用宽度。
+   */
+  flex: 0 1 200px;
+  min-width: 140px;
   border-right: 1px solid var(--border);
   background: var(--bg-sidebar);
   overflow-y: auto;
@@ -873,8 +1032,15 @@ onBeforeUnmount(() => {
 
 /* 画布 */
 .flow__canvas {
+  /*
+   * `min-width: 260px`：画布是唯一「不可牺牲」的区域。
+   *
+   * 两个侧栏都改成可缩小后，剩下的宽度归画布；但若容器极窄（分屏 + 右侧栏同时开），
+   * 仍可能出现画布被压到几十像素——那种状态下节点锚点、拖拽都点不中，
+   * 用户只会觉得「坏了」。给一个下限后，宁可让外层出现横向滚动，也保证画布可操作。
+   */
   flex: 1 1 auto;
-  min-width: 0;
+  min-width: 260px;
   position: relative;
 }
 .flow__minimap {
@@ -910,8 +1076,9 @@ onBeforeUnmount(() => {
 
 /* 右侧属性面板 */
 .flow__props {
-  width: 280px;
-  flex: 0 0 280px;
+  /* 同 .flow__lib：可缩小 + 有下限，窄容器下优先保画布可用宽度 */
+  flex: 0 1 280px;
+  min-width: 180px;
   border-left: 1px solid var(--border);
   background: var(--bg-sidebar);
   display: flex;

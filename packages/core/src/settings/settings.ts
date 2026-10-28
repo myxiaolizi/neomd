@@ -169,6 +169,8 @@ export function defaultSettings(): Settings {
         'slides',
         'database',
         'web-browser',
+        'diagram-flowchart',
+        'diagram-mindmap',
       ],
       leftPanelMode: 'files',
       leftPanelOpen: true,

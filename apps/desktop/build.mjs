@@ -41,7 +41,7 @@ if ((res.status ?? 1) !== 0) process.exit(res.status ?? 1);
 
 // 绿色版：把解压目录打成 zip，避免单文件 exe 体积过大且需自解压
 const unpacked = path.join(outDir, 'win-unpacked');
-const zipOut = path.join(outDir, 'NeoMD-1.1.7-win-x64.zip');
+const zipOut = path.join(outDir, 'NeoMD-1.1.9-win-x64.zip');
 if (existsSync(unpacked)) {
   if (existsSync(zipOut)) rmSync(zipOut, { force: true });
   console.log('[build] 正在生成绿色版压缩包…');
