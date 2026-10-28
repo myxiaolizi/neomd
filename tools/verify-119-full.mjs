@@ -356,11 +356,35 @@ async function openWorkbench(page, { waitDoc = true } = {}) {
   await page.goto(`${BASE}/app`, { waitUntil: 'domcontentloaded', timeout: ARGS.timeout });
   await page.waitForSelector('.shell__main', { state: 'attached', timeout: ARGS.timeout });
   if (!waitDoc) return;
-  const hasEditor = await page.locator('.ProseMirror, .cm-content, .read-view').count();
-  if (!hasEditor) {
-    await page.keyboard.press('Control+n');
-    await page.waitForSelector('.ProseMirror', { timeout: 20000 }).catch(() => {});
+  /*
+   * 需要「一个可编辑的正文」。
+   *
+   * 两种会让这里失败的真实情况（都踩过）：
+   *  1. 上次退出时没开任何标签 → 冷启动后没有编辑器；
+   *  2. 上次停留在**流程图/思维导图/设置/插件商店**标签 → 恢复出来的活动标签
+   *     不是文本编辑器，`.ProseMirror` 自然不存在。
+   * 第 2 种尤其隐蔽：`Ctrl+n` 之后若焦点不在应用内，快捷键不生效，
+   * 于是 waitForSelector 一直等到 30 秒超时（C 段就是这么挂的）。
+   *
+   * 所以这里按「快捷键 → 按钮兜底 → 显式等待」三级重试，任一成功即可。
+   */
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const hasEditor = await page.locator('.ProseMirror, .cm-content, .read-view').count();
+    if (hasEditor) break;
+    // 先点一下页面把焦点拿回应用（Ctrl+n 只在应用内生效）
+    await page.locator('.shell__main').click({ position: { x: 5, y: 5 } }).catch(() => {});
+    await page.keyboard.press('Control+n').catch(() => {});
+    await page.waitForTimeout(600);
+    if (!(await page.locator('.ProseMirror, .cm-content, .read-view').count())) {
+      // 兜底：点「新建文档」按钮（不依赖快捷键与焦点）
+      await page.evaluate(() => {
+        const btn = Array.from(document.querySelectorAll('button')).find((b) => /新建文档/.test(b.textContent || ''));
+        btn?.click();
+      });
+      await page.waitForTimeout(600);
+    }
   }
+  await page.waitForSelector('.ProseMirror', { timeout: 20000 }).catch(() => {});
   await page.waitForTimeout(400);
 }
 
