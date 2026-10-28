@@ -1,0 +1,32 @@
+{
+    "name":  "neomd",
+    "version": "1.1.7",
+    "private":  true,
+    "type":  "module",
+    "description":  "Neo MD — local-first Markdown editor for Windows, Android and Web",
+    "engines":  {
+                    "node":  "\u003e=20.19"
+                },
+    "scripts":  {
+                    "dev":  "pnpm --filter @neomd/web dev",
+                    "dev:web":  "pnpm --filter @neomd/web dev",
+                    "dev:desktop":  "pnpm --filter @neomd/desktop dev",
+                    "build:shared":  "pnpm --filter @neomd/shared build",
+                    "build:core":  "pnpm --filter @neomd/core build",
+                    "build:ui":  "pnpm --filter @neomd/ui build",
+                    "build:web":  "pnpm --filter @neomd/web build",
+                    "build:api":  "pnpm --filter @neomd/api build",
+                    "build:desktop":  "pnpm --filter @neomd/desktop build",
+                    "build:android":  "pnpm --filter @neomd/android build",
+                    "build":  "pnpm build:web \u0026\u0026 pnpm build:api",
+                    "test":  "vitest run",
+                    "test:watch":  "vitest",
+                    "typecheck":  "tsc -b --pretty",
+                    "clean":  "node tools/clean.mjs"
+                },
+    "devDependencies":  {
+                            "typescript":  "5.9.3",
+                            "vitest":  "3.2.7",
+                            "@types/node":  "22.19.1"
+                        }
+}

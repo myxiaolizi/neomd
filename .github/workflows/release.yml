@@ -1,0 +1,158 @@
+# 版本发布工作流
+#
+# 触发条件：推送形如 v1.1.7 的 tag。
+# 流程：跑类型检查与单元测试 → 通过后调用发布脚本创建 GitHub Release 并上传三端产物。
+#
+# 为什么不在 CI 里构建三端产物：
+#   Windows 安装包需要 electron-builder + Windows 运行环境，Android APK 需要 JDK + Android SDK，
+#   在 GitHub Actions 上完整构建一次要 20 分钟以上且极易因环境差异失败。
+#   因此约定：**产物在本机构建并经人工验证后，随 tag 一起提交/由前置步骤产出**。
+#   本工作流只负责「把已验证的产物发到 Releases」，把不可靠的构建环节排除在发布链路之外。
+#   若后续要改成 CI 内构建，只需把「准备发布产物」这一步替换成真实的构建命令即可。
+#
+# 与 ci.yml 的关系：两者互不干扰。ci.yml 跑在分支推送与 PR 上，本文件只跑 tag。
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 同一 tag 的重复推送取消上一次未完成的运行，避免并发上传同名资产互相打架
+concurrency:
+  group: release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  # 创建 Release 与上传资产需要 contents: write
+  contents: write
+
+jobs:
+  # ────────────────────────────────────────────────────────────────
+  # 第一关：类型检查 + 单元测试。不通过则根本不进入发布环节。
+  # ────────────────────────────────────────────────────────────────
+  verify:
+    name: 类型检查 / 单元测试
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 必须在 setup-node 之前安装 pnpm：setup-node 的 cache: 'pnpm' 依赖 pnpm 可执行文件
+      - name: 安装 pnpm 12
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+          run_install: false
+
+      - name: 安装 Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖（严格按锁文件）
+        run: pnpm install --frozen-lockfile
+        env:
+          NPM_CONFIG_REGISTRY: https://registry.npmmirror.com/
+
+      # vue-tsc 是 apps/web 的 devDependency，不在根 node_modules/.bin 中，
+      # 因此必须用 --filter 在包内执行。
+      - name: 前端类型检查（vue-tsc）
+        run: pnpm --filter @neomd/web exec vue-tsc --noEmit -p tsconfig.json
+
+      - name: 单元测试（Vitest）
+        run: pnpm exec vitest run
+
+      # 发布脚本自身的语法自检：一个手误就会让发布链路整体失败，这里提前拦住
+      - name: 发布脚本语法自检
+        run: node --check tools/publish-github-release.mjs
+
+      # 演练一次：验证 CHANGELOG 版本段能被正确解析，且需要的产物文件都存在。
+      # 这一步不联网、不需要 token，纯本地校验。
+      - name: 发布脚本演练（dry-run）
+        run: node tools/publish-github-release.mjs --dry-run --repo=${{ github.repository }}
+
+  # ────────────────────────────────────────────────────────────────
+  # 第二关：创建 Release 并上传产物。
+  # ────────────────────────────────────────────────────────────────
+  release:
+    name: 创建 Release 并上传产物
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 pnpm 12
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+          run_install: false
+
+      - name: 安装 Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # 发布脚本不依赖任何第三方包（只用 Node 原生 fetch/fs），
+      # 所以这里**不需要 pnpm install**，也就不用担心依赖安装失败拖垮发布。
+      - name: 确认发布脚本可用
+        run: node --check tools/publish-github-release.mjs
+
+      # 产物来源说明：
+      #   若仓库里带了 dist-artifacts/ 目录（人工构建并提交），直接用；
+      #   若走「前置 job 上传 artifact」的模式，把下面这段换成 actions/download-artifact@v4 即可。
+      #
+      # 这里刻意用 shell 原生 test 而不是 node heredoc：
+      # 根 package.json 有 "type": "module"，stdin 脚本的模块类型随 Node 版本与调用方式变化，
+      # 容易踩 require/import 的坑。用 test -f 判断零歧义。
+      - name: 检查发布产物是否就位
+        id: artifacts
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "待发布版本：$VERSION"
+          MISSING=""
+          for f in "NeoMD-${VERSION}-setup.exe" "NeoMD-${VERSION}-win-x64.zip" "NeoMD-${VERSION}.apk"; do
+            if [ -f "dist-artifacts/$f" ]; then
+              SIZE=$(wc -c < "dist-artifacts/$f")
+              echo "  ✓ $f ($SIZE bytes)"
+            else
+              echo "  ✗ $f 缺失"
+              MISSING="$MISSING $f"
+            fi
+          done
+          if [ -n "$MISSING" ]; then
+            echo "::warning::以下产物缺失，本次将只同步 Release 说明、不上传安装包：$MISSING"
+            echo "assets_ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "assets_ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 产物齐全 → 完整发布（建 Release + 传资产）
+      - name: 发布到 GitHub Releases（含安装包）
+        if: steps.artifacts.outputs.assets_ready == 'true'
+        run: node tools/publish-github-release.mjs --repo=${{ github.repository }}
+        env:
+          # secrets.GITHUB_TOKEN 是 GitHub 自动注入的临时令牌，有效期仅本次工作流，
+          # 无需手工配置，也不会泄露到仓库里。
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 产物缺失 → 只同步更新记录，保证「发布记录一定同步到 GitHub」
+      - name: 发布到 GitHub Releases（仅同步更新记录）
+        if: steps.artifacts.outputs.assets_ready != 'true'
+        run: node tools/publish-github-release.mjs --repo=${{ github.repository }} --skip-assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # 把 Release 链接回写到本次运行的摘要页，方便点开就能验收
+      - name: 输出 Release 地址
+        run: |
+          echo "本次 tag：${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release 页面：https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}" >> "$GITHUB_STEP_SUMMARY"

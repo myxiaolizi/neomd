@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+# 同一分支的新推送取消上一次未完成的运行
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: 类型检查 / 单元测试 / 构建
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 必须在 setup-node 之前安装 pnpm：setup-node 的 cache: 'pnpm' 依赖 pnpm 可执行文件
+      - name: 安装 pnpm 12
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12
+          run_install: false
+
+      - name: 安装 Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: 安装依赖（严格按锁文件）
+        run: pnpm install --frozen-lockfile
+        env:
+          # 仓库 .npmrc 指向 npmmirror；如 CI 环境访问该镜像较慢，
+          # 可改为 https://registry.npmjs.org/ 覆盖下载源（不影响锁文件校验）
+          NPM_CONFIG_REGISTRY: https://registry.npmmirror.com/
+
+      # vue-tsc 是 apps/web 的 devDependency，不在根 node_modules/.bin 中，
+      # 因此必须用 --filter 在包内执行；根目录直接 `npx vue-tsc` 会报
+      # 'vue-tsc' is not recognized。
+      - name: 前端类型检查（vue-tsc）
+        run: pnpm --filter @neomd/web exec vue-tsc --noEmit -p tsconfig.json
+
+      - name: 单元测试（Vitest）
+        run: pnpm exec vitest run
+
+      - name: 构建前端产物
+        run: pnpm --filter @neomd/web build
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: apps/web/dist
+          retention-days: 7
+          if-no-files-found: error

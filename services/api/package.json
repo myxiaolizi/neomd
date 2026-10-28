@@ -1,0 +1,25 @@
+{
+  "name": "@neomd/api",
+  "version": "1.1.7",
+  "private": true,
+  "type": "module",
+  "main": "./src/server.js",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "build": "node -e \"console.log('@neomd/api runs as plain ESM; no build step required')\"",
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "fastify": "5.12.7",
+    "@fastify/static": "8.3.0",
+    "@fastify/cors": "11.3.1",
+    "@fastify/rate-limit": "10.3.0",
+    "@fastify/multipart": "9.4.0",
+    "mysql2": "3.24.6",
+    "argon2": "0.45.1",
+    "jsonwebtoken": "9.0.3",
+    "zod": "4.6.7",
+    "markdown-it": "15.0.3",
+    "undici": "8.12.3"
+  }
+}

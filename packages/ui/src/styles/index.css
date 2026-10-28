@@ -1,0 +1,287 @@
+/* Neo MD 设计令牌：Windows 11 视觉基调 */
+/* 主题预设变量（10 套内置主题，设置页「主题」页签使用）：最先加载。
+   选择器 :root[data-theme-preset='xxx'] 特异性高于下方 :root 与
+   html[data-theme='dark']，因此能稳定覆盖基础变量，与打包顺序无关。 */
+@import './themes.css';
+
+:root {
+  --accent: #1677ff;
+  --accent-hover: #0f62d6;
+  --accent-weak: rgba(22, 119, 255, 0.12);
+  --accent-weak-2: rgba(22, 119, 255, 0.06);
+  --orange: #ff8a3d;
+  --orange-weak: rgba(255, 138, 61, 0.14);
+  --sky: #e8f2ff;
+  --sky-2: #d3e6ff;
+
+  --bg: #f7f8fa;
+  --bg-elevated: #ffffff;
+  --bg-sidebar: rgba(248, 250, 252, 0.86);
+  --bg-hover: rgba(15, 23, 42, 0.045);
+  --bg-active: rgba(22, 119, 255, 0.1);
+  --bg-input: #ffffff;
+
+  --fg: #1a1d21;
+  --fg-2: #4b5563;
+  --fg-3: #8a919c;
+  --border: rgba(15, 23, 42, 0.09);
+  --border-strong: rgba(15, 23, 42, 0.16);
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --shadow-1: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 3px rgba(15, 23, 42, 0.06);
+  --shadow-2: 0 4px 12px rgba(15, 23, 42, 0.08), 0 1px 3px rgba(15, 23, 42, 0.05);
+  --shadow-3: 0 12px 32px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
+
+  --font-ui: 'Segoe UI Variable Text', 'Segoe UI', -apple-system, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'Cascadia Code', 'Cascadia Mono', Consolas, 'JetBrains Mono', Menlo, monospace;
+  --font-content: var(--font-ui);
+
+  /* 标题栏总高 40px = 顶部 3px 空隙 + 标签栏内容高度 37px。
+     3px 空隙让标签卡不贴着窗口上沿（用户 1.1.1 要求），底色是标题栏底色。
+     注意：--tabbar-h 只给标签栏用。正文工具栏（.editorbar）另有自己的高度，
+     不要再复用它 —— 否则标签栏改高 1px 会把工具栏也跟着拽矮。 */
+  --titlebar-h: 40px;
+  --toolbar-h: 44px;
+  --tabbar-h: 37px;
+  --statusbar-h: 26px;
+}
+
+html[data-theme='dark'] {
+  --bg: #14171c;
+  --bg-elevated: #1b1f26;
+  --bg-sidebar: rgba(27, 31, 38, 0.9);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(22, 119, 255, 0.2);
+  --bg-input: #232830;
+  --fg: #e6e9ee;
+  --fg-2: #a9b1bd;
+  --fg-3: #6f7885;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.18);
+  --sky: rgba(22, 119, 255, 0.14);
+  --sky-2: rgba(22, 119, 255, 0.22);
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-3: 0 16px 40px rgba(0, 0, 0, 0.55);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font-ui);
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow: hidden;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+input,
+textarea,
+select {
+  font-family: inherit;
+  font-size: inherit;
+  color:inherit;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 130, 145, 0.32);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 130, 145, 0.55);
+  background-clip: content-box;
+}
+
+/* 通用控件 */
+.nm-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  transition: background 0.14s ease, border-color 0.14s ease, transform 0.08s ease;
+  white-space: nowrap;
+  user-select: none;
+}
+.nm-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+.nm-btn:active {
+  transform: scale(0.985);
+}
+.nm-btn--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.nm-btn--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+.nm-btn--ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.nm-btn--ghost:hover {
+  background: var(--bg-hover);
+}
+.nm-btn--danger {
+  color: #d93025;
+  border-color: rgba(217, 48, 37, 0.3);
+}
+.nm-btn--sm {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.nm-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.nm-input {
+  height: 34px;
+  padding: 0 12px;
+  width: 100%;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  outline: none;
+  font-size: 13px;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.nm-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-weak);
+}
+textarea.nm-input {
+  height: auto;
+  padding: 10px 12px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.nm-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-2);
+  margin-bottom: 6px;
+  letter-spacing: 0.01em;
+}
+.nm-hint {
+  font-size: 12px;
+  color: var(--fg-3);
+  margin-top: 6px;
+  line-height: 1.6;
+}
+.nm-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 14px 0;
+}
+.nm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 11px;
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--sky);
+  color: var(--accent);
+}
+.nm-chip--orange {
+  background: var(--orange-weak);
+  color: #b5540f;
+}
+
+.nm-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.nm-fade-enter-active,
+.nm-fade-leave-active {
+  transition: opacity 0.16s ease;
+}
+.nm-fade-enter-from,
+.nm-fade-leave-to {
+  opacity: 0;
+}
+
+/* 桌面端（Electron）自定义标题栏拖拽区。
+   - 仅在 html[data-runtime='desktop'] 下启用，网页端不受影响；
+   - 标记 .nm-drag 的区域可按住拖动窗口，双击由窗口层切换最大化 / 还原；
+   - 区域内所有可交互元素必须排除，否则按钮点击会被窗口拖拽吞掉。 */
+html[data-runtime='desktop'] .nm-drag {
+  -webkit-app-region: drag;
+  app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
+}
+html[data-runtime='desktop'] .nm-drag button,
+html[data-runtime='desktop'] .nm-drag a,
+html[data-runtime='desktop'] .nm-drag input,
+html[data-runtime='desktop'] .nm-drag textarea,
+html[data-runtime='desktop'] .nm-drag select,
+html[data-runtime='desktop'] .nm-drag [role='button'],
+html[data-runtime='desktop'] .nm-drag [role='tab'],
+html[data-runtime='desktop'] .nm-drag [contenteditable='true'],
+html[data-runtime='desktop'] .nm-drag .no-drag {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* 移动端 */
+@media (max-width: 820px) {
+  :root {
+    --titlebar-h: 0px;
+    --toolbar-h: 40px;
+  }
+}

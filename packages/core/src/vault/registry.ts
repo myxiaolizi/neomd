@@ -1,0 +1,518 @@
+/**
+ * 仓库注册表（1.1.5）。
+ *
+ * ## 为什么需要它
+ *
+ * 1.1.4 及以前，产品是**单仓库架构**：`settings.localVault.root` 只有一个值，
+ * `VaultRef` 也只描述「当前打开的这一个仓库」，没有任何地方保存「用户有哪些仓库」。
+ * 于是用户实际存在的多个仓库（PC 端「Neo MD / Neo MD-整理 / 郑磊」、
+ * 网页端「my / admin」）互相不可见 —— 这正是「同一账号多端看到两套仓库」的直接原因。
+ *
+ * ## 本模块的职责
+ *
+ * - 维护**本机已知仓库清单**（`localStorage['neomd.vaults']`），持久化、可跨标签页共享；
+ * - 提供增删改查（注册 / 改名 / 停用 / 移除）；
+ * - 与云端仓库列表合并（云端有但本机没打开过的仓库，标记 `available: false`）；
+ * - 为同步层提供**稳定的 vaultId**，使每个仓库的云端前缀互相隔离
+ *   （`users/<username>/vaults/<vaultId>/`），从根本上避免多个仓库写同一前缀互相覆盖。
+ *
+ * ## 设计取舍
+ *
+ * - **不改 `Settings` 类型**：仓库清单是「本机事实」（哪台机器上有哪些目录），
+ *   与 `settings` 的「用户偏好」语义不同，因此单独一个 storage key，
+ *   也避免它被当作偏好同步到云端而制造混乱。
+ * - **`location` 只在本机有意义**：桌面端是绝对路径、网页端是 `cloud:<username>`，
+ *   所以云端只同步 `vaultId / name / status`，不同步 `location`。
+ */
+import type { VaultRef } from '@neomd/shared';
+
+/** 仓库启用状态：停用后数据保留但不可打开/同步 */
+export type VaultStatus = 'active' | 'disabled';
+
+/** 仓库适配器类型（与 `VaultRef.adapter` 保持一致） */
+export type VaultAdapterKind = 'desktop-fs' | 'android-fs' | 'browser-idb';
+
+/** 注册表中的一条仓库记录 */
+export interface VaultEntry {
+  /** 仓库唯一 id，来自仓库目录内 `.neomd/vault.json`，跨端稳定 */
+  vaultId: string;
+  /** 显示名（默认取目录名，用户可改） */
+  name: string;
+  /** 本机位置：桌面端为绝对路径，网页端为 `cloud:<username>` */
+  location: string;
+  adapter: VaultAdapterKind;
+  status: VaultStatus;
+  lastOpenedAt: number;
+  createdAt: number;
+  /**
+   * 本机是否可用（目录还在、能打开）。
+   * 云端列表里有、但本机从未打开过的仓库为 `false`，
+   * UI 应显示为「云端仓库（本机未下载）」并禁用切换。
+   */
+  available: boolean;
+  /** 上次同步时间（毫秒），仅登录且同步过才有 */
+  lastSyncedAt?: number;
+  /** 文档数（用于列表展示，打开仓库后刷新） */
+  docCount?: number;
+  /** 占用字节数 */
+  bytes?: number;
+}
+
+/** 云端返回的仓库摘要（`GET /api/vaults`） */
+export interface RemoteVaultDto {
+  vaultId: string;
+  name: string;
+  docCount?: number;
+  bytes?: number;
+  status?: VaultStatus;
+  lastSyncedAt?: string | number | null;
+  createdAt?: string | number | null;
+  updatedAt?: string | number | null;
+}
+
+/**
+ * 存储 key。
+ *
+ * **沿用既有的 `neomd.vaultList.v1`**，而不是新开一个 key。
+ *
+ * 原因：1.1.4 及以前 `apps/web/src/stores/app.ts` 已经用这个 key 存了一份
+ * 极简的仓库列表（`{ name, location, lastOpenedAt }`）。如果这里另起一个 key，
+ * 就会出现「两套仓库清单各自为政」的状态分裂 —— 打开仓库更新了 A 清单，
+ * 设置页读的是 B 清单，用户会看到列表不刷新。因此本注册表**接管**这个 key，
+ * 并向下兼容旧的极简结构（缺 `vaultId` / `status` 时自动补默认值）。
+ */
+const STORAGE_KEY = 'neomd.vaultList.v1';
+/** 当前仓库位置的 key，与既有代码保持一致（`app.ts` 与 `EditorPage.vue` 都在用） */
+export const LAST_VAULT_KEY = 'neomd.lastVault';
+
+/** 把各种时间表示统一成毫秒时间戳 */
+function toMs(value: unknown, fallback = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value) {
+    const t = Date.parse(value);
+    if (Number.isFinite(t)) return t;
+  }
+  return fallback;
+}
+
+/** 从位置字符串推断适配器类型（用于补全历史记录） */
+function inferAdapter(location: string): VaultAdapterKind {
+  if (location.startsWith('cloud:')) return 'browser-idb';
+  return 'desktop-fs';
+}
+
+/** 从位置字符串推断显示名（末段目录名，去掉 `cloud:` 前缀） */
+export function nameFromLocation(location: string): string {
+  const clean = location.startsWith('cloud:') ? location.slice('cloud:'.length) : location;
+  const parts = clean.replace(/[\\/]+$/, '').split(/[\\/]/);
+  return parts[parts.length - 1] || clean || '未命名仓库';
+}
+
+/** 校验并归一化一条仓库记录（容错：历史数据可能缺字段） */
+function normalizeEntry(raw: unknown): VaultEntry | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Partial<VaultEntry>;
+  const vaultId = typeof r.vaultId === 'string' ? r.vaultId.trim() : '';
+  const location = typeof r.location === 'string' ? r.location.trim() : '';
+  if (!vaultId || !location) return null;
+  return {
+    vaultId,
+    name: (typeof r.name === 'string' && r.name.trim()) || nameFromLocation(location),
+    location,
+    adapter: r.adapter ?? inferAdapter(location),
+    status: r.status === 'disabled' ? 'disabled' : 'active',
+    lastOpenedAt: toMs(r.lastOpenedAt),
+    createdAt: toMs(r.createdAt, Date.now()),
+    available: r.available !== false,
+    lastSyncedAt: r.lastSyncedAt ? toMs(r.lastSyncedAt) : undefined,
+    docCount: typeof r.docCount === 'number' ? r.docCount : undefined,
+    bytes: typeof r.bytes === 'number' ? r.bytes : undefined,
+  };
+}
+
+/**
+ * 仓库注册表。
+ *
+ * 所有写操作都会立即持久化到 `localStorage`，保证刷新/重启后不丢。
+ * 读取时做一次容错归一化，历史脏数据不会让整个列表崩掉。
+ */
+export class VaultRegistry {
+  private entries: VaultEntry[] = [];
+  private currentVaultId = '';
+  private storage: Storage | null;
+
+  constructor(storage?: Storage) {
+    // 允许注入，便于单测；浏览器环境默认用 localStorage
+    this.storage =
+      storage ?? (typeof localStorage !== 'undefined' ? localStorage : null);
+    this.load();
+  }
+
+  /* ------------------------------ 持久化 ------------------------------ */
+
+  private load(): void {
+    if (!this.storage) return;
+    try {
+      const raw = this.storage.getItem(STORAGE_KEY);
+      if (!raw) {
+        this.bootstrapFromLastVault();
+        return;
+      }
+      const parsed: unknown = JSON.parse(raw);
+      /**
+       * 兼容两种形态：
+       * - **旧格式（1.1.4 及以前）**：顶层就是数组 `[{ name, location, lastOpenedAt }]`，
+       *   没有 vaultId、没有 status、没有当前仓库标记；
+       * - **新格式（1.1.5 起）**：`{ entries: [...], currentVaultId }`。
+       *
+       * 旧格式的每一项会被补上占位 vaultId（`pending:<location>`），
+       * 等仓库真正打开时由 `attachVaultId()` 换成 `.neomd/vault.json` 里的真实 id。
+       */
+      const rawEntries = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray((parsed as { entries?: unknown[] })?.entries)
+          ? (parsed as { entries: unknown[] }).entries
+          : [];
+      this.entries = rawEntries
+        .map((item) => {
+          // 旧条目没有 vaultId，用 location 派生占位 id
+          const loc = (item as { location?: string })?.location;
+          const withId =
+            item && typeof item === 'object' && !(item as { vaultId?: string }).vaultId && loc
+              ? { ...(item as object), vaultId: `pending:${loc}` }
+              : item;
+          return normalizeEntry(withId);
+        })
+        .filter((e): e is VaultEntry => e !== null);
+      this.currentVaultId = Array.isArray(parsed)
+        ? ''
+        : typeof (parsed as { currentVaultId?: string }).currentVaultId === 'string'
+          ? (parsed as { currentVaultId: string }).currentVaultId
+          : '';
+      // 旧格式没有 currentVaultId → 用 lastVault 反查
+      if (!this.currentVaultId) {
+        const last = this.storage.getItem(LAST_VAULT_KEY);
+        const hit = last ? this.entries.find((e) => e.location === last) : null;
+        if (hit) this.currentVaultId = hit.vaultId;
+      }
+      // 老版本升级：列表为空但有 lastVault，用它补一条
+      if (!this.entries.length) this.bootstrapFromLastVault();
+    } catch {
+      this.entries = [];
+      this.bootstrapFromLastVault();
+    }
+  }
+
+  /**
+   * 从既有的 `neomd.lastVault` 引导出第一条仓库记录。
+   *
+   * 这是**老用户升级的兼容路径**：1.1.4 及以前只存了「上次打开的仓库位置」，
+   * 没有任何仓库清单。首次加载注册表时把它变成一条记录，
+   * 用户就不会在升级后「仓库凭空消失」。
+   */
+  private bootstrapFromLastVault(): void {
+    if (!this.storage) return;
+    const last = this.storage.getItem(LAST_VAULT_KEY);
+    if (!last) return;
+    const entry: VaultEntry = {
+      // 此时还不知道真实 vaultId（要打开仓库才能读到 .neomd/vault.json），
+      // 先用位置派生一个稳定的临时 id；真正打开后由 `attachVaultId()` 替换。
+      vaultId: `pending:${last}`,
+      name: nameFromLocation(last),
+      location: last,
+      adapter: inferAdapter(last),
+      status: 'active',
+      lastOpenedAt: Date.now(),
+      createdAt: Date.now(),
+      available: true,
+    };
+    this.entries = [entry];
+    this.currentVaultId = entry.vaultId;
+    this.persist();
+  }
+
+  private persist(): void {
+    if (!this.storage) return;
+    try {
+      this.storage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ entries: this.entries, currentVaultId: this.currentVaultId }),
+      );
+    } catch {
+      /* 配额满等异常不应影响主流程 */
+    }
+  }
+
+  /* ------------------------------ 查询 ------------------------------ */
+
+  list(): VaultEntry[] {
+    return [...this.entries];
+  }
+
+  /** 按「当前优先、最近打开优先」排序后的列表，供 UI 直接渲染 */
+  listSorted(): VaultEntry[] {
+    return [...this.entries].sort((a, b) => {
+      const aCur = a.vaultId === this.currentVaultId ? 1 : 0;
+      const bCur = b.vaultId === this.currentVaultId ? 1 : 0;
+      if (aCur !== bCur) return bCur - aCur;
+      return b.lastOpenedAt - a.lastOpenedAt;
+    });
+  }
+
+  get(vaultId: string): VaultEntry | null {
+    return this.entries.find((e) => e.vaultId === vaultId) ?? null;
+  }
+
+  findByLocation(location: string): VaultEntry | null {
+    return this.entries.find((e) => e.location === location) ?? null;
+  }
+
+  current(): VaultEntry | null {
+    return this.get(this.currentVaultId);
+  }
+
+  get currentId(): string {
+    return this.currentVaultId;
+  }
+
+  /* ------------------------------ 写入 ------------------------------ */
+
+  /**
+   * 注册或更新一个仓库。
+   *
+   * 按 `location` 去重：同一目录重复打开不会产生多条记录；
+   * 若已有记录的 `vaultId` 是 `pending:` 占位符，则用真实 id 替换。
+   */
+  register(input: {
+    vaultId: string;
+    name?: string;
+    location: string;
+    adapter?: VaultAdapterKind;
+  }): VaultEntry {
+    const existing = this.findByLocation(input.location);
+    const now = Date.now();
+    if (existing) {
+      existing.vaultId = input.vaultId;
+      if (input.name?.trim()) existing.name = input.name.trim();
+      existing.lastOpenedAt = now;
+      existing.available = true;
+      this.entries = [...this.entries];
+      this.persist();
+      return existing;
+    }
+    const entry: VaultEntry = {
+      vaultId: input.vaultId,
+      name: input.name?.trim() || nameFromLocation(input.location),
+      location: input.location,
+      adapter: input.adapter ?? inferAdapter(input.location),
+      status: 'active',
+      lastOpenedAt: now,
+      createdAt: now,
+      available: true,
+    };
+    this.entries = [...this.entries, entry];
+    this.persist();
+    return entry;
+  }
+
+  /**
+   * 把占位 `pending:<location>` 记录替换成真实 vaultId。
+   *
+   * 调用时机：仓库真正打开后（`vault.open()` 已读到 `.neomd/vault.json`）。
+   * 若该真实 id 已存在另一条记录（同目录被注册过两次），则合并去重。
+   */
+  attachVaultId(location: string, realVaultId: string, name?: string): VaultEntry | null {
+    const idx = this.entries.findIndex((e) => e.location === location);
+    if (idx < 0) return null;
+    const entry = this.entries[idx]!;
+    if (entry.vaultId === realVaultId) {
+      if (name?.trim()) entry.name = name.trim();
+      this.persist();
+      return entry;
+    }
+    // 已存在同 id 的其它记录 → 删掉当前这条，避免重复
+    const dup = this.entries.find((e, i) => i !== idx && e.vaultId === realVaultId);
+    if (dup) {
+      this.entries = this.entries.filter((_, i) => i !== idx);
+      dup.lastOpenedAt = Date.now();
+      dup.available = true;
+      if (name?.trim()) dup.name = name.trim();
+      if (this.currentVaultId === entry.vaultId) this.currentVaultId = dup.vaultId;
+      this.persist();
+      return dup;
+    }
+    const wasCurrent = this.currentVaultId === entry.vaultId;
+    entry.vaultId = realVaultId;
+    if (name?.trim()) entry.name = name.trim();
+    if (wasCurrent) this.currentVaultId = realVaultId;
+    this.entries = [...this.entries];
+    this.persist();
+    return entry;
+  }
+
+  rename(vaultId: string, name: string): boolean {
+    const entry = this.get(vaultId);
+    const next = name.trim();
+    if (!entry || !next) return false;
+    entry.name = next;
+    this.entries = [...this.entries];
+    this.persist();
+    return true;
+  }
+
+  setStatus(vaultId: string, status: VaultStatus): boolean {
+    const entry = this.get(vaultId);
+    if (!entry) return false;
+    entry.status = status;
+    this.entries = [...this.entries];
+    this.persist();
+    return true;
+  }
+
+  setCurrent(vaultId: string): boolean {
+    const entry = this.get(vaultId);
+    if (!entry || entry.status === 'disabled') return false;
+    this.currentVaultId = vaultId;
+    entry.lastOpenedAt = Date.now();
+    this.entries = [...this.entries];
+    this.persist();
+    if (this.storage) {
+      try {
+        this.storage.setItem(LAST_VAULT_KEY, entry.location);
+      } catch {
+        /* 忽略 */
+      }
+    }
+    return true;
+  }
+
+  /** 更新统计信息（打开仓库后回填文档数与占用） */
+  updateStats(vaultId: string, stats: { docCount?: number; bytes?: number }): void {
+    const entry = this.get(vaultId);
+    if (!entry) return;
+    if (typeof stats.docCount === 'number') entry.docCount = stats.docCount;
+    if (typeof stats.bytes === 'number') entry.bytes = stats.bytes;
+    this.entries = [...this.entries];
+    this.persist();
+  }
+
+  /**
+   * 记录一次成功的同步（1.1.8 新增）。
+   *
+   * 为什么需要它：`VaultManagerSection` 判断仓库「是否已同步」用的是
+   * `entry.lastSyncedAt`（见该组件 `synced: remoteIds.has(vaultId) || typeof lastSyncedAt === 'number'`），
+   * 但 1.1.8 之前**全项目没有任何地方写过这个字段** ——
+   * `syncNow()` 只设置了 store 级的全局 `lastSyncAt`，没有回写到仓库注册表。
+   * 结果就是「仓库管理里每个仓库永远显示未同步」，即使用户刚刚同步成功。
+   *
+   * 这里在同步成功后回写，同时刷新统计，保证 UI 与真实状态一致。
+   *
+   * @param vaultId 仓库 id
+   * @param stats 可选：同步后回填文档数与占用
+   * @returns 是否命中该仓库
+   */
+  markSynced(vaultId: string, stats: { docCount?: number; bytes?: number } = {}): boolean {
+    const entry = this.get(vaultId);
+    if (!entry) return false;
+    const now = Date.now();
+    entry.lastSyncedAt = now;
+    if (typeof stats.docCount === 'number') entry.docCount = stats.docCount;
+    if (typeof stats.bytes === 'number') entry.bytes = stats.bytes;
+    this.entries = [...this.entries];
+    this.persist();
+    return true;
+  }
+
+  /**
+   * 从本机注册表移除。
+   *
+   * **不删除任何文件**，也不删除云端内容 —— 只把这条记录从清单里去掉。
+   * 删除磁盘目录是另一件危险的事，必须由 UI 显式确认后单独执行。
+   */
+  remove(vaultId: string): boolean {
+    if (vaultId === this.currentVaultId) return false; // 当前仓库不允许移除
+    const before = this.entries.length;
+    this.entries = this.entries.filter((e) => e.vaultId !== vaultId);
+    if (this.entries.length === before) return false;
+    this.persist();
+    return true;
+  }
+
+  /**
+   * 与云端列表合并。
+   *
+   * 规则：
+   * - 云端有、本机也有的（按 vaultId 匹配）→ 用云端的 name/status/统计覆盖，
+   *   但 `location` 与 `available` 保持本机事实（云端不知道本机路径）；
+   * - 云端有、本机没有 → 插入一条 `available: false` 的记录，
+   *   让用户能看到「这个账号在别处还有哪些仓库」，但本机不能直接切换；
+   * - 本机有、云端没有 → 保留（可能还没同步过）。
+   */
+  mergeRemote(remote: RemoteVaultDto[]): void {
+    if (!Array.isArray(remote) || !remote.length) return;
+    let changed = false;
+    for (const r of remote) {
+      if (!r || typeof r.vaultId !== 'string' || !r.vaultId) continue;
+      const local = this.get(r.vaultId);
+      if (local) {
+        if (r.name?.trim() && r.name.trim() !== local.name) {
+          local.name = r.name.trim();
+          changed = true;
+        }
+        if (r.status === 'disabled' || r.status === 'active') {
+          if (local.status !== r.status) {
+            local.status = r.status;
+            changed = true;
+          }
+        }
+        if (typeof r.docCount === 'number') local.docCount = r.docCount;
+        if (typeof r.bytes === 'number') local.bytes = r.bytes;
+        if (r.lastSyncedAt) local.lastSyncedAt = toMs(r.lastSyncedAt);
+      } else {
+        this.entries.push({
+          vaultId: r.vaultId,
+          name: r.name?.trim() || r.vaultId,
+          location: '',
+          adapter: 'browser-idb',
+          status: r.status === 'disabled' ? 'disabled' : 'active',
+          lastOpenedAt: 0,
+          createdAt: toMs(r.createdAt, Date.now()),
+          available: false,
+          lastSyncedAt: r.lastSyncedAt ? toMs(r.lastSyncedAt) : undefined,
+          docCount: typeof r.docCount === 'number' ? r.docCount : undefined,
+          bytes: typeof r.bytes === 'number' ? r.bytes : undefined,
+        });
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.entries = [...this.entries];
+      this.persist();
+    }
+  }
+
+  /** 清空（仅供测试与「重置本机仓库清单」使用，不动任何文件） */
+  clear(): void {
+    this.entries = [];
+    this.currentVaultId = '';
+    this.persist();
+  }
+}
+
+/**
+ * 进程内单例。
+ *
+ * 与 `knowledge/vault-bridge.ts` 同样的理由：设置页、编辑器、同步层都要读同一份清单，
+ * 各自 new 一个会出现「A 改名了 B 看不到」的状态分裂。
+ */
+let singleton: VaultRegistry | null = null;
+
+export function sharedVaultRegistry(): VaultRegistry {
+  if (!singleton) singleton = new VaultRegistry();
+  return singleton;
+}
+
+/** 测试用：重置单例 */
+export function resetSharedVaultRegistry(): void {
+  singleton = null;
+}

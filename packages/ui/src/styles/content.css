@@ -1,0 +1,381 @@
+/* 正文排版：编辑器、阅读视图、导出预览共用 */
+.nm-content {
+  font-family: var(--font-content);
+  font-size: var(--content-font-size, 16px);
+  line-height: var(--content-line-height, 1.75);
+  color: var(--fg);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.nm-content > *:first-child {
+  margin-top: 0;
+}
+
+.nm-content h1,
+.nm-content h2,
+.nm-content h3,
+.nm-content h4,
+.nm-content h5,
+.nm-content h6 {
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 1.7em 0 0.65em;
+  letter-spacing: -0.01em;
+  scroll-margin-top: 24px;
+}
+.nm-content h1 {
+  font-size: 1.9em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+}
+.nm-content h2 {
+  font-size: 1.45em;
+  padding-bottom: 0.24em;
+  border-bottom: 1px solid var(--border);
+}
+.nm-content h3 {
+  font-size: 1.22em;
+}
+.nm-content h4 {
+  font-size: 1.08em;
+}
+.nm-content h5,
+.nm-content h6 {
+  font-size: 1em;
+  color: var(--fg-2);
+}
+
+.nm-content p {
+  margin: 0.85em 0;
+}
+
+.nm-content a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.14s ease;
+  cursor: pointer;
+}
+.nm-content a:hover {
+  border-bottom-color: var(--accent);
+}
+.nm-content a[data-wikilink] {
+  color: var(--accent);
+  background: var(--accent-weak-2);
+  border-radius: 4px;
+  padding: 0.05em 0.28em;
+}
+.nm-content a[data-wikilink]:hover {
+  background: var(--accent-weak);
+}
+.nm-content a[data-wikilink][data-unresolved='1'] {
+  color: var(--fg-3);
+  background: var(--bg-hover);
+  border-bottom: 1px dashed var(--border-strong);
+}
+
+.nm-content ul,
+.nm-content ol {
+  padding-left: 1.55em;
+  margin: 0.8em 0;
+}
+.nm-content li {
+  margin: 0.28em 0;
+}
+.nm-content li > p {
+  margin: 0.3em 0;
+}
+.nm-content li::marker {
+  color: var(--fg-3);
+}
+
+.nm-content ul[data-type='taskList'] {
+  list-style: none;
+  padding-left: 0.2em;
+}
+.nm-content ul[data-type='taskList'] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5em;
+}
+.nm-content ul[data-type='taskList'] li > label {
+  margin-top: 0.35em;
+  flex: 0 0 auto;
+}
+.nm-content input[type='checkbox'] {
+  accent-color: var(--accent);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+.nm-content ul[data-type='taskList'] li[data-checked='true'] > div {
+  color: var(--fg-3);
+  text-decoration: line-through;
+}
+
+.nm-content blockquote {
+  margin: 1.1em 0;
+  padding: 0.55em 1.1em;
+  border-left: 3px solid var(--accent);
+  /* 1.1.1：引用底色由主题派生（--quote-bg），不再依赖强调色的固定透明度 */
+  background: var(--quote-bg, var(--accent-weak-2));
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  color: var(--fg-2);
+}
+.nm-content blockquote > *:first-child {
+  margin-top: 0;
+}
+.nm-content blockquote > *:last-child {
+  margin-bottom: 0;
+}
+
+.nm-content code {
+  font-family: var(--font-mono);
+  font-size: 0.875em;
+  background: var(--bg-hover);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+.nm-content pre {
+  /* 1.1.1：代码块底色由主题派生（--code-block-bg），与正文纸张形成层次而不抢眼 */
+  background: var(--code-block-bg, var(--bg-hover));
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 1.1em 0;
+  font-size: 0.875em;
+  line-height: 1.62;
+}
+.nm-content pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 1em;
+}
+
+.nm-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1.2em 0;
+  font-size: 0.94em;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+}
+.nm-content th,
+.nm-content td {
+  /* 1.1.1：表格边框由主题派生（--table-border），深浅主题下都清晰可见 */
+  border: 1px solid var(--table-border, var(--border));
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: top;
+  position: relative;
+}
+.nm-content th {
+  background: var(--bg-hover);
+  font-weight: 600;
+}
+.nm-content th p,
+.nm-content td p {
+  margin: 0;
+}
+.nm-content .selectedCell::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--accent-weak);
+  pointer-events: none;
+}
+
+.nm-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  display: block;
+  margin: 1em 0;
+}
+.nm-content img.ProseMirror-selectednode {
+  outline: 2px solid var(--accent);
+}
+
+.nm-content hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 2em 0;
+}
+
+.nm-content mark {
+  background: rgba(255, 196, 0, 0.32);
+  color: inherit;
+  padding: 0.05em 0.2em;
+  border-radius: 3px;
+}
+
+.nm-content u {
+  text-decoration-color: var(--accent);
+  text-underline-offset: 3px;
+}
+
+/* 数学公式占位 */
+.nm-content .math-node {
+  font-family: var(--font-mono);
+  background: var(--bg-hover);
+  border-radius: 4px;
+  padding: 0.1em 0.35em;
+  color: var(--accent);
+}
+
+/* ProseMirror 基础 */
+.ProseMirror {
+  outline: none;
+  min-height: 100%;
+}
+/* 空文档占位符：绝对定位铺满整行再单行截断。
+   注意三点，否则中文会逐字竖排、被截成一个字或跑到右侧：
+   1. 不能用 float + height:0 —— 收缩宽度会让中文逐字换行；
+   2. 必须显式 width: auto —— 行号规则 .nm-show-linenos .ProseMirror > *::before
+      同样命中首段的 ::before 并写入 width: 26px，不覆盖就被压成 26px；
+   3. 同一规则还会写入 text-align: right 与 11px 等宽字体，需一并重置，
+      否则占位符会右对齐贴到行尾、字号也变小。 */
+.ProseMirror p.is-editor-empty:first-child {
+  position: relative;
+}
+.ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  width: auto;
+  max-width: 100%;
+  text-align: left;
+  font-family: inherit;
+  font-size: inherit;
+  font-style: inherit;
+  line-height: inherit;
+  letter-spacing: normal;
+  opacity: 1;
+  color: var(--fg-3);
+  pointer-events: none;
+  white-space: pre;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ProseMirror-gapcursor::after {
+  border-top-color: var(--accent);
+}
+
+/* 斜杠命令菜单 */
+.slash-menu {
+  position: fixed;
+  z-index: 9000;
+  min-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-3);
+  padding: 6px;
+}
+.slash-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+}
+.slash-item:hover,
+.slash-item.is-active {
+  background: var(--bg-active);
+}
+.slash-item__icon {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  background: var(--sky);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+.slash-item__desc {
+  font-size: 11px;
+  color: var(--fg-3);
+  margin-top: 2px;
+}
+
+/* 页宽控制：差异主要体现在 max-width。
+   - 窄 / 标准 / 宽：统一 24px 左右留白，保证正文有呼吸空间；
+   - 铺满：用户要的就是「尽量贴近侧栏」，因此左右只留 12px
+     （需求：铺满时正文首字或行号距左侧栏 12px）。 */
+.nm-page-narrow,
+.nm-page-standard,
+.nm-page-wide {
+  padding-left: 24px;
+  padding-right: 24px;
+}
+.nm-page-full {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+.nm-page-narrow {
+  max-width: 620px;
+  width: 100%;
+}
+.nm-page-standard {
+  max-width: 760px;
+  width: 100%;
+}
+.nm-page-wide {
+  max-width: 1080px;
+  width: 100%;
+}
+.nm-page-full {
+  max-width: none;
+  width: 100%;
+}
+
+/* 正文编辑器行号（所见即所得与阅读视图按块递增编号）
+   约定：文档第一块若是 H1，则它是「文件名标题」，不参与行号计数、也不显示行号；
+   行号从正文第一块（H1 之后的块）开始，从 1 递增。
+   - 有 H1：H1 不计数 → 紧随其后的块计数为 1，符合「标题行不占行数」。
+   - 无 H1：第一块就是正文，正常计数为 1，不会因为排除规则丢掉首行号。
+   仅用 :first-child 排除会误伤无 H1 的文档，所以这里额外限定 :is(h1)。 */
+.nm-show-linenos .ProseMirror {
+  counter-reset: nm-line;
+  padding-left: 36px;
+}
+.nm-show-linenos .ProseMirror > * {
+  position: relative;
+  counter-increment: nm-line;
+}
+.nm-show-linenos .ProseMirror > *::before {
+  content: counter(nm-line);
+  position: absolute;
+  left: -34px;
+  top: 0.1em;
+  width: 26px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--fg-3);
+  opacity: 0.65;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* 首个 H1 = 文件名标题：不占行数，也不显示行号 */
+.nm-show-linenos .ProseMirror > *:first-child:is(h1) {
+  counter-increment: none;
+}
+.nm-show-linenos .ProseMirror > *:first-child:is(h1)::before {
+  content: none;
+}

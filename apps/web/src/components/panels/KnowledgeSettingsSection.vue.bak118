@@ -1,0 +1,1581 @@
+<script setup lang="ts">
+/**
+ * 知识库设置面板（1.1.0 需求二：仓库作为 AI 知识库）。
+ *
+ * 设计目标：把「多颗粒度」与「精细化设置」做成一屏可调，
+ * 并且每改一项都能**立刻看到它产生的真实效果**（切片数、平均长度、命中片段）。
+ * 因此面板分三段：
+ *   1. 索引状态与颗粒度：选颗粒度 → 立刻重建 → 切片数/平均长度即时变化；
+ *   2. 检索与上下文：topK / minScore / 检索模式 / 上下文片段数 / 字符预算；
+ *   3. 范围与测试：排除目录标签、单文档上限、自动索引、测试检索。
+ *
+ * 所有设置写入 `settings.knowledge`（经 settingsStore.update），
+ * 走 global 分区同步，跨端一致。
+ */
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
+import { NmIcon } from '@neomd/ui';
+import {
+  KNOWLEDGE_GRANULARITIES,
+  KNOWLEDGE_LIMITS,
+  KNOWLEDGE_SEARCH_MODES,
+  DEFAULT_CONTEXT_CHAR_BUDGET,
+  DEFAULT_KNOWLEDGE_SETTINGS,
+  buildContext,
+  indexVaultIntoShared,
+  normalizeKnowledgeSettings,
+  sharedKnowledgeBase,
+} from '@neomd/core';
+import type {
+  KnowledgeGranularity,
+  KnowledgeHit,
+  KnowledgeSearchMode,
+  KnowledgeSettings,
+} from '@neomd/shared';
+import { useSettingsStore } from '@/stores/settings';
+import { useAppStore } from '@/stores/app';
+import { resolveServerBase } from '@/lib/server-endpoint';
+
+const props = defineProps<{ compact?: boolean }>();
+
+const settingsStore = useSettingsStore();
+const app = useAppStore();
+
+/** 当前生效设置：老数据没有 knowledge 字段时用默认值兜底，保证模板里永远不是 undefined */
+const kb = computed<KnowledgeSettings>(() =>
+  normalizeKnowledgeSettings(settingsStore.settings.knowledge ?? DEFAULT_KNOWLEDGE_SETTINGS),
+);
+
+/* ------------------------------ 索引状态 ------------------------------ */
+
+const indexing = ref(false);
+const indexError = ref('');
+const loadDone = ref(0);
+const loadTotal = ref(0);
+const stats = ref({ docCount: 0, chunkCount: 0, builtAt: 0, avgChunkChars: 0 });
+
+/** 仓库是否可用（未打开仓库时给引导提示而不是空统计） */
+const vaultReady = computed(() => Boolean(app.vault) && app.docs.length >= 0);
+const docCountInVault = computed(() => app.docs?.length ?? 0);
+
+/** 把当前仓库重新读入索引；返回后刷新统计 */
+async function rebuildIndex(silent = false): Promise<void> {
+  if (indexing.value) return;
+  if (!app.vault) {
+    if (!silent) indexError.value = '还没有打开仓库，请先在编辑器里打开一个仓库目录';
+    return;
+  }
+  indexing.value = true;
+  indexError.value = '';
+  loadDone.value = 0;
+  loadTotal.value = 0;
+  try {
+    const base = await indexVaultIntoShared(app.vault, kb.value, {
+      onProgress: (p) => {
+        loadDone.value = p.done;
+        loadTotal.value = p.total;
+      },
+    });
+    stats.value = base.stats;
+  } catch (e) {
+    indexError.value = `建立索引失败：${(e as Error).message}`;
+  } finally {
+    indexing.value = false;
+  }
+}
+
+/** 只刷新统计（设置变更后调用，KnowledgeBase 内部会判断是否需要重建） */
+function refreshStats(): void {
+  try {
+    stats.value = sharedKnowledgeBase(kb.value).stats;
+  } catch {
+    /* 索引尚未建立时忽略 */
+  }
+}
+
+/* ------------------------------ 写入设置 ------------------------------ */
+
+/** 统一的设置写入入口：落库 + 立刻刷新统计（颗粒度变更会让切片数立刻变化） */
+function patch(patchObj: Partial<KnowledgeSettings>): void {
+  const next = normalizeKnowledgeSettings({ ...kb.value, ...patchObj });
+  settingsStore.update({ knowledge: next });
+  // 设置变更可能触发重建（颗粒度/排除规则/maxDocChars），下一帧刷新统计
+  requestAnimationFrame(refreshStats);
+}
+
+/**
+ * 切换颗粒度：立刻按新颗粒度重建索引。
+ * 这是用户最直观的验证方式——同一批文档换颗粒度，切片数应明显变化。
+ */
+async function setGranularity(id: KnowledgeGranularity): Promise<void> {
+  patch({ granularity: id });
+  await rebuildIndex(true);
+}
+
+/* ------------------------------ 标签输入 ------------------------------ */
+
+const folderInput = ref('');
+const tagInput = ref('');
+
+function addFolder(): void {
+  const value = folderInput.value.trim();
+  if (!value) return;
+  const list = kb.value.excludeFolders.includes(value) ? kb.value.excludeFolders : [...kb.value.excludeFolders, value];
+  patch({ excludeFolders: list });
+  folderInput.value = '';
+}
+
+function removeFolder(value: string): void {
+  patch({ excludeFolders: kb.value.excludeFolders.filter((x) => x !== value) });
+}
+
+function addTag(): void {
+  const value = tagInput.value.trim().replace(/^#+/, '');
+  if (!value) return;
+  const list = kb.value.excludeTags.includes(value) ? kb.value.excludeTags : [...kb.value.excludeTags, value];
+  patch({ excludeTags: list });
+  tagInput.value = '';
+}
+
+function removeTag(value: string): void {
+  patch({ excludeTags: kb.value.excludeTags.filter((x) => x !== value) });
+}
+
+/* ------------------------------ 测试检索 ------------------------------ */
+
+const testQuery = ref('');
+const testHits = ref<KnowledgeHit[]>([]);
+const testContext = ref('');
+const testError = ref('');
+const testing = ref(false);
+const testElapsed = ref(0);
+
+/** 测试检索：走与 AI 对话完全相同的搜索 + 上下文拼装链路，确保所见即所发 */
+async function runTest(): Promise<void> {
+  const q = testQuery.value.trim();
+  if (!q) {
+    testError.value = '请输入要检索的问题';
+    return;
+  }
+  testError.value = '';
+  testHits.value = [];
+  testContext.value = '';
+  testing.value = true;
+  const started = performance.now();
+  try {
+    if (!stats.value.chunkCount) await rebuildIndex(true);
+    const base = sharedKnowledgeBase(kb.value);
+    testHits.value = base.search(q).slice(0, 5);
+    testContext.value = buildContext(testHits.value, kb.value);
+    if (testHits.value.length === 0) {
+      testError.value = `没有命中任何片段。可以试试降低相关性阈值（当前 ${kb.value.minScore}），或改用「按段落 / 按句子」颗粒度`;
+    }
+  } catch (e) {
+    testError.value = `检索失败：${(e as Error).message}`;
+  } finally {
+    testElapsed.value = Math.round(performance.now() - started);
+    testing.value = false;
+  }
+}
+
+/* ------------------------------ 对外接入（1.1.7） ------------------------------ */
+
+/**
+ * 「如何给其他 AI / 智能体使用」区块的数据与交互。
+ *
+ * 目标：让用户能把知识库当成一个可被外部 AI / 智能体调用的能力用起来，
+ * 而不是只写一段说明文字。因此这里提供三样**可直接复制**的东西：
+ *   1. curl 示例（终端 / CI / 任意脚本可直接跑）；
+ *   2. JavaScript 示例（网页、Node、自动化流程可直接嵌）；
+ *   3. 「复制当前知识库上下文」按钮——把 buildContext 的结果直接粘到别的 AI 对话框里。
+ *
+ * 域名取自 resolveServerBase()，**不写死**：
+ * 网页端 resolveServerBase() 返回空串（走同源相对路径），此时回落到当前页面 origin，
+ * 保证复制出来的示例在任何部署形态下都是对的。
+ */
+const serverBaseForExample = computed<string>(() => {
+  const base = resolveServerBase();
+  if (base) return base.replace(/\/+$/, '');
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return window.location.origin.replace(/\/+$/, '');
+  }
+  return '';
+});
+
+/** 示例里的接口完整地址 */
+const chatEndpoint = computed(() => `${serverBaseForExample.value}/api/knowledge/chat`);
+const statsEndpoint = computed(() => `${serverBaseForExample.value}/api/knowledge/stats`);
+
+/** 示例里使用的模型：优先用户当前设置的默认模型，避免示例复制后跑不通 */
+const exampleModel = computed(() => {
+  const fromAi = settingsStore.settings.ai?.model;
+  return fromAi && fromAi.trim() ? fromAi.trim() : 'deepseek-chat';
+});
+
+/** curl 示例：完全可执行（把 TOKEN 换成自己的访问令牌即可） */
+const curlExample = computed(() => {
+  const body = {
+    query: '我上季度对同步冲突是怎么定的？',
+    context: '<把你的知识库上下文粘到这里，或留空只用模型常识回答>',
+    chunkCount: 5,
+    model: exampleModel.value,
+    provider: 'custom',
+    baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: 'sk-你的密钥',
+    usePlatform: false,
+    temperature: 0.3,
+    maxTokens: 2048,
+    useContext: true,
+  };
+  return [
+    `curl -N -X POST '${chatEndpoint.value}' \\`,
+    `  -H 'Content-Type: application/json' \\`,
+    `  -H 'Authorization: Bearer <你的访问令牌>' \\`,
+    `  -d '${JSON.stringify(body, null, 2)}'`,
+  ].join('\n');
+});
+
+/** JavaScript 示例：fetch + ReadableStream 逐块读取 SSE，可直接粘到 Node / 浏览器控制台 */
+const jsExample = computed(() => {
+  return [
+    `// 逐块读取 SSE 流式回答（Node 18+ 与浏览器均可运行）`,
+    `const res = await fetch('${chatEndpoint.value}', {`,
+    `  method: 'POST',`,
+    `  headers: {`,
+    `    'Content-Type': 'application/json',`,
+    `    Authorization: 'Bearer <你的访问令牌>',`,
+    `  },`,
+    `  body: JSON.stringify({`,
+    `    query: '我上季度对同步冲突是怎么定的？',`,
+    `    context,            // 由本地检索得到的上下文，可留空`,
+    `    chunkCount: 5,`,
+    `    model: '${exampleModel.value}',`,
+    `    provider: 'custom',`,
+    `    baseUrl: 'https://api.deepseek.com/v1',`,
+    `    apiKey: 'sk-你的密钥',`,
+    `    usePlatform: false,`,
+    `    temperature: 0.3,`,
+    `  }),`,
+    `});`,
+    ``,
+    `if (!res.ok) throw new Error(\`HTTP \${res.status}\`);`,
+    `const reader = res.body.getReader();`,
+    `const decoder = new TextDecoder();`,
+    `let buffer = '';`,
+    `for (;;) {`,
+    `  const { done, value } = await reader.read();`,
+    `  if (done) break;`,
+    `  buffer += decoder.decode(value, { stream: true });`,
+    `  // SSE 以空行分隔事件，逐条解析 data: 行`,
+    `  let idx;`,
+    `  while ((idx = buffer.indexOf('\\n\\n')) >= 0) {`,
+    `    const event = buffer.slice(0, idx);`,
+    `    buffer = buffer.slice(idx + 2);`,
+    `    const line = event.split('\\n').find((l) => l.startsWith('data:'));`,
+    `    if (!line) continue;`,
+    `    const payload = JSON.parse(line.slice(5).trim());`,
+    `    if (payload.type === 'delta') process.stdout.write(payload.text);`,
+    `    if (payload.type === 'done') console.log('\\n用量：', payload.usage);`,
+    `  }`,
+    `}`,
+  ].join('\n');
+});
+
+/** 统计接口 curl 示例 */
+const statsExample = computed(() => {
+  return [
+    `curl -s '${statsEndpoint.value}' \\`,
+    `  -H 'Authorization: Bearer <你的访问令牌>'`,
+  ].join('\n');
+});
+
+/** 当前代码块页签：curl / javascript */
+const codeTab = ref<'curl' | 'javascript'>('curl');
+const activeCode = computed(() => (codeTab.value === 'curl' ? curlExample.value : jsExample.value));
+
+/** 复制结果提示（3 秒后自动消失） */
+const copiedTip = ref('');
+let copiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * 复制到剪贴板。
+ *
+ * 不直接在模板里写 `navigator.clipboard`：Vue 模板渲染代理白名单不含 `navigator`，
+ * 而且 `navigator.clipboard` 在非 HTTPS / 非 localhost 下不可用，所以带一个
+ * textarea + execCommand 的降级路径。
+ */
+async function copyText(text: string, tip = '已复制'): Promise<void> {
+  let ok = false;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    }
+  } catch {
+    ok = false;
+  }
+  if (!ok) {
+    try {
+      const area = document.createElement('textarea');
+      area.value = text;
+      area.setAttribute('readonly', '');
+      area.style.position = 'fixed';
+      area.style.opacity = '0';
+      document.body.appendChild(area);
+      area.select();
+      document.execCommand('copy');
+      document.body.removeChild(area);
+      ok = true;
+    } catch {
+      ok = false;
+    }
+  }
+  if (copiedTimer) clearTimeout(copiedTimer);
+  copiedTip.value = ok ? tip : '复制失败，请手动选中代码块复制';
+  copiedTimer = setTimeout(() => {
+    copiedTip.value = '';
+  }, 3000);
+}
+
+/** 复制当前页签的示例代码 */
+function copyCode(): void {
+  void copyText(activeCode.value, `已复制 ${codeTab.value === 'curl' ? 'curl' : 'JavaScript'} 示例`);
+}
+
+/**
+ * 复制当前知识库上下文。
+ *
+ * 用与 AI 对话完全相同的链路（search → buildContext）取一份上下文，
+ * 用户可直接粘到 ChatGPT / Claude / 任意智能体的对话框里，
+ * 这解决了「不支持 API 的第三方 AI 怎么用我的知识库」这一半需求。
+ */
+const copyingContext = ref(false);
+
+async function copyCurrentContext(): Promise<void> {
+  if (copyingContext.value) return;
+  copyingContext.value = true;
+  try {
+    const query = testQuery.value.trim() || '知识库内容概览';
+    if (!stats.value.chunkCount) await rebuildIndex(true);
+    const base = sharedKnowledgeBase(kb.value);
+    const hits = base.search(query).slice(0, Math.max(1, Math.min(kb.value.topK, 10)));
+    if (hits.length === 0) {
+      copiedTip.value = '没有检索到片段，换一个关键词或降低相关性阈值后再试';
+      return;
+    }
+    const context = buildContext(hits, kb.value);
+    await copyText(context, `已复制 ${hits.length} 条片段（${context.length} 字符）`);
+  } catch (e) {
+    copiedTip.value = `复制上下文失败：${(e as Error).message}`;
+  } finally {
+    copyingContext.value = false;
+  }
+}
+
+/* ------------------------------ 展示辅助 ------------------------------ */
+
+/** 滑块进度百分比（用于 tailwind 风格的渐变轨道，纯 CSS 变量驱动） */
+function percent(value: number, min: number, max: number): string {
+  const p = ((value - min) / (max - min)) * 100;
+  return `${Math.min(100, Math.max(0, p))}%`;
+}
+
+/** 只在使用 block 颗粒度时高亮切片参数 */
+const blockActive = computed(() => kb.value.granularity === 'block');
+
+/** 当前颗粒度的说明对象 */
+const granularityMeta = computed(() => KNOWLEDGE_GRANULARITIES.find((g) => g.id === kb.value.granularity));
+
+/** 当前检索模式说明 */
+const searchModeMeta = computed(() => KNOWLEDGE_SEARCH_MODES.find((m) => m.id === kb.value.searchMode));
+
+/** 上下文预算（字符）——与 buildContext 默认值保持一致，供用户理解 maxContextChunks 的实际开销 */
+const contextBudget = computed(() => DEFAULT_CONTEXT_CHAR_BUDGET);
+
+/** 分数格式化 */
+function fmtScore(score: number): string {
+  return (Math.round(score * 1000) / 1000).toFixed(3);
+}
+
+/** 命中片段高亮：把 matched 关键词包成 <mark>，先做 HTML 转义避免笔记内容被当标签渲染 */
+function highlight(text: string, matched: string[]): string {
+  const escaped = String(text ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const terms = [...matched].filter((t) => t && t.length >= 1).sort((a, b) => b.length - a.length);
+  if (terms.length === 0) return escaped;
+  // 长词优先替换，避免短词把长词切碎
+  let out = escaped;
+  for (const term of terms) {
+    const safe = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(safe, 'gi'), (m) => `\u0001${m}\u0002`);
+  }
+  return out.replace(/\u0001/g, '<mark>').replace(/\u0002/g, '</mark>');
+}
+
+/** 截断长片段用于列表展示 */
+function brief(text: string, max = 160): string {
+  const clean = String(text ?? '').replace(/\s+/g, ' ').trim();
+  return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+}
+
+/** 设置变更后同步刷新统计（切仓库、开关知识库、改颗粒度都会触发） */
+watch(
+  () => [app.vaultLocation, app.docs.length] as const,
+  () => {
+    if (kb.value.enabled && app.vault) void rebuildIndex(true);
+  },
+);
+
+onMounted(() => {
+  // 打开面板时若仓库已就绪且知识库开启，静默建一次索引，让统计数字立刻有意义
+  if (kb.value.enabled && app.vault) void rebuildIndex(true);
+  else refreshStats();
+});
+
+onBeforeUnmount(() => {
+  if (copiedTimer) clearTimeout(copiedTimer);
+});
+</script>
+
+<template>
+  <div class="kb" :class="{ 'kb--compact': props.compact }">
+    <!-- 总开关 -->
+    <div class="kb-head">
+      <div class="kb-head__text">
+        <h4 class="kb-head__title">
+          仓库知识库
+          <span v-if="kb.enabled" class="kb-badge kb-badge--on">已启用</span>
+          <span v-else class="kb-badge">已关闭</span>
+        </h4>
+        <p class="nm-hint">
+          开启后，AI 助手回答前会先在本地把整个仓库切片检索，把最相关的片段作为上下文发给模型。
+          文档内容**始终留在本机**，只有被选中的片段会随提问一起发出。
+        </p>
+      </div>
+      <label class="kb-switch" title="启用 / 关闭知识库">
+        <input
+          type="checkbox"
+          aria-label="启用知识库"
+          :checked="kb.enabled"
+          @change="patch({ enabled: ($event.target as HTMLInputElement).checked })"
+        />
+        <span class="kb-switch__track"><span class="kb-switch__dot" /></span>
+      </label>
+    </div>
+
+    <!-- 索引统计 -->
+    <div class="kb-stats">
+      <div class="kb-stat">
+        <span class="kb-stat__num">{{ stats.docCount }}</span>
+        <span class="kb-stat__label">已索引文档</span>
+      </div>
+      <div class="kb-stat">
+        <span class="kb-stat__num">{{ stats.chunkCount }}</span>
+        <span class="kb-stat__label">切片数</span>
+      </div>
+      <div class="kb-stat">
+        <span class="kb-stat__num">{{ stats.avgChunkChars }}</span>
+        <span class="kb-stat__label">平均切片字符</span>
+      </div>
+      <div class="kb-stat kb-stat--action">
+        <button
+          type="button"
+          class="nm-btn nm-btn--sm"
+          :disabled="indexing || !app.vault"
+          :title="app.vault ? '重新扫描仓库并重建索引' : '还没有打开仓库'"
+          @click="rebuildIndex()"
+        >
+          <NmIcon name="refresh" :size="12" />
+          {{ indexing ? `索引中 ${loadDone}/${loadTotal}` : '重建索引' }}
+        </button>
+      </div>
+    </div>
+    <p v-if="!app.vault" class="notice notice--warn">
+      <NmIcon name="alert" :size="14" />
+      <span>还没有打开仓库。先在编辑器里打开一个仓库目录，再回到这里建立索引。</span>
+    </p>
+    <p v-else-if="docCountInVault === 0" class="notice notice--warn">
+      <NmIcon name="alert" :size="14" />
+      <span>当前仓库里还没有文档。</span>
+    </p>
+    <p v-if="indexError" class="kb-error">{{ indexError }}</p>
+
+    <template v-if="kb.enabled">
+      <div class="nm-divider" />
+
+      <!-- 颗粒度 -->
+      <h4 class="kb-section">切片颗粒度</h4>
+      <p class="nm-hint">
+        决定「把文档切成多大的块」。切得越细，检索越精准但上下文越碎；切得越粗，上下文越完整但容易答非所问。
+      </p>
+      <div class="kb-granularities">
+        <button
+          v-for="g in KNOWLEDGE_GRANULARITIES"
+          :key="g.id"
+          type="button"
+          class="kb-gran"
+          :class="{ 'is-active': kb.granularity === g.id }"
+          :title="g.scenario"
+          :aria-pressed="kb.granularity === g.id"
+          @click="setGranularity(g.id)"
+        >
+          <span class="kb-gran__name">{{ g.label }}</span>
+          <span class="kb-gran__desc">{{ g.desc }}</span>
+        </button>
+      </div>
+      <p v-if="granularityMeta" class="kb-tip">
+        <NmIcon name="sparkles" :size="13" />
+        <span>适用场景：{{ granularityMeta.scenario }}</span>
+      </p>
+
+      <!-- block 专属：切片长度与重叠 -->
+      <div class="grid2" :class="{ 'is-dim': !blockActive }">
+        <div class="kb-field">
+          <label class="nm-label">
+            切片长度
+            <span class="kb-val">{{ kb.chunkSize }} 字符</span>
+          </label>
+          <input
+            class="kb-range"
+            type="range"
+            :min="KNOWLEDGE_LIMITS.chunkSize.min"
+            :max="KNOWLEDGE_LIMITS.chunkSize.max"
+            :step="KNOWLEDGE_LIMITS.chunkSize.step"
+            :value="kb.chunkSize"
+            :disabled="!blockActive"
+            aria-label="切片长度"
+            :style="{ '--pct': percent(kb.chunkSize, KNOWLEDGE_LIMITS.chunkSize.min, KNOWLEDGE_LIMITS.chunkSize.max) }"
+            @input="patch({ chunkSize: Number(($event.target as HTMLInputElement).value) })"
+            @change="rebuildIndex(true)"
+          />
+          <p class="nm-hint">仅「固定长度窗口」颗粒度生效</p>
+        </div>
+        <div class="kb-field">
+          <label class="nm-label">
+            重叠长度
+            <span class="kb-val">{{ kb.chunkOverlap }} 字符</span>
+          </label>
+          <input
+            class="kb-range"
+            type="range"
+            :min="KNOWLEDGE_LIMITS.chunkOverlap.min"
+            :max="Math.min(KNOWLEDGE_LIMITS.chunkOverlap.max, kb.chunkSize - 1)"
+            :step="KNOWLEDGE_LIMITS.chunkOverlap.step"
+            :value="kb.chunkOverlap"
+            :disabled="!blockActive"
+            aria-label="重叠长度"
+            :style="{ '--pct': percent(kb.chunkOverlap, KNOWLEDGE_LIMITS.chunkOverlap.min, Math.min(KNOWLEDGE_LIMITS.chunkOverlap.max, kb.chunkSize - 1)) }"
+            @input="patch({ chunkOverlap: Number(($event.target as HTMLInputElement).value) })"
+            @change="rebuildIndex(true)"
+          />
+          <p class="nm-hint">避免句子被切断，建议为切片长度的 10%-20%</p>
+        </div>
+      </div>
+
+      <div class="nm-divider" />
+
+      <!-- 检索 -->
+      <h4 class="kb-section">检索与上下文</h4>
+      <div class="grid2">
+        <div class="kb-field">
+          <label class="nm-label">
+            返回片段数 topK
+            <span class="kb-val">{{ kb.topK }}</span>
+          </label>
+          <input
+            class="kb-range"
+            type="range"
+            :min="KNOWLEDGE_LIMITS.topK.min"
+            :max="KNOWLEDGE_LIMITS.topK.max"
+            :step="KNOWLEDGE_LIMITS.topK.step"
+            :value="kb.topK"
+            aria-label="返回片段数 topK"
+            :style="{ '--pct': percent(kb.topK, KNOWLEDGE_LIMITS.topK.min, KNOWLEDGE_LIMITS.topK.max) }"
+            @input="patch({ topK: Number(($event.target as HTMLInputElement).value) })"
+          />
+          <p class="nm-hint">检索最多返回多少条候选片段（1-30）</p>
+        </div>
+        <div class="kb-field">
+          <label class="nm-label">
+            相关性阈值 minScore
+            <span class="kb-val">{{ kb.minScore.toFixed(2) }}</span>
+          </label>
+          <input
+            class="kb-range"
+            type="range"
+            :min="KNOWLEDGE_LIMITS.minScore.min"
+            :max="KNOWLEDGE_LIMITS.minScore.max"
+            :step="KNOWLEDGE_LIMITS.minScore.step"
+            :value="kb.minScore"
+            aria-label="相关性阈值 minScore"
+            :style="{ '--pct': percent(kb.minScore, KNOWLEDGE_LIMITS.minScore.min, KNOWLEDGE_LIMITS.minScore.max) }"
+            @input="patch({ minScore: Number(($event.target as HTMLInputElement).value) })"
+          />
+          <p class="nm-hint">低于该分数的片段直接丢弃；命中太少就调低</p>
+        </div>
+      </div>
+
+      <div class="kb-field">
+        <label class="nm-label">检索模式</label>
+        <div class="kb-modes">
+          <button
+            v-for="m in KNOWLEDGE_SEARCH_MODES"
+            :key="m.id"
+            type="button"
+            class="kb-mode"
+            :class="{ 'is-active': kb.searchMode === m.id }"
+            :title="m.desc"
+            :aria-pressed="kb.searchMode === m.id"
+            @click="patch({ searchMode: m.id as KnowledgeSearchMode })"
+          >
+            {{ m.label }}
+          </button>
+        </div>
+        <p v-if="searchModeMeta" class="nm-hint">{{ searchModeMeta.desc }}</p>
+      </div>
+
+      <div class="grid2">
+        <div class="kb-field">
+          <label class="nm-label">
+            注入片段数上限
+            <span class="kb-val">{{ kb.maxContextChunks }}</span>
+          </label>
+          <input
+            class="kb-range"
+            type="range"
+            :min="KNOWLEDGE_LIMITS.maxContextChunks.min"
+            :max="KNOWLEDGE_LIMITS.maxContextChunks.max"
+            :step="KNOWLEDGE_LIMITS.maxContextChunks.step"
+            :value="kb.maxContextChunks"
+            aria-label="注入片段数上限"
+            :style="{ '--pct': percent(kb.maxContextChunks, KNOWLEDGE_LIMITS.maxContextChunks.min, KNOWLEDGE_LIMITS.maxContextChunks.max) }"
+            @input="patch({ maxContextChunks: Number(($event.target as HTMLInputElement).value) })"
+          />
+          <p class="nm-hint">真正发往模型的最多片段数（约 {{ contextBudget }} 字符预算内）</p>
+        </div>
+        <div class="kb-field">
+          <label class="nm-label">单文档纳入上限</label>
+          <div class="kb-inline">
+            <input
+              class="nm-input"
+              type="number"
+              :min="KNOWLEDGE_LIMITS.maxDocChars.min"
+              :max="KNOWLEDGE_LIMITS.maxDocChars.max"
+              :step="KNOWLEDGE_LIMITS.maxDocChars.step"
+              :value="kb.maxDocChars"
+              aria-label="单文档纳入上限字符数"
+              @change="patch({ maxDocChars: Number(($event.target as HTMLInputElement).value) }); rebuildIndex(true)"
+            />
+            <span class="nm-hint" style="margin: 0">字符</span>
+          </div>
+          <p class="nm-hint">超出部分会被截断，避免超大文件拖慢索引</p>
+        </div>
+      </div>
+
+      <!-- 开关组 -->
+      <div class="kb-toggles">
+        <label class="kb-toggle" title="关闭后切片内容会剥离 Markdown 标记，更省 token">
+          <input type="checkbox" :checked="kb.keepMarkdown" @change="patch({ keepMarkdown: ($event.target as HTMLInputElement).checked }); rebuildIndex(true)" />
+          <span>保留 Markdown 原样</span>
+        </label>
+        <label class="kb-toggle" title="是否把文件头部的 YAML 属性区纳入切片">
+          <input type="checkbox" :checked="kb.includeFrontmatter" @change="patch({ includeFrontmatter: ($event.target as HTMLInputElement).checked }); rebuildIndex(true)" />
+          <span>包含属性头（frontmatter）</span>
+        </label>
+        <label class="kb-toggle" title="文档变动后自动增量更新该文档的切片">
+          <input type="checkbox" :checked="kb.autoIndex" @change="patch({ autoIndex: ($event.target as HTMLInputElement).checked })" />
+          <span>自动增量索引</span>
+        </label>
+      </div>
+
+      <div class="nm-divider" />
+
+      <!-- 排除规则 -->
+      <h4 class="kb-section">排除范围</h4>
+      <p class="nm-hint">被排除的文档不会进入知识库，适合放日记、归档、含敏感信息的目录。</p>
+
+      <div class="kb-field">
+        <label class="nm-label">排除目录</label>
+        <div class="kb-inline">
+          <input
+            v-model="folderInput"
+            class="nm-input"
+            placeholder="例如：日记/ 或 归档/2025"
+            aria-label="输入要排除的目录"
+            @keydown.enter.prevent="addFolder"
+          />
+          <button type="button" class="nm-btn nm-btn--sm" title="添加排除目录" @click="addFolder">
+            <NmIcon name="plus" :size="12" />
+            添加
+          </button>
+        </div>
+        <div v-if="kb.excludeFolders.length" class="kb-chips">
+          <span v-for="f in kb.excludeFolders" :key="f" class="kb-chip">
+            {{ f }}
+            <button type="button" class="kb-chip__x" title="移除该排除目录" @click="removeFolder(f)">
+              <NmIcon name="close" :size="10" />
+            </button>
+          </span>
+        </div>
+        <p v-else class="nm-hint">尚未排除任何目录</p>
+      </div>
+
+      <div class="kb-field">
+        <label class="nm-label">排除标签</label>
+        <div class="kb-inline">
+          <input
+            v-model="tagInput"
+            class="nm-input"
+            placeholder="例如：private 或 草稿"
+            aria-label="输入要排除的标签"
+            @keydown.enter.prevent="addTag"
+          />
+          <button type="button" class="nm-btn nm-btn--sm" title="添加排除标签" @click="addTag">
+            <NmIcon name="plus" :size="12" />
+            添加
+          </button>
+        </div>
+        <div v-if="kb.excludeTags.length" class="kb-chips">
+          <span v-for="t in kb.excludeTags" :key="t" class="kb-chip">
+            #{{ t }}
+            <button type="button" class="kb-chip__x" title="移除该排除标签" @click="removeTag(t)">
+              <NmIcon name="close" :size="10" />
+            </button>
+          </span>
+        </div>
+        <p v-else class="nm-hint">尚未排除任何标签</p>
+      </div>
+
+      <div class="nm-divider" />
+
+      <!-- 测试检索 -->
+      <h4 class="kb-section">测试检索</h4>
+      <p class="nm-hint">
+        输入一个真实问题，看看会命中哪些片段。这里展示的内容就是 AI 实际会收到的上下文。
+      </p>
+      <div class="kb-inline">
+        <input
+          v-model="testQuery"
+          class="nm-input"
+          placeholder="例如：如何配置对象存储？"
+          aria-label="测试检索的问题"
+          @keydown.enter.prevent="runTest"
+        />
+        <button
+          type="button"
+          class="nm-btn nm-btn--primary nm-btn--sm"
+          :disabled="testing"
+          title="执行一次本地检索"
+          @click="runTest"
+        >
+          <NmIcon name="search" :size="12" />
+          {{ testing ? '检索中…' : '测试' }}
+        </button>
+      </div>
+      <p v-if="testError" class="kb-error">{{ testError }}</p>
+
+      <template v-if="testHits.length">
+        <p class="kb-tip">
+          <NmIcon name="check" :size="13" />
+          <span>命中 {{ testHits.length }} 条，耗时 {{ testElapsed }} ms，拼装后上下文 {{ testContext.length }} 字符</span>
+        </p>
+        <ul class="kb-hits">
+          <li v-for="(hit, i) in testHits" :key="hit.id" class="kb-hit">
+            <div class="kb-hit__head">
+              <span class="kb-hit__idx">#{{ i + 1 }}</span>
+              <span class="kb-hit__title">《{{ hit.title }}》{{ hit.heading ? ` / ${hit.heading}` : '' }}</span>
+              <span class="kb-hit__score">{{ fmtScore(hit.score) }}</span>
+            </div>
+            <p class="kb-hit__meta">
+              {{ hit.path }} · 位置 {{ hit.start }}-{{ hit.end }}
+              <template v-if="hit.tags.length"> · 标签 {{ hit.tags.join(', ') }}</template>
+            </p>
+            <p class="kb-hit__text" v-html="highlight(brief(hit.text), hit.matched)" />
+            <p v-if="hit.matched.length" class="kb-hit__matched">
+              命中关键词：
+              <span v-for="m in hit.matched" :key="m" class="kb-hit__kw">{{ m }}</span>
+            </p>
+          </li>
+        </ul>
+      </template>
+
+      <div class="nm-divider" />
+
+      <!-- 如何给其他 AI / 智能体使用（1.1.7） -->
+      <h4 class="kb-section">如何给其他 AI / 智能体使用</h4>
+      <p class="nm-hint">
+        知识库不只服务于本应用的 AI 助手。下面两条路径都能让**别的 AI 或智能体**用上你的笔记。
+      </p>
+
+      <!-- 路径一：应用内 -->
+      <div class="kb-guide">
+        <div class="kb-guide__head">
+          <span class="kb-guide__badge kb-guide__badge--inline">路径一</span>
+          <strong>在应用内使用（零配置）</strong>
+        </div>
+        <p class="kb-guide__text">
+          打开 AI 助手面板，确认其中的「使用知识库」开关已开启。之后每次提问，都会先在本地检索你的仓库，
+          把命中的片段作为上下文一起发给模型——你不需要做任何额外操作。
+        </p>
+      </div>
+
+      <!-- 路径二：外部 API -->
+      <div class="kb-guide">
+        <div class="kb-guide__head">
+          <span class="kb-guide__badge kb-guide__badge--api">路径二</span>
+          <strong>通过 HTTP 接口给外部 AI / 智能体调用</strong>
+        </div>
+        <p class="kb-guide__text">
+          任何能发 HTTP 请求的工具（其他 AI 客户端、自动化流程、自己的智能体、CI 脚本）都可以调用下面两个接口。
+          请求体里的 <code class="kb-code-inline">context</code> 由调用方（或本应用）在本地检索后拼好再传上来。
+        </p>
+
+        <div class="kb-endpoints">
+          <div class="kb-endpoint">
+            <span class="kb-endpoint__method kb-endpoint__method--post">POST</span>
+            <code class="kb-endpoint__path">{{ chatEndpoint }}</code>
+            <span class="kb-endpoint__desc">知识库问答（SSE 流式返回）</span>
+          </div>
+          <div class="kb-endpoint">
+            <span class="kb-endpoint__method kb-endpoint__method--get">GET</span>
+            <code class="kb-endpoint__path">{{ statsEndpoint }}</code>
+            <span class="kb-endpoint__desc">使用统计（调用次数 / tokens）</span>
+          </div>
+        </div>
+
+        <div class="kb-codebar">
+          <div class="kb-codebar__tabs">
+            <button
+              type="button"
+              class="kb-codebar__tab"
+              :class="{ 'is-on': codeTab === 'curl' }"
+              @click="codeTab = 'curl'"
+            >
+              curl
+            </button>
+            <button
+              type="button"
+              class="kb-codebar__tab"
+              :class="{ 'is-on': codeTab === 'javascript' }"
+              @click="codeTab = 'javascript'"
+            >
+              JavaScript
+            </button>
+          </div>
+          <div class="kb-codebar__actions">
+            <button
+              type="button"
+              class="nm-btn nm-btn--sm"
+              title="复制当前示例代码"
+              aria-label="复制当前示例代码"
+              @click="copyCode"
+            >
+              <NmIcon name="copy" :size="12" />
+              一键复制
+            </button>
+          </div>
+        </div>
+
+        <pre class="kb-code"><code>{{ activeCode }}</code></pre>
+
+        <details class="kb-details">
+          <summary>查看调用统计接口的示例</summary>
+          <pre class="kb-code"><code>{{ statsExample }}</code></pre>
+        </details>
+
+        <div class="kb-notice">
+          <NmIcon name="lock" :size="13" />
+          <p>
+            <strong>隐私边界：</strong>服务端<strong>不存储</strong>你的笔记内容。切片、建索引、检索全部在你的设备上完成；
+            只有你主动提交的
+            <code class="kb-code-inline">context</code>
+            会在本次请求中转发给模型供应商，用完即弃，不落库、不写盘。日志只记录调用次数与 token 用量。
+          </p>
+        </div>
+
+        <div class="kb-copyctx">
+          <div class="kb-copyctx__text">
+            <strong>对方 AI 不支持接口调用？</strong>
+            <p class="nm-hint">
+              直接把当前知识库上下文复制出来，粘贴到那个 AI 的对话框里即可。 检索词取上方「测试检索」里填的问题；
+              没填则用「知识库内容概览」。
+            </p>
+          </div>
+          <button
+            type="button"
+            class="nm-btn nm-btn--primary nm-btn--sm"
+            :disabled="copyingContext"
+            title="把当前知识库上下文复制到剪贴板"
+            @click="copyCurrentContext"
+          >
+            <NmIcon name="copy" :size="12" />
+            {{ copyingContext ? '正在生成…' : '复制当前知识库上下文' }}
+          </button>
+        </div>
+
+        <p v-if="copiedTip" class="kb-tip kb-tip--copy">
+          <NmIcon name="check" :size="13" />
+          <span>{{ copiedTip }}</span>
+        </p>
+      </div>
+    </template>
+
+    <p v-else class="kb-off">
+      <NmIcon name="alert" :size="14" />
+      <span>知识库已关闭。开启后 AI 助手才会使用仓库内容检索。</span>
+    </p>
+  </div>
+</template>
+
+<style scoped>
+.kb {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kb--compact {
+  gap: 10px;
+}
+
+/* 头部与开关 */
+.kb-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.kb-head__title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kb-head__text .nm-hint {
+  margin: 0;
+}
+.kb-badge {
+  font-size: 11px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-elevated, #f1f2f4);
+  color: var(--fg-3, #8a8f99);
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.1));
+}
+.kb-badge--on {
+  background: color-mix(in srgb, var(--accent, #1677ff) 14%, transparent);
+  color: var(--accent, #1677ff);
+  border-color: color-mix(in srgb, var(--accent, #1677ff) 35%, transparent);
+}
+
+.kb-switch {
+  display: inline-flex;
+  cursor: pointer;
+  flex: none;
+  margin-top: 2px;
+}
+.kb-switch input {
+  /* 视觉隐藏但保留可聚焦性（自定义开关是轨道 + 圆点） */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+}
+.kb-switch:focus-within .kb-switch__track {
+  outline: 2px solid color-mix(in srgb, var(--accent, #1677ff) 55%, transparent);
+  outline-offset: 2px;
+}
+.kb-switch__track {
+  width: 40px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--border, rgba(15, 23, 42, 0.16));
+  position: relative;
+  transition: background 0.16s ease;
+}
+.kb-switch__dot {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.16s ease;
+}
+.kb-switch input:checked + .kb-switch__track {
+  background: var(--accent, #1677ff);
+}
+.kb-switch input:checked + .kb-switch__track .kb-switch__dot {
+  transform: translateX(18px);
+}
+
+/* 统计卡片 */
+.kb-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+.kb-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-elevated, #f7f8fa);
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.08));
+}
+.kb-stat--action {
+  justify-content: center;
+  align-items: center;
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+}
+.kb-stat__num {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg, #1f2329);
+}
+.kb-stat__label {
+  font-size: 11px;
+  color: var(--fg-3, #8a8f99);
+}
+
+/* 分区标题 */
+.kb-section {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg, #1f2329);
+}
+
+/* 颗粒度卡片 */
+.kb-granularities {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+  gap: 8px;
+}
+.kb-gran {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 11px;
+  text-align: left;
+  border-radius: 9px;
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.1));
+  background: var(--bg, #fff);
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+.kb-gran:hover {
+  border-color: color-mix(in srgb, var(--accent, #1677ff) 45%, transparent);
+}
+.kb-gran.is-active {
+  border-color: var(--accent, #1677ff);
+  background: color-mix(in srgb, var(--accent, #1677ff) 7%, transparent);
+}
+.kb-gran__name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg, #1f2329);
+}
+.kb-gran__desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg-3, #8a8f99);
+}
+
+/* 字段与滑块 */
+.kb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.kb-field .nm-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.kb-val {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--accent, #1677ff);
+  font-variant-numeric: tabular-nums;
+}
+.kb-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  outline: none;
+  background: linear-gradient(
+    to right,
+    var(--accent, #1677ff) 0%,
+    var(--accent, #1677ff) var(--pct, 0%),
+    var(--border, rgba(15, 23, 42, 0.14)) var(--pct, 0%),
+    var(--border, rgba(15, 23, 42, 0.14)) 100%
+  );
+  cursor: pointer;
+}
+.kb-range:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.kb-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent, #1677ff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+}
+.kb-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--accent, #1677ff);
+  cursor: pointer;
+}
+.grid2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.grid2.is-dim {
+  opacity: 0.6;
+}
+
+/* 检索模式 */
+.kb-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.kb-mode {
+  padding: 5px 11px;
+  font-size: 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.12));
+  background: var(--bg, #fff);
+  color: var(--fg-2, #4b5058);
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+.kb-mode:hover {
+  border-color: color-mix(in srgb, var(--accent, #1677ff) 45%, transparent);
+}
+.kb-mode.is-active {
+  border-color: var(--accent, #1677ff);
+  background: color-mix(in srgb, var(--accent, #1677ff) 10%, transparent);
+  color: var(--accent, #1677ff);
+  font-weight: 600;
+}
+
+/* 开关组 */
+.kb-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.kb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-2, #4b5058);
+  cursor: pointer;
+}
+.kb-toggle input {
+  accent-color: var(--accent, #1677ff);
+  cursor: pointer;
+}
+
+/* 行内输入 */
+.kb-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.kb-inline .nm-input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* chip 列表 */
+.kb-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 2px;
+}
+.kb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 9px;
+  font-size: 11px;
+  border-radius: 999px;
+  background: var(--bg-elevated, #f1f2f4);
+  color: var(--fg-2, #4b5058);
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.08));
+}
+.kb-chip__x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--fg-3, #8a8f99);
+  cursor: pointer;
+  padding: 0;
+}
+.kb-chip__x:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--fg, #1f2329);
+}
+
+/* 提示条 */
+.kb-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 7px;
+  color: var(--fg-2, #4b5058);
+  background: color-mix(in srgb, var(--accent, #1677ff) 7%, transparent);
+}
+.kb-error {
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 7px;
+  color: #b42318;
+  background: rgba(220, 38, 38, 0.08);
+}
+.kb-off {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--fg-3, #8a8f99);
+}
+.notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  border-radius: 7px;
+  color: #8a6d3b;
+  background: rgba(250, 173, 20, 0.1);
+}
+
+/* 命中结果 */
+.kb-hits {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.kb-hit {
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.08));
+  background: var(--bg-elevated, #fbfbfc);
+}
+.kb-hit__head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.kb-hit__idx {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent, #1677ff);
+  font-variant-numeric: tabular-nums;
+}
+.kb-hit__title {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg, #1f2329);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.kb-hit__score {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-3, #8a8f99);
+}
+.kb-hit__meta {
+  margin: 3px 0 0;
+  font-size: 11px;
+  color: var(--fg-3, #8a8f99);
+  word-break: break-all;
+}
+.kb-hit__text {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--fg-2, #4b5058);
+}
+.kb-hit__text :deep(mark) {
+  background: color-mix(in srgb, var(--accent, #1677ff) 22%, transparent);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+.kb-hit__matched {
+  margin: 5px 0 0;
+  font-size: 11px;
+  color: var(--fg-3, #8a8f99);
+}
+.kb-hit__kw {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #1677ff) 12%, transparent);
+  color: var(--accent, #1677ff);
+}
+
+/* ---------- 如何给其他 AI / 智能体使用（1.1.7） ---------- */
+.kb-guide {
+  margin-top: 10px;
+  padding: 11px 13px;
+  border-radius: 9px;
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.08));
+  background: var(--bg-elevated, #fbfbfc);
+}
+.kb-guide__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--fg, #1f2329);
+}
+.kb-guide__badge {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.kb-guide__badge--inline {
+  color: var(--accent, #1677ff);
+  background: color-mix(in srgb, var(--accent, #1677ff) 14%, transparent);
+}
+.kb-guide__badge--api {
+  color: #0f7b6c;
+  background: rgba(15, 123, 108, 0.13);
+}
+.kb-guide__text {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--fg-2, #4b5058);
+}
+.kb-code-inline {
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  background: rgba(15, 23, 42, 0.06);
+  color: inherit;
+}
+
+/* 接口清单 */
+.kb-endpoints {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+.kb-endpoint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.035);
+}
+.kb-endpoint__method {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+.kb-endpoint__method--post {
+  color: #fff;
+  background: #0f7b6c;
+}
+.kb-endpoint__method--get {
+  color: var(--accent, #1677ff);
+  background: color-mix(in srgb, var(--accent, #1677ff) 16%, transparent);
+}
+.kb-endpoint__path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  color: var(--fg, #1f2329);
+  word-break: break-all;
+}
+.kb-endpoint__desc {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--fg-3, #8a8f99);
+}
+
+/* 代码块工具条 */
+.kb-codebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+.kb-codebar__tabs {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 7px;
+  background: rgba(15, 23, 42, 0.05);
+}
+.kb-codebar__tab {
+  border: 0;
+  cursor: pointer;
+  padding: 3px 11px;
+  border-radius: 5px;
+  font-size: 11.5px;
+  color: var(--fg-3, #8a8f99);
+  background: transparent;
+  transition: background 0.15s, color 0.15s;
+}
+.kb-codebar__tab.is-on {
+  color: var(--fg, #1f2329);
+  background: var(--bg, #fff);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+.kb-codebar__actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* 代码块 */
+.kb-code {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 8px;
+  border: 1px solid var(--border, rgba(15, 23, 42, 0.08));
+  background: #1e2430;
+  color: #dfe3ea;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre;
+  tab-size: 2;
+}
+.kb-code code {
+  font: inherit;
+  color: inherit;
+}
+
+.kb-details {
+  margin-top: 8px;
+}
+.kb-details > summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--accent, #1677ff);
+  user-select: none;
+}
+
+/* 隐私提示 */
+.kb-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: #0f7b6c;
+  background: rgba(15, 123, 108, 0.08);
+}
+.kb-notice p {
+  margin: 0;
+}
+
+/* 复制上下文 */
+.kb-copyctx {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px dashed var(--border, rgba(15, 23, 42, 0.14));
+}
+.kb-copyctx__text {
+  flex: 1 1 260px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--fg, #1f2329);
+}
+.kb-copyctx__text .nm-hint {
+  margin: 4px 0 0;
+}
+.kb-tip--copy {
+  margin-top: 8px;
+}
+
+@media (max-width: 720px) {
+  .grid2 {
+    grid-template-columns: 1fr;
+  }
+  .kb-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .kb-stat--action {
+    grid-column: 1 / -1;
+  }
+}
+</style>

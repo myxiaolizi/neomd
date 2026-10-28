@@ -1,0 +1,103 @@
+# ==================================================================
+# Neo MD —— 仓库忽略规则
+#
+# 本文件是**安全边界**，不只是「减少仓库体积」。
+# 本仓库有一次硬编码凭据被清理的历史（1.1.7），因此下面每一类排除
+# 都对应一个真实的泄露渠道，改动前请先想清楚后果。
+# ==================================================================
+
+# ---------- 依赖与构建产物 ----------
+node_modules/
+dist/
+dist-artifacts/
+.turbo/
+apps/desktop/release/
+apps/android/android/
+apps/android/www/
+services/api/data/
+# 历史遗留的临时构建目录（dist-base21 / dist-t117 / dist-t117b …）
+apps/web/dist-*/
+apps/*/dist-*/
+
+# ---------- 凭据与环境变量（最高优先级）----------
+# 任何环境变量文件都可能含数据库密码 / JWT 密钥 / OSS AK-SK / AI Key，
+# 公开仓库一旦推送就会永久留存在 git 历史里，删掉也收不回来。
+.env
+.env.*
+*.env
+!.env.example
+
+# 签名与密钥材料
+*.keystore
+*.jks
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+# Android 签名配置：含 storePassword / keyPassword 明文，绝不能进公开仓库
+keystore.properties
+**/keystore.properties
+
+# ---------- 含真实凭据的内部文档 ----------
+# PROJECT_CONTEXT.md 记录了生产环境的数据库密码、管理员密码、
+# 阿里云 OSS AccessKeyId/Secret、AI API Key。
+# 它是给本地开发/交接用的内部文件，**不属于公开仓库内容**。
+# 如确需公开一份，请另建 PROJECT_CONTEXT.public.md 并逐项脱敏。
+PROJECT_CONTEXT.md
+
+# ---------- 安装包与二进制 ----------
+*.apk
+*.exe
+*.msi
+*.dmg
+*.zip
+*.7z
+*.tar.gz
+!/.github/**
+services/api/releases/
+
+# ---------- 日志与临时文件 ----------
+*.log
+*.log.*
+logs/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+.pnpm-store/
+*.tsbuildinfo
+# 调试脚本产生的空 stderr 文件与截图
+tools/.*.err
+tools/*.err
+tools/*.png
+
+# ---------- 本地工具链（体积巨大，且各机器不同）----------
+tools/.cache/
+tools/.gradle/
+tools/jdk21/
+tools/android-sdk/
+tools/shots/
+tools/shots-*/
+tools/_*
+
+# ---------- 编辑器 / 操作系统 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# ---------- 测试与调试残留 ----------
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+browser-screenshots/
+*.tmp
+*.bak
+# 仓库根目录的临时截图目录
+.shots/

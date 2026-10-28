@@ -1,0 +1,18 @@
+{
+  "name": "@neomd/ui",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles/index.css"
+  },
+  "scripts": {
+    "build": "echo ui package is source-only"
+  },
+  "dependencies": {
+    "vue": "3.5.44"
+  }
+}

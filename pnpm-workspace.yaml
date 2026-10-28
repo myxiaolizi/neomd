@@ -1,0 +1,12 @@
+﻿packages:
+  - 'packages/*'
+  - 'apps/web'
+  - 'apps/desktop'
+  - 'apps/android'
+  - 'services/api'
+
+allowBuilds:
+  argon2: true
+  electron-winstaller: true
+  esbuild: true
+

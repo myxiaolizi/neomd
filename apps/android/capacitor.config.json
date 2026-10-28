@@ -1,0 +1,22 @@
+{
+  "appId": "vip.zhengl.neomd",
+  "appName": "Neo MD",
+  "webDir": "../web/dist",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false,
+    "backgroundColor": "#f7f8fa"
+  },
+  "server": {
+    "androidScheme": "https"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 600,
+      "backgroundColor": "#1677FF",
+      "showSpinner": false
+    }
+  }
+}
