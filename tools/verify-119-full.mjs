@@ -282,6 +282,17 @@ async function newSession(chromium, opts = {}) {
         localStorage.setItem('neomd.access', a);
         localStorage.setItem('neomd.refresh', r);
         localStorage.setItem('neomd.user.cache', u);
+        /*
+         * 固定 deviceId（1.1.9）。
+         *
+         * 为什么必须固定：`SyncEngine` 按 `index/<deviceId>.json` 存每台设备的同步状态。
+         * 每个 `newContext()` 都是全新的 localStorage，`ensureDeviceId()` 会生成新 id，
+         * 于是**每跑一次门禁，云端就多一个 index 文件**。实测一次完整跑测产生 20 个，
+         * 而 `loadRemoteManifest()` 会遍历全部索引 —— 堆积既拖慢同步，也让云端状态脏乱。
+         *
+         * 固定成常量后，多次跑测复用同一索引，不再产生垃圾。
+         */
+        localStorage.setItem('neomd.deviceId', 'qa-verify-119-full');
       } catch {
         /* ignore */
       }
