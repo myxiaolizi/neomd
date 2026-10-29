@@ -1,6 +1,6 @@
 {
   "name": "@neomd/desktop",
-  "version": "1.1.9",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "main": "main.cjs",

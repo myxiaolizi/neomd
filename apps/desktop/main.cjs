@@ -29,9 +29,55 @@ const {
   buildWindowRoute,
 } = require('./window-utils.cjs');
 const { WindowRegistry, isUsableWindow, safeBounds } = require('./window-registry.cjs');
+const { resolvePortableRoot, decidePortableUserData } = require('./portable.cjs');
 
 const isDev = process.argv.includes('--dev');
 const APP_VERSION = require('./package.json').version;
+
+/**
+ * 绿色版（便携）模式：在**一切 getPath 之前**把 userData 指到 exe 同目录的 data/。
+ *
+ * 为什么必须放在这里：
+ * - userData 决定单实例锁文件、Local Storage（neomd.lastVault / 登录态）、缓存的位置；
+ *   只要有代码先读过旧路径再 setPath，就会留下"半新半旧"的目录布局；
+ * - `app.requestSingleInstanceLock()`（本文件末尾）依赖 userData，也必须在设置之后调用。
+ *
+ * 默认不启用（见 portable.cjs 文件头约束 2：老用户数据在 AppData，硬切等于"仓库丢了"）。
+ * 启用方式：exe 同目录放 data/ 目录或 portable.txt，或设环境变量 NEOMD_PORTABLE=1。
+ * 目录不可写时自动回退 AppData，原因写进启动日志。
+ */
+let portableInfo = { portable: false, dir: null, reason: 'skipped' };
+try {
+  // 探测目录可写：创建 + 写一个探针文件 + 删除。只判断 exists 不够，
+  // 只读介质/U 盘写保护下 exists 也可能是 true 但实际写不进去。
+  const probeWritable = (dir) => {
+    fsSync.mkdirSync(dir, { recursive: true });
+    const probe = path.join(dir, '.neomd-write-probe');
+    fsSync.writeFileSync(probe, String(Date.now()), 'utf8');
+    fsSync.unlinkSync(probe);
+    return true;
+  };
+  portableInfo = decidePortableUserData({
+    root: resolvePortableRoot(process.env, process.execPath),
+    env: process.env,
+    isPackaged: app.isPackaged,
+    canWrite: probeWritable,
+    exists: (p) => fsSync.existsSync(p),
+  });
+  if (portableInfo.portable && portableInfo.dir) {
+    fsSync.mkdirSync(portableInfo.dir, { recursive: true });
+    app.setPath('userData', portableInfo.dir);
+    // sessionData 不会自动跟随 userData（Electron 里是独立路径），一并指过去才算真正"绿色"
+    try {
+      app.setPath('sessionData', path.join(portableInfo.dir, 'session'));
+    } catch {
+      /* 旧版本 Electron 无 sessionData 时忽略 */
+    }
+  }
+} catch (e) {
+  // 便携模式是增强项，任何异常都不能阻断启动
+  portableInfo = { portable: false, dir: null, reason: 'error:' + String(e && e.message ? e.message : e) };
+}
 
 /** 启动日志：便于排查打包后启动失败（userData 需等 app ready 后才可用） */
 let logFile = null;
@@ -718,7 +764,15 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
-    log('--- start ---', 'argv=' + JSON.stringify(process.argv), 'resourcesPath=' + process.resourcesPath);
+    log(
+      '--- start ---',
+      'argv=' + JSON.stringify(process.argv),
+      'resourcesPath=' + process.resourcesPath,
+      'version=' + APP_VERSION,
+      // 便携模式结论必须落日志：用户反馈"数据存哪了"时，看这一行就能定位
+      'userData=' + app.getPath('userData'),
+      'portable=' + (portableInfo.portable ? 'yes:' + portableInfo.reason : 'no:' + portableInfo.reason),
+    );
     registerProtocolHandler();
     pendingOpenFile = extractFileArg(process.argv);
     const first = createWindow();

@@ -247,8 +247,51 @@ function parseListXml(xml: string): S3ObjectMeta[] {
 
 const EMPTY_SHA256 = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
+/** HTTP 方法 → 中文操作名（用于网络失败时拼出「列举对象失败：无法连接 xxx」） */
+const NETWORK_ACTION: Record<string, string> = {
+  PUT: '上传',
+  GET: '读取',
+  HEAD: '探测对象是否存在',
+  DELETE: '删除',
+  POST: '提交',
+};
+
 export class S3StorageClient implements StorageClient {
   constructor(public readonly config: StorageConfig) {}
+
+  /**
+   * 把一次网络失败翻译成「能定位到主机和操作」的错误。
+   *
+   * ## 为什么必须这么做
+   *
+   * 浏览器对 DNS 失败、连接被拒、CORS 预检被拒、证书错误等**统一抛**
+   * `TypeError: Failed to fetch`，**不带 URL、不带原因**。上层
+   * `explainSyncError()` 只能拿到这句话，于是只能给出「① 网络中断
+   * ② 跨域被拦 ③ 地址配置错误」这种「三选一自己猜」的提示 ——
+   * 用户根本无法自救，我们也无法从截图判断问题。
+   *
+   * 这里把**请求的目标主机 + 操作名**补进 message，例如：
+   *   `列举对象失败：无法连接 zhenglob.oss-cn-guangzhou.aliyuncs.com（Failed to fetch）`
+   * 上层据此就能直接点名是哪个桶、哪一步失败，提示也能给出「检查该桶的 CORS 配置」
+   * 这种可执行建议。
+   *
+   * @param action 操作名（上传/下载/列举/删除/读取对象信息）
+   * @param url 本次请求的完整 URL（只取 host，不泄露完整路径与签名参数）
+   * @param err 原始异常
+   */
+  private networkError(action: string, url: string, err: unknown): Error {
+    const raw = err instanceof Error ? err.message : String(err);
+    let host = '';
+    try {
+      host = new URL(url).host;
+    } catch {
+      host = url.replace(/^https?:\/\//, '').split('/')[0] ?? '';
+    }
+    // TypeError: Failed to fetch 是浏览器对「网络层失败」的统称，原样保留便于上层正则匹配
+    const isNetwork = /Failed to fetch|NetworkError|Load failed|Network request failed/i.test(raw);
+    const detail = isNetwork ? 'Failed to fetch' : raw;
+    return new Error(`${action}失败：无法连接 ${host || '对象存储'}（${detail}）`);
+  }
 
   private async request(
     method: string,
@@ -264,7 +307,16 @@ export class S3StorageClient implements StorageClient {
     const signed = signRequestV4(this.config, { method, key, query, headers, payloadHash });
     const init: RequestInit = { method, headers: signed.headers };
     if (body && method !== 'GET' && method !== 'HEAD') init.body = body as unknown as BodyInit;
-    return fetch(signed.url, init);
+    /*
+     * fetch 本身在网络层失败时会**直接抛**（不进 res.ok 分支），
+     * 这里接住并补上主机信息，否则上层只能看到 `TypeError: Failed to fetch`。
+     * 操作名由调用方在各自的 catch 里补，这里先给出「网络请求失败」的底座。
+     */
+    try {
+      return await fetch(signed.url, init);
+    } catch (e) {
+      throw this.networkError(NETWORK_ACTION[method] ?? '请求', signed.url, e);
+    }
   }
 
   async putObject(key: string, body: Uint8Array | string, contentType = 'application/octet-stream'): Promise<void> {

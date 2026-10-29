@@ -1474,6 +1474,64 @@ export const useAppStore = defineStore('app', () => {
    * `api()` 会 `res.json()` 解析包体，而同步需要读原始字节（正文 .md 与 JSON 索引）；
    * 但 401 刷新、私有化拦截这两件事仍要对齐，因此这里手动复刻了同样的行为。
    */
+  /**
+   * 把「网络层失败」补上目标地址与操作名（1.2.0）。
+   *
+   * ## 为什么需要
+   *
+   * 浏览器对 DNS 失败、连接被拒、证书错误、CORS 预检被拒**统一抛**
+   * `TypeError: Failed to fetch`，不带 URL、不带原因。于是 `explainSyncError()`
+   * 只能给出「① 网络中断 ② 跨域被拦 ③ 地址填错」这种让用户自己猜的提示 ——
+   * 用户无法自救，我们也无法从截图判断问题。
+   *
+   * 这里把 host + 操作名拼进 message，例如
+   *   `同步请求失败：无法连接服务端 md.zhengl.vip（Failed to fetch）`
+   * `explainSyncError` 会据此把 host 提出来，给出「能不能打开这个地址」的指引。
+   *
+   * ## 1.2.0 修复：同源相对路径必须解析成当前页面 host
+   *
+   * `resolveApiUrl()` 在**同源部署**（网页端直连本域 `/api`、或 vite dev 的
+   * `/api` 代理）时返回的是**相对路径** `/api/storage/list?...`。
+   * 初版实现直接 `new URL(相对路径)`，必然抛异常 → fallback 取
+   * `split('/')[0]` 得到空串 → 最终把**整条含 query 的相对路径**当作 host 展示：
+   *   `无法连接服务端 /api/storage/list?prefix=index%2F&maxKeys=1000（Failed to fetch）`
+   * 用户完全无法据此判断「该检查哪个地址」，等于没修。
+   *
+   * 正确做法：相对路径时用 `location.host` —— 那正是用户在地址栏里看到的、
+   * 也是他真正需要确认可达的那个主机。同时**剥掉 query**（里面是对象 key，
+   * 含文档 id，既冗长又无助于定位）。
+   *
+   * @param err 原始异常
+   * @param action 操作名（同步请求/上传/下载/列举…）
+   * @param url 请求地址（绝对或相对；query 会被剥掉）
+   */
+  function withHostContext(err: unknown, action: string, url: string): Error {
+    const raw = err instanceof Error ? err.message : String(err);
+    // 已经是带上下文的错误（我们自己抛的）就直接透传，避免重复包裹
+    if (/无法连接/.test(raw)) return err instanceof Error ? err : new Error(raw);
+    const isNetwork = /Failed to fetch|NetworkError|Load failed|Network request failed/i.test(raw);
+    const detail = isNetwork ? 'Failed to fetch' : raw;
+
+    const clean = String(url).split('?')[0] || String(url);
+    let host = '';
+    try {
+      // 绝对地址：直接取 host（桌面端配了自建服务器时走这条）
+      host = new URL(clean).host;
+    } catch {
+      /*
+       * 相对地址（同源部署 / vite 代理）：用当前页面的 host。
+       * `location` 在 SSR/Node 环境不存在，因此必须 guard —— 本项目虽有
+       * 网页/桌面/移动三端，但 core 侧代码也可能被 Node 测试直接引用。
+       */
+      try {
+        host = typeof location !== 'undefined' && location.host ? location.host : '';
+      } catch {
+        host = '';
+      }
+    }
+    return new Error(`${action}失败：无法连接服务端 ${host || clean}（${detail}）`);
+  }
+
   const proxyTransport: ProxyTransport = {
     async fetch(path, init) {
       // 私有化模式：仓库同步依赖服务端，直接拒绝（与 api() 入口同一语义）
@@ -1492,7 +1550,21 @@ export const useAppStore = defineStore('app', () => {
         });
       };
 
-      let res = await send();
+      let res: Response;
+      try {
+        res = await send();
+      } catch (e) {
+        /*
+         * 网络层失败时补上「打到哪个地址」，否则上层只能看到 `TypeError: Failed to fetch`。
+         *
+         * 浏览器对 DNS 失败、连接被拒、证书错误、CORS 预检被拒统一抛这句话，
+         * **不带 URL**。这里补出 host 与路径，于是用户看到的是
+         * 「无法连接服务端 https://md.zhengl.vip/api/storage/list」，
+         * 而不是「可能网络中断，也可能跨域被拦，也可能地址错」三选一。
+         */
+        const url = resolveApiUrl(path);
+        throw withHostContext(e, '同步请求', url);
+      }
       /*
        * 令牌过期：刷新后重试一次。
        *
@@ -1773,29 +1845,51 @@ export const useAppStore = defineStore('app', () => {
   }
 
   /**
-   * 把同步异常翻译成人能看懂的中文原因（1.1.8）。
+   * 把同步异常翻译成人能看懂的中文原因（1.1.8，1.2.0 重构）。
    *
    * 为什么需要：浏览器对 CORS 预检失败、DNS 失败、连接被拒等情况**统一抛
    * `TypeError: Failed to fetch`**，不带任何细节。用户看到「同步失败：Failed to fetch」
    * 完全无法自救。这里按已知失败模式归类，并给出可操作的下一步。
+   *
+   * ## 1.2.0 的关键重构：网络错误必须先诊断，再决定是否原样透出
+   *
+   * 1.1.8 的实现第一句是「message 已含中文就直接透出」。这在当时是对的
+   * （中文只可能来自服务端 `readError()` 的业务错误），但 1.2.0 给
+   * `S3StorageClient` / `RemoteProxyStorageClient` 都加了**网络层兜底**，
+   * 于是网络失败也会带上中文，形如：
+   *   `列举失败：无法连接 zhenglob.oss-cn-guangzhou.aliyuncs.com（Failed to fetch）`
+   *
+   * 如果仍沿用「有中文就透出」，这类错误会被**原样抛出**，
+   * 后面那些针对性的诊断分支（桶名拼错 / 未配 CORS / 未登录却被自建 S3 抢通道）
+   * **永远不会执行** —— 用户依然只看到一句"无法连接某主机"，不知道该怎么办。
+   * 这正是 1.2.0 必须修掉的自身回归。
+   *
+   * 因此顺序改为：
+   *  1. **先判网络类型**（含我们补过 host 的新文案），命中则做针对性诊断；
+   *  2. 诊断不出特殊原因时，才给出「带 host 的三选一」；
+   *  3. 非网络错误仍保持「有中文就透出」，业务错误（403/配额/未注册）原样呈现；
+   *  4. 最后是 401 / VAULT_* / QUOTA_* / timeout 等既有分支，顺序未变。
    *
    * @param err 原始异常
    * @param vaultId 当前仓库 id（用于判断「未注册」这类特定原因）
    */
   function explainSyncError(err: unknown, vaultId: string): string {
     const raw = err instanceof Error ? err.message : String(err);
-    // 原有错误已带中文（来自 RemoteProxyStorageClient 的 readError）直接透出
-    if (/[\u4e00-\u9fa5]/.test(raw)) return raw;
+    /*
+     * 网络层失败的统一判据：
+     *  - 浏览器原始文案 `Failed to fetch` / `NetworkError` / `Load failed`；
+     *  - 我们自己在 storage 层补过 host 的文案（`无法连接 xxx`）；
+     *  - `ERR_NETWORK` / `ERR_CONNECTION` 等 Chromium 内部错误串。
+     */
+    const isNetworkError =
+      /Failed to fetch|NetworkError|Load failed|Network request failed|无法连接|ERR_NETWORK|ERR_CONNECTION|ECONNREFUSED|ETIMEDOUT/i.test(
+        raw,
+      );
 
-    if (/Failed to fetch|NetworkError|Load failed/i.test(raw)) {
+    if (isNetworkError) {
       /*
-       * 这是最容易被误判的一类。线上 1.1.8 的真实成因（已抓包确认）是：
-       * 已登录用户被自建 S3 配置"抢"走了通道，浏览器直连阿里云 OSS，
-       * 而该桶既不存在、也没配 CORS → 只剩一句 Failed to fetch。
-       *
-       * 1.1.9 起「已登录永不直连自建 S3」已成为不变量，所以这里先判断
-       * 当前是否还残留着一份自建存储配置：如果有，直接点明它并给出「重置」指引，
-       * 这比泛泛而谈「网络可能中断」有用得多。
+       * 诊断一：配置层面有**结构性**问题（桶名非法 / 缺 AK / endpoint 非法）。
+       * `customS3Problem()` 只做格式校验，能挡住明显的填写错误。
        */
       const problem = customS3Problem();
       const auth = useAuthStore();
@@ -1806,10 +1900,59 @@ export const useAppStore = defineStore('app', () => {
           : `${problem}请到「设置 → 对象存储」检查填写，或点「重置对象存储配置」清空后改用平台存储。`;
       }
       /*
-       * 其余成因按概率排序：
-       * 1. CORS 预检失败（自定义头未在服务端 allowedHeaders 里）；
-       * 2. 服务器不可达 / 证书问题 / 断网；
-       * 3. 私有化模式误拦。
+       * 诊断二：**未登录 + 自建 S3 结构合法但实际不可用**。
+       *
+       * 为什么单独处理：`hasValidCustomS3()` 只做**结构**校验（桶名符合 S3 命名规则、
+       * endpoint 是合法 URL、AK≠SK）。而线上真实案例是 `bucket:"zhenglob"`（拼错，
+       * 真实桶是 `zhengle`）—— 它**完全合法**，能通过全部结构校验，于是
+       * `problem` 为空，提示落到「三选一」，用户永远猜不到是桶名拼错了。
+       *
+       * 结构性校验查不出「桶不存在 / 桶存在但没配 CORS / 网络到不了对象存储」这三类
+       * **语义**错误，所以这里对「未登录且确实配了自建 S3」的情形给出针对性提示。
+       */
+      if (!auth.isLoggedIn && hasValidCustomS3()) {
+        const cfg = settingsStore.settings.storage;
+        const host = (() => {
+          try {
+            return new URL(cfg.endpoint || '').host;
+          } catch {
+            return cfg.endpoint || '对象存储';
+          }
+        })();
+        return (
+          `无法连接对象存储 ${host}（Failed to fetch）。你的配置在格式上没有问题，` +
+          '但浏览器无法访问它，通常是以下三类原因之一：' +
+          `① 桶名「${cfg.bucket}」在服务端不存在（请到云控制台核对拼写）；` +
+          '② 该桶未配置 CORS 规则（需允许本页面来源的 GET/PUT/HEAD 请求）；' +
+          '③ 网络或 Endpoint 地域填写错误。' +
+          '建议先登录账号改用平台存储（登录后不再直连自建 S3），或到「设置 → 对象存储」点「重置对象存储配置」。'
+        );
+      }
+      /*
+       * 诊断三：以上都不适用 —— 失败发生在**服务端**（或浏览器到服务端的链路）。
+       *
+       * 1.2.0 改进：把 storage 层补出的 host 提取出来嵌进提示，
+       * 用户能直接拿它和「设置 → 服务器」里的地址对照，而不是面对一句
+       * 不知道打到哪儿的 `Failed to fetch`。
+       *
+       * 提取用 `[^\s（(?]+`：截到空白、左括号或 **`?`** 为止。
+       * 后者是 1.2.0 修过的一个真实缺陷 —— 同源部署时上游曾把
+       * `/api/storage/list?prefix=...` 整条相对路径当作 host 传下来，
+       * 若这里不剥 `?`，提示里就会带上一长串对象 key，既难读也泄露文档 id。
+       */
+      const hostMatch = /无法连接(?:服务端)?\s*([^\s（(?]+)/.exec(raw);
+      const host = hostMatch?.[1] ?? '';
+      if (host) {
+        return (
+          `无法连接服务端 ${host}（Failed to fetch）。请依次确认：` +
+          `① 当前网络能否打开 ${host}；` +
+          '② 若使用自建服务器，检查「设置 → 服务器」中的地址是否正确（含端口与 https）；' +
+          '③ 若为官方部署，可能是服务端临时不可用，稍后重试。'
+        );
+      }
+      /*
+       * 兜底（拿不到 host 时才走到这里，说明异常没经过我们的 storage 层包装，
+       * 例如极早期的启动异常）。保持原有三选一，但补充「重置」入口。
        */
       return (
         '无法连接到服务器（Failed to fetch）。可能原因：' +
@@ -1819,7 +1962,21 @@ export const useAppStore = defineStore('app', () => {
         '请检查网络与「设置 → 服务器」中的地址，再点「立即同步」重试。'
       );
     }
-    if (/\b401\b|未登录|登录已过期/.test(raw)) {
+
+    /*
+     * 错误码类分支必须排在「中文透传」**之前**。
+     *
+     * 为什么调整顺序（1.2.0）：这些分支的判据里既有英文错误码
+     * （`VAULT_NOT_REGISTERED` / `QUOTA_EXCEEDED` / `timeout`）也有中文说法
+     * （「未注册」「配额」「请求超时」）。而中文透传会把任何含中文的 message
+     * 原样返回 —— 只要它排在前面，这些分支的**中文部分就全是死代码**，
+     * 且用户拿到的是服务端/底层拼的原始文案，缺少可操作指引。
+     *
+     * 现在把「语义更明确、能给出下一步动作」的分支提前，既保留英文错误码命中，
+     * 也让中文说法走同一条可操作提示；最后才把剩余中文原样透出，
+     * 避免翻译丢失服务端给出的精确原因。
+     */
+    if (/\b401\b|未登录|登录已过期|REFRESH_REVOKED|REFRESH_EXPIRED/.test(raw)) {
       return '登录状态已失效，请重新登录后再同步。';
     }
     if (/VAULT_NOT_REGISTERED|未注册/.test(raw)) {
@@ -1831,9 +1988,11 @@ export const useAppStore = defineStore('app', () => {
     if (/QUOTA_EXCEEDED|配额/.test(raw)) {
       return '存储配额不足，请清理空间或联系管理员扩容。';
     }
-    if (/请求超时|timeout/i.test(raw)) {
+    if (/请求超时|timeout|ETIMEDOUT/i.test(raw)) {
       return '同步请求超时。可能是网络较慢或云端数据较多，请稍后重试。';
     }
+    // 其余含中文的业务错误原样透出（服务端 message 最精确，不要二次翻译）
+    if (/[\u4e00-\u9fa5]/.test(raw)) return raw;
     return raw;
   }
 

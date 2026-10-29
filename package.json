@@ -1,6 +1,6 @@
 {
   "name": "neomd",
-  "version": "1.1.9",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "Neo MD — local-first Markdown editor for Windows, Android and Web",

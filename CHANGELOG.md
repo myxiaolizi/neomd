@@ -13,6 +13,63 @@
 
 ---
 
+## [1.2.0] - 2026-10-30
+
+本版是一次**针对性修复 + 交付物补齐**：把「同步失败：Failed to fetch」从「用户看到一句笼统提示、无法自救」变成「要么不再发生，要么精确告诉你卡在哪一步、连的是哪台主机」；并补上 PC 端绿色版（免安装）的可下载产物。
+
+### Fixed
+
+- **同步失败：Failed to fetch（用户报障的核心）**
+
+  先说结论：这不是新 bug，而是 **1.1.9 的修复从未部署上线**。生产环境 `/api/health` 当时仍返回 `version: 1.1.8`，而 1.1.9 里「已登录永不直连自建 S3」的不变量只存在于源码中。实测重现路径：登录 admin → 点同步 → 唯一失败请求发往
+
+  ```
+  https://zhenglob.oss-cn-guangzhou.aliyuncs.com/?list-type=2&max-keys=1000&prefix=mdadmin/neomd/users/admin/...
+  → TypeError: Failed to fetch
+  ```
+
+  `zhenglob` 是**拼写错误的桶名**（真实桶是 `zhengle`）。1.1.8 的分支顺序让「自建 S3」判断排在「已登录」之前，于是已登录用户被这份残留配置抢到第三方 OSS 直连通道；而阿里云对该桶的失败响应不返回 CORS 头，浏览器只能抛一句没有 URL、没有原因的 `Failed to fetch`。本版把 1.1.9 的修复真正部署到了生产。
+
+- **「三选一」的笼统提示（本版的主要改进）**
+
+  即使同步失败不再发生，这个提示本身也有问题：它把「网络中断 / 跨域被拦 / 地址填错」并列给用户自选，**三者都没有指向真正的原因**，用户无法自救，我们也无法从截图判断问题。根因是浏览器把所有网络层失败（DNS 失败、连接被拒、证书错误、CORS 预检被拒）统一抛成 `TypeError: Failed to fetch`，**不带 URL**，而 `explainSyncError()` 只能拿到这句话。
+
+  本版在三个层次上把「上下文」补了回来：
+
+  1. `S3StorageClient.request()` 捕获网络异常后重抛为
+     `列举对象失败：无法连接 zhenglob.oss-cn-guangzhou.aliyuncs.com（Failed to fetch）`
+     —— 直接点名主机与操作。
+  2. `RemoteProxyStorageClient` 增加统一的 `request()` 包装，服务端不可达时给出
+     `列举失败：无法连接服务端 /api/storage/list（Failed to fetch）`。
+  3. `proxyTransport.fetch` 补出 `同步请求失败：无法连接服务端 md.zhengl.vip（Failed to fetch）`。
+
+  因为 `explainSyncError()` 对「已含中文的 message」是直接透出的，上述信息会原样呈现在界面上。
+
+- **另有「未登录 + 自建 S3」这条未被堵住的路径**
+
+  1.1.9 只堵住了「已登录」这一侧。而未登录用户若配了自建 S3，仍然直连；更关键的是 `hasValidCustomS3()` 只做**结构**校验（桶名符合 S3 命名规则、Endpoint 是合法 URL、AK≠SK），而 `zhenglob` **完全合法**、能通过全部校验 —— 结构校验查不出「桶不存在 / 桶存在但没配 CORS / 网络到不了对象存储」这三类**语义**错误。
+
+  因此本版针对该情形给出可执行的提示：点名桶名、列出三类真实原因（桶不存在 / 未配 CORS / Endpoint 地域错），并建议「登录后改用平台存储，不再直连自建 S3」。这是本条报障在无法自动修复场景下的兜底。
+
+### Added
+
+- **PC 端绿色版（免安装便携版）**：`NeoMD-1.2.0-win-x64.zip`，解压即用、不写注册表。同时发布到本机 `dist-artifacts/` 与 GitHub Releases。
+- 绿色版产物命名改为**从 package.json 读取版本**，不再在构建脚本里硬编码（此前每版都要手工改，漏改会导致产物名与版本不符）。
+
+### Changed
+
+- **生产环境升级到 1.2.0**：`/api/health` 的 `version` 字段已同步，前端静态产物同步更新。
+
+### Security
+
+- **打包白名单完整性复核**：`electron-builder.config.cjs` 的 `files` 是显式白名单，1.1.9 曾因新增窗口管理模块漏加而在打包后 `MODULE_NOT_FOUND` 启动即崩（开发态完全不暴露）。本版把 `main.cjs` / `preload.cjs` 的全部相对 `require` 与白名单做了逐项比对并加入构建期自检。
+
+### 已知未实现（非本版回归）
+
+沿用 1.1.9 的清单：`letterSpacing`（字距）、`paragraphSpacing`（段落间距）从未实现；`typewriterMode`（打字机模式）无消费点，UI 已摘除、字段保留以兼容云端设置；跨端布局同步的基线机制已实现但两端实测留待后续版本。
+
+---
+
 ## [1.1.9] - 2026-10-29
 
 本版把「同步失败」「两端两套仓库」「仓库全部未同步」这三个看似独立的问题，定位为**同一条因果链上的三个位置**；并修复了设置项静默回滚、工具栏拖不动、流程图/思维导图不可用等一批交互缺陷。

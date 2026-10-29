@@ -24,7 +24,7 @@
  * 推送与建 Release 由 runbook（docs/RELEASE-119.md）里的 git/gh 命令完成，
  * 本脚本**不直接操作 git 远端**，避免在无人值守时误推。
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -139,6 +139,52 @@ function cmdVersion(args) {
   return 0;
 }
 
+/**
+ * 产物文件名的版本号捕获。
+ *
+ * 必须锚定到「扩展名之前」的边界：`NeoMD-1.1.9.apk` 若用宽松的 `([\d.]+)`
+ * 会连扩展名的点一起吃进去，捕获成 `1.1.9.`（末尾多一个点）——校验因此假失败。
+ * 这里要求版本号后面紧跟 `-` 或 `.` + 扩展名，且版本号本身只允许数字与点。
+ */
+const ARTIFACT_VERSION_RE = /NeoMD-(\d+(?:\.\d+)*?)(?=-|\.(?:apk|exe|zip|dmg|msi))/;
+
+/** 「产物名由 package.json 动态推导」的特征（比硬编码更稳，应判通过） */
+const DYNAMIC_VERSION_RE = /\$\{version\}|\$\{pkg\.version\}|pkg\.version|readFileSync\([^)]*package\.json/;
+
+/**
+ * 去掉源码注释，只留下「真正会参与构建的代码」。
+ *
+ * 为什么需要这一步：1.2.0 起 `apps/desktop/build.mjs` 已改为从 package.json
+ * 读版本，但在 JSDoc 里留了一句「早先这里硬编码成 `NeoMD-1.1.9-win-x64.zip`」
+ * 的历史说明。校验若直接对全文正则，会把这句**注释**当成「还没升级的硬编码」
+ * 而误报失败——门禁一旦出现假阳性，就会被习惯性忽略，等于门禁失效。
+ *
+ * 实现：逐行处理。整行注释（`//` / `*` / `/*` 开头）丢弃，块注释状态跟踪；
+ * 行尾 `//` 仅在「前一个是空白」时截断，从而不误伤 `https://` 这类 URL。
+ */
+function stripComments(text) {
+  const out = [];
+  let inBlock = false;
+  for (const rawLine of text.split('\n')) {
+    let line = rawLine;
+    if (inBlock) {
+      const end = line.indexOf('*/');
+      if (end === -1) continue;
+      line = line.slice(end + 2);
+      inBlock = false;
+    }
+    const trimmed = line.trim();
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) {
+      if (trimmed.startsWith('/*') && !trimmed.includes('*/')) inBlock = true;
+      continue;
+    }
+    const slash = line.indexOf('//');
+    if (slash > 0 && /\s/.test(line[slash - 1])) line = line.slice(0, slash);
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
 /** 校验全仓库版本一致性（发布前门禁） */
 function cmdCheck() {
   const expected = currentVersion();
@@ -147,23 +193,23 @@ function cmdCheck() {
   for (const t of TARGETS) {
     const text = read(t.file);
     let found = '';
+    let note = '';
     if (t.kind === 'package-json') {
       found = JSON.parse(text).version ?? '';
     } else if (t.kind === 'env-version') {
       found = /APP_VERSION\s*=\s*'([\d.]+)'/.exec(text)?.[1] ?? '';
     } else if (t.kind === 'artifact-name') {
-      /*
-       * 必须锚定到「扩展名之前」的边界。
-       *
-       * `NeoMD-1.1.9.apk` 若用宽松的 `([\d.]+)` 会连扩展名的点一起吃进去，
-       * 捕获成 `1.1.9.`（末尾多一个点）——校验因此假失败。
-       * 这里要求版本号后面紧跟 `-` 或 `.` + 扩展名，且版本号本身只允许数字与点。
-       */
-      found = new RegExp(`NeoMD-(\\d+(?:\\.\\d+)*?)(?=-|\\.(?:apk|exe|zip|dmg|msi))`).exec(text)?.[1] ?? '';
+      // 先剥注释再匹配：注释里的历史版本号不应该触发失败
+      const code = stripComments(text);
+      found = ARTIFACT_VERSION_RE.exec(code)?.[1] ?? '';
+      if (!found && DYNAMIC_VERSION_RE.test(code)) {
+        note = '（从 package.json 动态推导，无硬编码）';
+        found = expected;
+      }
     }
     const ok = found === expected;
     if (!ok) bad += 1;
-    console.log(`  ${ok ? '✓' : '✗'} ${t.file}：${found || '(未找到)'}`);
+    console.log(`  ${ok ? '✓' : '✗'} ${t.file}：${found || '(未找到)'}${note}`);
   }
   // CHANGELOG 顶部段落必须与版本一致
   const changelog = read('CHANGELOG.md');
@@ -205,7 +251,8 @@ function cmdNotes(args) {
     console.error(`版本 ${version} 的段落内容为空。`);
     return 1;
   }
-  const out = path.join(ROOT, `.release-notes-${version}.md`);
+  const out = path.resolve(ROOT, valueOf(args, '--out') ?? `.release-notes-${version}.md`);
+  mkdirSync(path.dirname(out), { recursive: true });
   writeFileSync(out, `${body}\n`, 'utf8');
   console.log(`已写入 ${path.relative(ROOT, out)}（${body.length} 字符）`);
   return 0;
@@ -223,7 +270,7 @@ if (!fn) {
   console.log('用法：');
   console.log('  node tools/release-119.mjs version --to 1.1.9 [--dry-run]');
   console.log('  node tools/release-119.mjs check');
-  console.log('  node tools/release-119.mjs notes [--version 1.1.9]');
+  console.log('  node tools/release-119.mjs notes [--version 1.2.0] [--out 路径]');
   process.exit(cmd ? 1 : 0);
 }
 process.exit(fn(rest));

@@ -90,6 +90,9 @@ function parseArgs(argv) {
     changelogPath: out.values.get('changelog') ?? '',
     proxyOverride: out.values.get('proxy') ?? '',
     noProxy: out.flags.has('no-proxy'),
+    // 本项目没有自动更新代码（electron-builder publish: null），blockmap 只服务增量更新，
+    // 上传它只会让 Release 里多一个没人用的文件，因此提供开关显式排除。
+    noBlockmap: out.flags.has('no-blockmap'),
     allVersions: out.flags.has('all-versions'),
   };
 }
@@ -112,6 +115,7 @@ const USAGE = `Neo MD GitHub Release 发布脚本
   --draft              发布为草稿
   --prerelease         标记为预发布
   --skip-assets        只同步 Release 说明，不上传安装包
+  --no-blockmap        不上传 .blockmap（本项目无自动更新，blockmap 无用）
   --help               显示本帮助
 
 环境变量：
@@ -665,7 +669,7 @@ async function main() {
   }
 
   const optionalArtifacts = [];
-  for (const t of OPTIONAL_TEMPLATES) {
+  for (const t of args.noBlockmap ? [] : OPTIONAL_TEMPLATES) {
     const fileName = t.template(version);
     const filePath = path.join(artifactsDir, fileName);
     if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {

@@ -68,6 +68,51 @@ async function readError(res: Response, fallback: string): Promise<string> {
   }
 }
 
+/**
+ * 把一次**网络层**失败翻译成「能定位到服务地址与操作」的错误（1.2.0）。
+ *
+ * 与 `S3StorageClient.networkError` 同一个理由：浏览器把 DNS 失败、连接被拒、
+ * CORS 预检被拒、证书错误统一抛成 `TypeError: Failed to fetch`，**不带 URL**。
+ * 上层 `explainSyncError()` 只能拿到这一句，于是只能给「① 网络中断
+ * ② 跨域被拦 ③ 地址填错」这种让用户自己猜的提示。
+ *
+ * 本类的请求目标是**我们自己的服务端**（`/api/storage/*`），所以这里给出的信息
+ * 比 S3 场景更有用：直接点名「打不开哪个 host」，用户据此就能判断是
+ * 「网络断了」还是「服务器地址配错了」。
+ *
+ * @param action 操作名（上传/下载/列举/…）
+ * @param fullUrl 实际请求的**完整地址**（用于提取 host；query 会被剥掉，
+ *                因为 key 里含文档 id，没必要暴露给用户）
+ * @param err 原始异常
+ */
+function networkError(action: string, fullUrl: string, err: unknown): Error {
+  const raw = err instanceof Error ? err.message : String(err);
+  const isNetwork = /Failed to fetch|NetworkError|Load failed|Network request failed/i.test(raw);
+  const detail = isNetwork ? 'Failed to fetch' : raw;
+  // 只展示 host + path：query 里是对象 key（含文档 id），对定位无用且显得冗长
+  const clean = fullUrl.split('?')[0] ?? fullUrl;
+  let host = '';
+  try {
+    host = new URL(clean).host;
+  } catch {
+    /*
+     * 相对地址（同源部署，或测试里注入的假 transport）：
+     * 优先用当前页面的 host —— 那才是用户需要确认可达的目标。
+     * 拿不到（Node 环境）才退回去掉 query 的路径。
+     *
+     * 这一步是 1.2.0 修的缺陷：初版直接 `new URL(相对路径)` 抛异常后，
+     * 把**整条含 query 的相对路径**当成 host 展示，用户看到的是
+     * 「无法连接服务端 /api/storage/list?prefix=...」这种无从下手的文案。
+     */
+    try {
+      host = typeof location !== 'undefined' && location.host ? location.host : '';
+    } catch {
+      host = '';
+    }
+  }
+  return new Error(`${action}失败：无法连接服务端 ${host || clean}（${detail}）`);
+}
+
 /** URL 编码单个 query 值（key 里含 `/`，必须整体编码） */
 function q(value: string): string {
   return encodeURIComponent(value);
@@ -163,6 +208,47 @@ export class RemoteProxyStorageClient implements StorageClient {
     return h;
   }
 
+  /**
+   * 统一的「发请求 + 网络失败兜底」（1.2.0）。
+   *
+   * 为什么值得多一层：`transport.fetch()` 在服务端不可达 / CORS 预检被拒 /
+   * 断网时会**直接抛**（不进 `res.ok` 判断），而抛出来的只是
+   * `TypeError: Failed to fetch` —— 没有 URL、没有操作名。
+   * 上层 `explainSyncError()` 因此只能给「三选一自己猜」的提示。
+   *
+   * 这里统一收口，任何网络层异常都被补成
+   *   `列举失败：无法连接服务端 md.zhengl.vip（Failed to fetch）`
+   * 既能让用户看清是哪一步、打到哪个地址，也能让上层的正则判断更准。
+   *
+   * 两层 host 补全的分工（避免重复包裹）：
+   *  - `transport` 实现方（`apps/web` 的 `proxyTransport`）在 fetch 失败时已补过一次
+   *    host，那是**唯一知道真实请求地址**的地方（它做 URL 解析）；
+   *  - 本类再补一次作为兜底 —— 万一将来某个端的 transport 忘了补，错误也不会退化成
+   *    裸 `Failed to fetch`。因此这里先判断「是否已含 `无法连接`」，
+   *    已有就原样抛出，不叠加第二层文案。
+   *
+   * @param action 中文操作名
+   * @param path 请求路径（含 query，函数内部会去掉 query 再展示）
+   * @param init 请求参数
+   */
+  private async request(action: string, path: string, init: ProxyFetchInit): Promise<Response> {
+    try {
+      return await this.transport.fetch(path, init);
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      // transport 层已补过 host（含「无法连接」）→ 原样透传，不要再包一层
+      if (/无法连接/.test(raw)) throw e instanceof Error ? e : new Error(raw);
+      // 用 resolveUrl 还原成完整地址，才能从里面取出 host（path 只是相对路径）
+      let fullUrl = path;
+      try {
+        fullUrl = this.transport.resolveUrl(path);
+      } catch {
+        /* 拿不到基址时退回相对路径，networkError 会展示路径而不是 host */
+      }
+      throw networkError(action, fullUrl, e);
+    }
+  }
+
   /* ------------------------------ 写入 ------------------------------ */
 
   async putObject(key: string, body: Uint8Array | string, contentType = 'application/octet-stream'): Promise<void> {
@@ -174,14 +260,14 @@ export class RemoteProxyStorageClient implements StorageClient {
     }
     // 用 octet-stream 直传原始字节：相比 base64 省 33% 流量，也省一次编解码
     const rel = this.toRelative(key);
-    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(rel)}`, {
+    const res = await this.request('上传', `${this.basePath}/object?key=${q(rel)}`, {
       method: 'PUT',
       headers: this.headers({
         'content-type': 'application/octet-stream',
         // 同时带上相对 key：服务端优先取 query，这里只是给 multipart 等场景留的兜底
         'x-object-key': rel,
         'x-object-content-type': contentType,
-        }),
+      }),
       body: bytes as unknown as BodyInit,
     });
     if (!res.ok) throw new Error(await readError(res, '上传失败'));
@@ -191,7 +277,10 @@ export class RemoteProxyStorageClient implements StorageClient {
 
   async getObject(key: string): Promise<Uint8Array> {
     const rel = this.toRelative(key);
-    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(rel)}`, { method: 'GET', headers: this.headers() });
+    const res = await this.request('下载', `${this.basePath}/object?key=${q(rel)}`, {
+      method: 'GET',
+      headers: this.headers(),
+    });
     if (!res.ok) throw new Error(await readError(res, '下载失败'));
     return new Uint8Array(await res.arrayBuffer());
   }
@@ -209,7 +298,10 @@ export class RemoteProxyStorageClient implements StorageClient {
    */
   async headObject(key: string): Promise<S3ObjectMeta | null> {
     const rel = this.toRelative(key);
-    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(rel)}`, { method: 'HEAD', headers: this.headers() });
+    const res = await this.request('探测对象是否存在', `${this.basePath}/object?key=${q(rel)}`, {
+      method: 'HEAD',
+      headers: this.headers(),
+    });
     if (res.status === 404) return null;
     if (!res.ok) {
       // 网络/权限类错误向上抛，让 SyncEngine 记进 errors 而不是静默当作「对象不存在」
@@ -230,7 +322,10 @@ export class RemoteProxyStorageClient implements StorageClient {
 
   async deleteObject(key: string): Promise<void> {
     const rel = this.toRelative(key);
-    const res = await this.transport.fetch(`${this.basePath}/object?key=${q(rel)}`, { method: 'DELETE', headers: this.headers() });
+    const res = await this.request('删除', `${this.basePath}/object?key=${q(rel)}`, {
+      method: 'DELETE',
+      headers: this.headers(),
+    });
     // 404 视为已删除（幂等），与 S3StorageClient 一致
     if (!res.ok && res.status !== 404) throw new Error(await readError(res, '删除失败'));
   }
@@ -240,7 +335,8 @@ export class RemoteProxyStorageClient implements StorageClient {
   async listObjects(prefix: string, maxKeys = 1000): Promise<S3ObjectMeta[]> {
     const limit = Math.min(1000, Math.max(1, Math.trunc(maxKeys) || 1000));
     const relPrefix = this.toRelative(prefix);
-    const res = await this.transport.fetch(
+    const res = await this.request(
+      '列举',
       `${this.basePath}/list?prefix=${q(relPrefix)}&maxKeys=${limit}`,
       { method: 'GET', headers: this.headers() },
     );
@@ -269,7 +365,7 @@ export class RemoteProxyStorageClient implements StorageClient {
   /* ------------------------------ 预签名 ------------------------------ */
 
   private async presign(key: string, method: 'GET' | 'PUT', expiresSeconds: number, contentType?: string): Promise<string> {
-    const res = await this.transport.fetch(`${this.basePath}/presign`, {
+    const res = await this.request('生成签名地址', `${this.basePath}/presign`, {
       method: 'POST',
       headers: this.headers({ 'content-type': 'application/json' }),
       body: JSON.stringify({

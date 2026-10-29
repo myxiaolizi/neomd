@@ -954,12 +954,19 @@ try {
           createdAt: Date.now(),
           available: true,
         },
-        // ③ 另一个正常仓库，用于确认修复不会误删无关条目
+        // ③ 另一个正常仓库，用于确认修复不会误删无关条目。
+        //
+        // **必须用本地路径仓库**，不能用 `cloud:<id>`：
+        // `prunePseudoCloudVaults()` 的清理判据之一是「location 以 cloud: 开头 +
+        // 不在云端 remoteIds + docCount=0 + 无 lastSyncedAt」—— 那正是伪仓库的定义，
+        // 用它来测「不该被删」会自相矛盾（上一版脚本就因此假失败过：
+        // 它依赖服务端恰好存在 qa119verify 档案，一旦档案被清理就变成伪仓库被正当地删掉）。
+        // 而本地路径仓库（桌面端真实目录）按设计「绝不自动清理」，才是准确的反例。
         {
-          vaultId: 'qa119verify',
-          name: 'QA 验收仓库',
-          location: 'cloud:qa119verify',
-          adapter: 'browser-idb',
+          vaultId: 'qaunrelated',
+          name: '无关本地仓库',
+          location: 'C:\\QA\\无关本地仓库',
+          adapter: 'desktop-fs',
           status: 'active',
           lastOpenedAt: 0,
           createdAt: Date.now(),
@@ -1002,8 +1009,8 @@ try {
   check(!ghost, '5.4 空 location 的 pending: 垃圾条目被丢弃', ghost ? '仍存在' : '已丢弃');
   const emptyLoc4 = afterRepair.entries.filter((e) => !e.location);
   check(emptyLoc4.length === 0, '5.5 修复后所有条目 location 非空', emptyLoc4.length ? `${emptyLoc4.length} 条为空` : '全部非空');
-  const keptOther = afterRepair.entries.find((e) => e.vaultId === 'qa119verify');
-  check(Boolean(keptOther), '5.6 无关的正常仓库未被误删', keptOther ? '保留' : '被误删');
+  const keptOther = afterRepair.entries.find((e) => e.vaultId === 'qaunrelated');
+  check(Boolean(keptOther), '5.6 无关的本地路径仓库未被误删（prune 只清 cloud: 伪仓库）', keptOther ? '保留' : '被误删');
 } finally {
   await browser4.close();
 }

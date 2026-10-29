@@ -21,10 +21,11 @@ module.exports = {
     output: outDir,
     buildResources: path.join(__dirname, 'build'),
   },
-  // 注意：electron-builder 的 files 是显式白名单，主进程 require 的每个文件都必须列出来。
-  // 1.1.9 多窗口改造把窗口几何/登记表逻辑抽到了两个独立 .cjs 模块（便于纯 Node 单测），
-  // 如果漏加，打包后主进程会以 MODULE_NOT_FOUND 直接启动失败（开发态不会暴露这个问题）。
-  files: ['main.cjs', 'preload.cjs', 'window-utils.cjs', 'window-registry.cjs', 'package.json'],
+  // 注意：electron-builder 的 files 是显式白名单，主进程 require 的每个「本地」文件都必须列出来。
+  // 如果漏加，打包后主进程会以 MODULE_NOT_FOUND 直接启动失败——而开发态（直接跑源码）完全不暴露，
+  // 属于"只有发出去的包才炸"的坑。1.1.9 曾漏过 window-utils/window-registry，1.2.0 又新增了 portable.cjs。
+  // 白名单与真实 require 的一致性由 tools/verify-119-multiwindow.mjs 的单测 + tools/verify-120-portable.mjs 自动比对。
+  files: ['main.cjs', 'preload.cjs', 'window-utils.cjs', 'window-registry.cjs', 'portable.cjs', 'package.json'],
   extraResources: [
     {
       from: webDist,
@@ -38,10 +39,10 @@ module.exports = {
   asar: true,
   compression: 'maximum',
   win: {
-    target: [
-      { target: 'nsis', arch: ['x64'] },
-      { target: 'zip', arch: ['x64'] },
-    ],
+    // 只保留 nsis：绿色版 zip 统一由 build.mjs 从 win-unpacked 打包（单一生产者）。
+    // 早先这里同时配了 zip 目标，它产出的文件名与 build.mjs 的 tar 产物完全相同，
+    // 结果是同一份 250MB 目录被压两遍、后写的覆盖先写的，白白多花几分钟且让人分不清哪个才是发布物。
+    target: [{ target: 'nsis', arch: ['x64'] }],
     icon: path.join(__dirname, 'build', 'icon.ico'),
     artifactName: 'NeoMD-${version}-win-${arch}.${ext}',
     requestedExecutionLevel: 'asInvoker',

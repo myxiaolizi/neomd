@@ -156,6 +156,6 @@ if (!existsSync(apkPath)) {
   process.exit(1);
 }
 mkdirSync(outDir, { recursive: true });
-const target = path.join(outDir, 'NeoMD-1.1.9.apk');
+const target = path.join(outDir, 'NeoMD-1.2.0.apk');
 copyFileSync(apkPath, target);
 console.log('[android] APK 已生成:', target);

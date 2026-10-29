@@ -1001,33 +1001,57 @@ async function sectionB(chromium) {
     await backToDoc(page);
 
     /* ---------- B15 页宽：降级断言（1.1.7 起设置页已移除页宽控件） ---------- */
-    const widthResults = [];
-    for (const w of ['narrow', 'standard', 'wide', 'full']) {
-      const labelMap = { narrow: '窄', standard: '标准', wide: '宽', full: '铺满' };
-      await page.evaluate(() => {
-        const btns = document.querySelectorAll('.editorbar .viewswitch__btn');
-        btns[0]?.click();
-      });
-      await page.waitForSelector('.viewswitch__menu', { timeout: 8000 }).catch(() => {});
-      await page.evaluate((lb) => {
-        const items = Array.from(document.querySelectorAll('.viewswitch__menu .viewswitch__item'));
-        const hit = items.find((e) => (e.textContent || '').trim().startsWith(lb));
-        if (hit) hit.click();
-      }, labelMap[w]);
-      await page.waitForTimeout(800);
-      const st = await page.evaluate(() => {
+    /**
+     * 菜单开合是 `widthOpen` 布尔量，组件只在 document mousedown 时关闭，
+     * **Escape 不会关它**。因此不能假设「每次点按钮都是开」——
+     * 上一档遗留的打开状态会让这次点击变成「关闭」，取不到菜单项、该档不生效，
+     * 表现为「某一档 max-width 与上一档相同」的假失败（1.2.0 门禁首轮实测踩到）。
+     *
+     * 正确做法：以「菜单项是否在 DOM 里」为准做幂等开合，点击后校验 class，
+     * 不匹配就重试一次。断言本身不放宽：仍要求 4 档各自命中且 max-width 两两不同。
+     */
+    const WIDTH_LABEL = { narrow: '窄', standard: '标准', wide: '宽', full: '铺满' };
+    const openWidthMenu = async () => {
+      const open = await page.evaluate(() => document.querySelectorAll('.viewswitch__menu .viewswitch__item').length > 0);
+      if (!open) {
+        await page.evaluate(() => {
+          const btns = document.querySelectorAll('.editorbar .viewswitch__btn');
+          btns[0]?.click();
+        });
+        await page.waitForSelector('.viewswitch__menu .viewswitch__item', { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(200);
+      }
+    };
+    const readWidthState = () =>
+      page.evaluate(() => {
         const el = document.querySelector('.shell__page');
         const cs = el ? getComputedStyle(el) : null;
         return { cls: el?.className ?? '', maxWidth: cs?.maxWidth ?? '', padLeft: cs?.paddingLeft ?? '' };
       });
-      widthResults.push({ w, ...st });
-    }
+    const pickWidth = async (w) => {
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        await openWidthMenu();
+        const clicked = await page.evaluate((lb) => {
+          const items = Array.from(document.querySelectorAll('.viewswitch__menu .viewswitch__item'));
+          const hit = items.find((e) => (e.textContent || '').trim().startsWith(lb));
+          if (!hit) return null;
+          hit.click();
+          return (hit.textContent || '').trim();
+        }, WIDTH_LABEL[w]);
+        await page.waitForTimeout(750);
+        const st = await readWidthState();
+        if (clicked && new RegExp(`nm-page-${w}`).test(st.cls)) return { w, clicked, attempts: attempt + 1, ...st };
+      }
+      return { w, clicked: null, attempts: 2, ...(await readWidthState()) };
+    };
+    const widthResults = [];
+    for (const w of ['narrow', 'standard', 'wide', 'full']) widthResults.push(await pickWidth(w));
     const distinct = new Set(widthResults.map((r) => r.maxWidth));
     check(
       'B15 页宽切换生效（降级断言：编辑器工具栏按钮，非设置页）',
-      '4 档页宽对应 4 个不同的 max-width（620/760/1080/none）',
-      widthResults.map((r) => `${r.w}:${r.maxWidth}`).join(' | '),
-      distinct.size >= 3 && widthResults.every((r) => new RegExp(`nm-page-${r.w}`).test(r.cls)),
+      '4 档页宽对应 4 个不同的 max-width（620/760/1080/none），且各自的 nm-page-* class 命中',
+      widthResults.map((r) => `${r.w}:${r.maxWidth}(${(r.cls.match(/nm-page-\S+/) ?? ['?'])[0]})`).join(' | '),
+      distinct.size === 4 && widthResults.every((r) => new RegExp(`nm-page-${r.w}`).test(r.cls)),
       { note: '1.1.7 起设置页已移除页宽控件（字段仅向后兼容），故改断言工具栏按钮' },
     );
 
