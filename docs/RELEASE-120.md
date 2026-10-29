@@ -265,22 +265,38 @@ git -c http.proxy=http://127.0.0.1:1886 ls-remote --heads origin legacy-tauri
 
 ## 8. 发布记录
 
-> 下表在**推送前**先填好「已知项」（资产名/大小/SHA256 在构建后即确定），
-> 推完后只需补三行：源码提交、tag、Release URL、验收结果。
+> 已发布完成。下表为**实际发布结果**（不是计划值），可作为下次发布对照的样本。
 
 | 项 | 值 |
 |---|---|
 | 发布版本 | `1.2.0` |
-| 源码提交 | `待回填 - 推送后 git rev-parse HEAD` |
+| 源码提交 | `e7e5bc1be1cbe6cc4f46170091861319ef77c747` |
 | 推送前 main | `9cd2c0e` |
-| Tag | `待回填 - v1.2.0（annotated）` |
-| Tag 目标提交 | `待回填 - 应等于「源码提交」` |
-| Release | `待回填 - https://github.com/myxiaolizi/neomd/releases/tag/v1.2.0` |
-| Release id | `待回填` |
-| 验收结果 | `待回填 - verify-119-github.mjs --version=1.2.0 --expect="Failed to fetch,绿色版"` |
+| 快进区间 | `9cd2c0e..e7e5bc1`（普通推送，**未使用 `--force`**） |
+| Tag | `v1.2.0`（annotated，tag 对象 `41b9f4fa4e1d0fc6e66398ee002d09dec45c38e7`） |
+| Tag 目标提交 | `e7e5bc1be1cbe6cc4f46170091861319ef77c747`（与源码提交一致 ✓） |
+| Release | https://github.com/myxiaolizi/neomd/releases/tag/v1.2.0 |
+| Release id | `428182840`（`draft=false`，`target_commitish=main`） |
+| 验收结果 | **18 项通过 / 0 项失败**（`verify-119-github.mjs --version 1.2.0 --expect="Failed to fetch,绿色版"`） |
+| 全部 Release | 12 个（`v1.0.0`~`v1.1.9` 共 11 个旧 Release **全部保留未动** + `v1.2.0`） |
 | 生产部署 | 已部署 1.2.0（`https://md.zhengl.vip/api/health` → `version: 1.2.0`） |
 
-### 资产清单（已确定，推送前即可填）
+**验收关键项回显**（`verify-119-github.mjs` 实测）：
+
+```
+✓ main HEAD = e7e5bc1「fix(release): 1.2.0 — 同步错误可定位化 + PC 绿色版发布 + 生产部署」
+✓ main 树含 pnpm-workspace.yaml / apps / apps/web / apps/desktop / package.json
+✓ main 树不含 src-tauri / build.ps1
+✓ main 上 package.json 版本 = 1.2.0
+✓ legacy-tauri 分支存在：db2d78d
+✓ tag v1.2.0 指向 main 最新提交：e7e5bc1
+✓ Release body 含 CHANGELOG 全部小标题：Fixed / Added / Changed / Security / 已知未实现（非本版回归）
+✓ Release body 含指定关键字：Failed to fetch、绿色版
+✓ 资产大小一致：win-x64.zip 151.9 MB、setup.exe 107.9 MB
+✓ 两资产均可下载（HTTP 302 → release-assets.githubusercontent.com 预签名）
+```
+
+### 资产清单（已上传，字节数与本地逐一核对一致）
 
 | # | 文件 | 字节数 | 大小 | SHA256 | 说明 |
 |---|---|---|---|---|---|
@@ -299,10 +315,11 @@ git -c http.proxy=http://127.0.0.1:1886 ls-remote --heads origin legacy-tauri
 
 ---
 
-## 9. 本次修掉的两个流程缺陷（留给下一个版本的人）
+## 9. 本次修掉/摸清的流程缺陷（留给下一个版本的人）
 
-这两条都不是业务代码问题，而是**发布工具链自身**的问题。它们共同的特征是：
+这几条都不是业务代码问题，而是**发布工具链自身**的问题。它们共同的特征是：
 **不报错、输出看起来正常，但实际做的事不是你以为的那件**——比直接失败危险得多。
+第 9.3 节稍特殊：它是「真实存在但间歇性」的故障，症状极易让人查错方向。
 
 ### 9.1 参数解析必须拒绝未识别的写法，静默忽略比报错更危险
 
@@ -347,6 +364,123 @@ node tools/verify-119-github.mjs --code-only=1                  # → 中止：�
 
 最后一条尤其重要：剥注释用「`//` 前必须是空白」判断，否则 `https://` 会被误当行注释截断，
 导致 URL 后面的版本号漏检——那才是真正的漏网。
+
+### 9.3 代理链路间歇性 TLS 截断：现象、分层定位与操作建议
+
+**这是本次发布唯一真正卡住流程的故障，而且下次发版一定还会遇到。**
+它的危险之处在症状：看到「git 推不上去 / 发布失败」，人的本能是去查 **token 是否过期、权限够不够、仓库设置对不对**——全是错的方向，因为那些问题会明确报 401/403/404，不会表现为 TLS 断连。
+
+#### 现象
+
+```powershell
+git -c http.proxy=http://127.0.0.1:1886 fetch origin
+fatal: unable to access 'https://github.com/myxiaolizi/neomd.git/':
+        schannel: failed to receive handshake, SSL/TLS connection failed
+```
+
+同一时刻用 node 读同一个 API 却是 **HTTP 200**——这说明「网络不通」这个直觉判断是错的。
+
+#### 分层定位（每步都有明确判据）
+
+按网络层次自下而上逐层排除，**不要跳步**：
+
+| # | 探测 | 实测结果 | 判据 |
+|---|---|---|---|
+| 1 | TCP 探活 `127.0.0.1:1886` | 通 | 代理进程活着、端口在听 |
+| 2 | 手写 `CONNECT github.com:443` | `HTTP/1.1 200 Connection established`，隧道存活 | 代理愿意为该目标建隧道 |
+| 3 | 隧道内做真实 TLS 握手（SNI=github.com） | 成功，`TLSv1.3`，三种 CONNECT 写法均成功 | **代理的转发能力是好的** |
+| 4 | `GIT_CURL_VERBOSE=1` 看字节流 | 代理回 200 → git 发出 457 字节 ClientHello → 收到的 TLS 记录**不完整**，持续 `need more data` 直到超时 | 故障在「TLS 记录被截断」 |
+| 5 | 换 `--sslBackend=openssl` 交叉验证 | 变成 `unexpected eof while reading`（同样是被提前断开） | 排除「schannel 特有 bug」 |
+
+**关键结论**：**代理本身是好的，坏在 git 走代理时 TLS 记录被截断**，且是**间歇性**的。
+这一步排除了三大类误判方向：代理服务没起 / 端口不通 / 认证失败。
+
+#### A/B 交错对照（不是「重试成功就算好了」）
+
+单次重试成功没有说服力，必须交错对照才有证据力。实测**交替执行**各 6 次：
+
+| 路径 | 成功率 |
+|---|---|
+| **代理 1886**（`-c http.proxy=http://127.0.0.1:1886`） | **6/6 ✓** |
+| 直连（`-c http.proxy=`） | 4/6（失败为 `Could not connect to github.com:443 after 21067 ms`） |
+
+另一组 10 次采样：代理路径 **10/10**，直连 5/10。
+结论：**推送应当走代理**，直连不稳定。
+
+#### 同一故障的第二处证据：资产上传路径
+
+建 Release 成功，但上传第一个资产时失败：
+
+```
+上传 NeoMD-1.2.0-setup.exe（107.9 MB）… 失败
+✗ 发布失败：fetch failed
+```
+
+`fetch failed` 是 undici 的**包装错误**，真实原因藏在 `err.cause` 链里（`ECONNRESET` / `UND_ERR_SOCKET` 等），
+必须展开才能看见。诊断步骤：
+
+| # | 探测 | 实测结果 |
+|---|---|---|
+| 1 | `api.github.com` / `uploads.github.com` 各 3 次 HEAD | 全部 HTTP 200（最慢 1833ms） |
+| 2 | 代理对两主机的 CONNECT | 均 `200 Connection established` |
+| 3 | 分档上传实测（展开 `err.cause` 后） | 1KB → `HTTP 201` 1810ms；**107.9MB → `HTTP 201` 12739ms**；**151.9MB → `HTTP 201` 18772ms** |
+
+同一个 107.9MB 文件，第一次失败、诊断时重试即成功（12.7 秒）——**这就是间歇性断连的典型形态**，
+与上面的 git TLS 截断属同一类现象，只是发生在上传路径。
+
+#### 操作建议（下次发版直接照做）
+
+1. **推送前清掉代理环境变量，只用 `-c` 显式指定**：
+
+   ```powershell
+   Remove-Item Env:HTTPS_PROXY,Env:HTTP_PROXY,Env:NODE_USE_ENV_PROXY -ErrorAction SilentlyContinue
+   git -c http.proxy=http://127.0.0.1:1886 fetch origin
+   ```
+   原因：git 的**环境变量优先级高于 `-c`**。两者同时存在时实际生效的是环境变量那份，
+   等于配置了两次、且可能是格式不同的地址，行为不可预期。
+
+2. **`fetch` / `push` / 资产上传都要带重试**（最多 3 次，间隔 5 秒）。
+   一次失败**不能**判定链路不可用——本次 `fetch`、`push`、`tag push` 全部第 1 次成功，
+   但第一次的 `publish` 就撞上了断连。
+
+3. **失败时先分层定位，再决定要不要重试**。
+   `fetch failed` 本身不含原因，必须先展开 `err.cause`、先排除主机与代理，
+   才能区分「偶发断连（重试有效）」与「确定性失败（重试无用，如体积上限、方法错误、权限不足）」。
+   直接无脑重试会浪费时间，并掩盖真正的问题。
+
+> **由此得出、且已在本次被采纳的结论：`publish-github-release.mjs` 必须为单个资产的上传加自动重试。**
+> 这不是「锦上添花」——本次 259.9MB 的上传就真的中断过一次。
+> 实现时须满足两点：
+> - **只对网络类失败重试**（`fetch failed` / `ECONNRESET` / `UND_ERR_SOCKET` / 5xx）；
+>   **4xx 不重试**（401 token 失效、422 资产已存在这类重试无意义，还会掩盖真正的问题）；
+> - **每次重试必须打印「第 N 次重试」**，否则日志看起来像一次就成功了，下次遇到同样问题又得重新诊断一遍。
+
+### 9.4 同一份数据被两处解析，必须交叉验证
+
+`tools/release-119.mjs notes`（**预览** Release body）与 `tools/publish-github-release.mjs`
+（**真正生成** Release body）是两份**独立实现**的 CHANGELOG 抽段逻辑。
+
+这构成一个隐蔽风险：若两者抽出的正文有差异，就会出现
+**「你审阅的内容 ≠ 真正发出去的内容」**；而 `verify-119-github.mjs` 又是按 CHANGELOG 抽段去断言
+Release body 的小标题的，于是会报一个极难定位的假失败。
+
+发布前做了逐字节交叉验证，5 个版本全部一致：
+
+```
+1.2.0   A=2298   B=2298   完全一致 ✓
+1.1.9   A=6317   B=6317   完全一致 ✓
+1.1.8   A=2786   B=2786   完全一致 ✓
+1.1.5   A=1843   B=1843   完全一致 ✓
+1.0.0   A=1293   B=1293   完全一致 ✓
+```
+
+因此可以信任 `notes` 的输出：**预览即最终 body 主体**。
+
+> **约束（改 CHANGELOG 抽段逻辑时必须维持）**：这两个函数必须对同一份 CHANGELOG 产出**完全相同**的正文。
+> 任何人修改其中一处，都必须重新跑一次交叉验证，否则「预览」就失去意义。
+>
+> 本项目已多次踩过「同一件事有两个实现」的坑（1.1.9 的 `--font-content` 被内层元素内联遮蔽、
+> `layout` 与主题两套脏标记逻辑不一致）。**凡是「同一件事有两个实现」的地方，都应该有交叉验证。**
 
 ---
 

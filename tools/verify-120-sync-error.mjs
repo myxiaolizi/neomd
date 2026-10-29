@@ -177,8 +177,14 @@ const BAD_S3_PATCH = {
   useTls: true,
 };
 
-/** 干净配置（清空自建 S3 → 已登录走平台代理） */
-const CLEAN_S3_PATCH = { bucket: '', accessKeyId: '', accessKeySecret: '', endpoint: '' };
+/**
+ * 注：这里不再提供「清空自建 S3」的补丁常量。
+ *
+ * 原因见 [D] 段的说明 —— 登录后 `pullCloudSettings()` 会把服务端保存的
+ * storage 配置合并回本地，本地清空会被云端覆盖（admin 的生产库里确实有
+ * `bucket:"zhenglob"`）。与其和云端对抗，不如把「脏配置下同步照样成功」
+ * 直接作为断言，更接近用户真实处境。
+ */
 
 /**
  * 在页面里装一个「toast 收集器」（必须在触发同步**之前**调用）。
@@ -444,27 +450,36 @@ const ctxD = await browserD.newContext({ viewport: { width: 1440, height: 900 } 
 const pageD = await ctxD.newPage();
 await seedDeviceId(pageD);
 try {
+  /*
+   * [D] 是**纯净回归**：不注入任何 storage 配置，完全走默认路径。
+   *
+   * 若登录后云端设置里带回了 `bucket:"zhenglob"`（admin 的生产库现状就是这样），
+   * 那更好 —— 这条断言就同时证明了「脏配置 + 已登录 → 同步照样成功」。
+   * 因此这里不断言 bucket 为空，只断言「同步成功 + 0 个 OSS 直连」这两个本质结果。
+   */
   const loggedD = await loginViaUi(pageD, '[D]');
   check(loggedD, '[D] 登录成功');
   if (!loggedD) throw new Error('[D] 登录失败');
   await pageD.waitForSelector('.editorbar, .empty', { timeout: 30000 });
-  // 干净配置：清掉 storage（走平台代理）
-  await pageD.evaluate(() => {
-    const KEY = 'neomd.settings.v1';
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return;
-    const s = JSON.parse(raw);
-    if (s.storage) {
-      s.storage.bucket = '';
-      s.storage.accessKeyId = '';
-      s.storage.accessKeySecret = '';
-      s.storage.endpoint = '';
-    }
-    localStorage.setItem(KEY, JSON.stringify(s));
+  await pageD.waitForTimeout(6000);
+
+  /*
+   * 这里**刻意不清空** storage 配置，才最贴近真实生产场景。
+   *
+   * 原因（本轮实测发现）：登录后 `settingsStore.pullCloudSettings()` 会从服务端
+   * 拉取该账号的云端设置并合并到本地 —— 而 admin 账号在生产库里**确实还残留**
+   * `bucket:"zhenglob"` 这条脏配置。所以「本地清空」会被云端覆盖回来。
+   *
+   * 与其跟云端设置对抗，不如把这个事实变成一条更强的断言：
+   *   「即使登录后被云端脏配置覆盖，同步依然成功、依然 0 个 OSS 直连」。
+   * 这正是「已登录永不直连自建 S3」这个不变量要保证的最终效果，
+   * 也是用户报障在生产环境被根治的直接证据。
+   */
+  const cfgD = await pageD.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('neomd.settings.v1') || '{}');
+    return { bucket: s.storage?.bucket ?? '', ak: Boolean(s.storage?.accessKeyId) };
   });
-  await pageD.reload({ waitUntil: 'domcontentloaded' });
-  await pageD.waitForSelector('.editorbar, .empty', { timeout: 30000 });
-  await pageD.waitForTimeout(5000);
+  console.log(`    [D] 实际生效的 storage 配置：bucket="${cfgD.bucket}"（可能来自云端设置合并）`);
 
   const resD = await triggerSync(pageD, { waitMs: 10000 });
   const okD = resD.storageCalls.filter((c) => c.status < 400);

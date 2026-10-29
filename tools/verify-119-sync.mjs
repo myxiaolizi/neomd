@@ -904,85 +904,106 @@ const browser4 = await chromium.launch({
 const ctx4 = await browser4.newContext({ viewport: { width: 1200, height: 800 } });
 const page4 = await ctx4.newPage();
 await seedDeviceId(page4);
+
+/*
+ * 种一份「1.1.8 典型脏数据」——**必须在应用启动之前**注入。
+ *
+ * ## 为什么不能用「登录后再 page.evaluate 写 localStorage」
+ *
+ * 这是本脚本上一版 5.6 假失败的真正原因。`useAppStore` 持有 `VaultRegistry`
+ * 的**内存副本**，而下列任何一次操作都会把内存里的旧 entries 整体 `persist()`
+ * 回 localStorage：
+ *   `updateStats()`（打开仓库/对账后回填统计）
+ *   `markSynced()`（同步成功回写）
+ *   `mergeRemote()`（拉取云端清单）
+ * 于是我们在外部写进去的种子会被**立刻覆盖回去**，测试看到的是应用自己的数据，
+ * 而不是我们准备的脏数据 —— 表现成「注入了却没生效」。
+ *
+ * 正确做法：`addInitScript` 让种子在**每次导航的最开始、任何应用代码之前**写入，
+ * 并用 `sessionStorage` 标记只种一次（后续导航不再覆盖应用运行期的正常写入）。
+ *
+ * 这也解释了为什么必须用 vitest 做隔离验证：只有把「脚本注入是否生效」
+ * 与「repair/prune 行为是否正确」分开，才能确认 5.6 是脚本问题而非产品缺陷。
+ */
+const dirtyVaultList = {
+  entries: [
+    // 当前仓库（正常）：必须是修复后仍然 current 的那条
+    {
+      vaultId: 'admin',
+      name: 'admin',
+      location: 'cloud:admin',
+      adapter: 'browser-idb',
+      status: 'active',
+      lastOpenedAt: Date.now(),
+      createdAt: Date.now() - 100000,
+      available: true,
+      lastSyncedAt: Date.now() - 5000,
+      docCount: 3,
+      bytes: 30,
+    },
+    // ① 同一 vaultId 的重复条目，且 location 为空、available=false（1.1.8 mergeRemote 的产物）
+    {
+      vaultId: 'admin',
+      name: 'admin',
+      location: '',
+      adapter: 'browser-idb',
+      status: 'active',
+      lastOpenedAt: 0,
+      createdAt: Date.now(),
+      available: false,
+    },
+    // ② 空 location 的 pending: 垃圾条目（无从恢复，应被丢弃）
+    {
+      vaultId: 'pending:',
+      name: '幽灵仓库',
+      location: '',
+      adapter: 'browser-idb',
+      status: 'active',
+      lastOpenedAt: 0,
+      createdAt: Date.now(),
+      available: true,
+    },
+    // ③ 另一个正常仓库，用于确认修复不会误删无关条目。
+    //
+    // **必须用本地路径仓库**，不能用 `cloud:<id>`：
+    // `prunePseudoCloudVaults()` 的清理判据之一是「location 以 cloud: 开头 +
+    // 不在云端 remoteIds + docCount=0 + 无 lastSyncedAt」—— 那正是伪仓库的定义，
+    // 用它来测「不该被删」会自相矛盾（更早一版脚本就因此假失败过：
+    // 它依赖服务端恰好存在某个 QA 仓库档案，档案一被清理就变成伪仓库被正当地删掉）。
+    // 而本地路径仓库（桌面端真实目录）按设计「绝不自动清理」，才是准确的反例。
+    {
+      vaultId: 'qaunrelated',
+      name: '无关本地仓库',
+      location: 'C:\\QA\\无关本地仓库',
+      adapter: 'desktop-fs',
+      status: 'active',
+      lastOpenedAt: 0,
+      createdAt: Date.now(),
+      available: true,
+    },
+  ],
+  currentVaultId: 'admin',
+};
+
+await page4.addInitScript((payload) => {
+  try {
+    // 只种一次：应用运行期的正常写入不应被后续导航重置
+    if (sessionStorage.getItem('__qa119_vault_seeded') === '1') return;
+    sessionStorage.setItem('__qa119_vault_seeded', '1');
+    localStorage.setItem('neomd.vaultList.v1', JSON.stringify(payload));
+    localStorage.setItem('neomd.lastVault', 'cloud:admin');
+  } catch {
+    /* 隐私模式下忽略 */
+  }
+}, dirtyVaultList);
+const seeded = dirtyVaultList.currentVaultId;
+
 try {
   const login4 = await loginViaUi(page4, '[5]');
   check(login4.ok, '[5] 登录成功', login4.ok ? `第 ${login4.attempts} 次` : `失败：${login4.message}`);
   if (!login4.ok) throw new Error(`[5] 登录失败：${login4.message}`);
   await page4.waitForSelector('.editorbar, .empty', { timeout: 30000 });
-
-  /*
-   * 种一份「1.1.8 典型脏数据」：currentVaultId 指向一条 location 非空、可用的正常记录，
-   * 同时列表里混入 ① 空 location 的重复条目 ② pending: 占位垃圾条目。
-   * 期望：repair() 清掉脏数据、合并重复，但 **currentVaultId 保持不变**。
-   */
-  const seeded = await page4.evaluate(() => {
-    const payload = {
-      entries: [
-        // 当前仓库（正常）：必须是修复后仍然 current 的那条
-        {
-          vaultId: 'admin',
-          name: 'admin',
-          location: 'cloud:admin',
-          adapter: 'browser-idb',
-          status: 'active',
-          lastOpenedAt: Date.now(),
-          createdAt: Date.now() - 100000,
-          available: true,
-          lastSyncedAt: Date.now() - 5000,
-          docCount: 3,
-          bytes: 30,
-        },
-        // ① 同一 vaultId 的重复条目，且 location 为空、available=false（1.1.8 mergeRemote 的产物）
-        {
-          vaultId: 'admin',
-          name: 'admin',
-          location: '',
-          adapter: 'browser-idb',
-          status: 'active',
-          lastOpenedAt: 0,
-          createdAt: Date.now(),
-          available: false,
-        },
-        // ② 空 location 的 pending: 垃圾条目（无从恢复，应被丢弃）
-        {
-          vaultId: 'pending:',
-          name: '幽灵仓库',
-          location: '',
-          adapter: 'browser-idb',
-          status: 'active',
-          lastOpenedAt: 0,
-          createdAt: Date.now(),
-          available: true,
-        },
-        // ③ 另一个正常仓库，用于确认修复不会误删无关条目。
-        //
-        // **必须用本地路径仓库**，不能用 `cloud:<id>`：
-        // `prunePseudoCloudVaults()` 的清理判据之一是「location 以 cloud: 开头 +
-        // 不在云端 remoteIds + docCount=0 + 无 lastSyncedAt」—— 那正是伪仓库的定义，
-        // 用它来测「不该被删」会自相矛盾（上一版脚本就因此假失败过：
-        // 它依赖服务端恰好存在 qa119verify 档案，一旦档案被清理就变成伪仓库被正当地删掉）。
-        // 而本地路径仓库（桌面端真实目录）按设计「绝不自动清理」，才是准确的反例。
-        {
-          vaultId: 'qaunrelated',
-          name: '无关本地仓库',
-          location: 'C:\\QA\\无关本地仓库',
-          adapter: 'desktop-fs',
-          status: 'active',
-          lastOpenedAt: 0,
-          createdAt: Date.now(),
-          available: true,
-        },
-      ],
-      currentVaultId: 'admin',
-    };
-    localStorage.setItem('neomd.vaultList.v1', JSON.stringify(payload));
-    localStorage.setItem('neomd.lastVault', 'cloud:admin');
-    return payload.currentVaultId;
-  });
-
-  await page4.reload({ waitUntil: 'domcontentloaded' });
-  await page4.waitForSelector('.editorbar, .empty', { timeout: 30000 });
-  await page4.waitForTimeout(3000);
+  await page4.waitForTimeout(6000);
 
   const afterRepair = await page4.evaluate(() => {
     const raw = localStorage.getItem('neomd.vaultList.v1');

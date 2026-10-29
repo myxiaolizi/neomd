@@ -1,0 +1,1136 @@
+{
+  "generatedAt": "2026-10-29T17:53:30.124Z",
+  "base": "http://127.0.0.1:5178",
+  "api": "http://127.0.0.1:3200",
+  "sections": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F",
+    "G"
+  ],
+  "thresholds": {
+    "shellMs": 900,
+    "editableMs": 2000,
+    "slowNetShellMs": 1200
+  },
+  "summary": {
+    "pass": 110,
+    "fail": 0,
+    "skipped": 1
+  },
+  "results": [
+    {
+      "id": "A01",
+      "section": "A",
+      "name": "A1 首屏外壳挂载时间（3 次中位数）",
+      "expect": "< 900ms（1.1.8 基线 277ms）",
+      "actual": "158ms（3 次：157 / 167 / 158）",
+      "pass": true,
+      "repro": "node tools/verify-119-full.mjs --only=A",
+      "note": ""
+    },
+    {
+      "id": "A02",
+      "section": "A",
+      "name": "A2 当前文档可编辑时间（3 次中位数）",
+      "expect": "< 2000ms",
+      "actual": "192ms（3 次：190 / 200 / 192）",
+      "pass": true,
+      "repro": "",
+      "note": "1.1.8 慢网络基线 249ms；本机 vite dev + 空仓库实测"
+    },
+    {
+      "id": "A03",
+      "section": "A",
+      "name": "A3 首屏绘制 FCP（3 次中位数）",
+      "expect": "< 1000ms",
+      "actual": "160ms（DCL 59/75/61）",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "A04",
+      "section": "A",
+      "name": "A4 外壳真实渲染（非骨架屏占位）",
+      "expect": "shell 尺寸 > 0 且 opacity=1，不存在 .skel 骨架层",
+      "actual": "{\"w\":1600,\"h\":950,\"opacity\":\"1\"} skel=0",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "A05",
+      "section": "A",
+      "name": "A5 慢网络下设置/同步不阻塞首屏",
+      "expect": "外壳 < 1200ms（/api/settings 与 /api/storage 各人为延迟 2500ms）",
+      "actual": "外壳 242ms；/api/settings responseEnd=[]",
+      "pass": true,
+      "repro": "node tools/verify-119-full.mjs --only=A（A5 内置路由延迟）",
+      "note": ""
+    },
+    {
+      "id": "A06",
+      "section": "A",
+      "name": "A6 启动过程无 JS 运行时错误",
+      "expect": "0 条 pageerror / Uncaught",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "B01",
+      "section": "B",
+      "name": "B1 设置页改字号/行高/字体/缩放后根变量已更新",
+      "expect": "--content-font-size=33px（22×150%）、--content-line-height=2.1、--content-zoom=1.5、--font-content 非空",
+      "actual": "{\"fontSize\":\"33px\",\"lineHeight\":\"2.1\",\"fontContent\":\"system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif\",\"zoom\":\"1.5\"}",
+      "pass": true,
+      "repro": "设置 → 主题 → 字体与排版：字号 22 / 行高 2.1 / 缩放 150",
+      "note": ""
+    },
+    {
+      "id": "B02",
+      "section": "B",
+      "name": "B2 字体族选择后 --font-content 真的变化",
+      "expect": "--font-content 从「system-ui」变为用户所选「system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif」",
+      "actual": "system-ui → system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+      "pass": true,
+      "repro": "设置 → 主题 → 字体族，选一个非默认字体",
+      "note": ""
+    },
+    {
+      "id": "B03",
+      "section": "B",
+      "name": "B3.wysiwyg 四种模式字号/行高生效（wysiwyg）",
+      "expect": "font-size=33px、line-height≈69.3px（22px×150%×2.1）",
+      "actual": "宿主=.nm-content font-size=33px line-height=69.3px font-family=system-ui, -apple-system, \"Segoe UI\", \"P",
+      "pass": true,
+      "repro": "编辑器工具栏「编辑模式」菜单切到 wysiwyg，读 computed style",
+      "note": ""
+    },
+    {
+      "id": "B04",
+      "section": "B",
+      "name": "B3.source 四种模式字号/行高生效（source）",
+      "expect": "font-size=33px、line-height≈69.3px（22px×150%×2.1）",
+      "actual": "宿主=.cm-content font-size=33px line-height=69.3px font-family=system-ui, -apple-system, \"Segoe UI\", \"P",
+      "pass": true,
+      "repro": "编辑器工具栏「编辑模式」菜单切到 source，读 computed style",
+      "note": ""
+    },
+    {
+      "id": "B05",
+      "section": "B",
+      "name": "B3.compare 四种模式字号/行高生效（compare）",
+      "expect": "font-size=33px、line-height≈69.3px（22px×150%×2.1）",
+      "actual": "宿主=.nm-content font-size=33px line-height=69.3px font-family=system-ui, -apple-system, \"Segoe UI\", \"P",
+      "pass": true,
+      "repro": "编辑器工具栏「编辑模式」菜单切到 compare，读 computed style",
+      "note": ""
+    },
+    {
+      "id": "B06",
+      "section": "B",
+      "name": "B3.read 四种模式字号/行高生效（read）",
+      "expect": "font-size=33px、line-height≈69.3px（22px×150%×2.1）",
+      "actual": "宿主=.nm-content font-size=33px line-height=69.3px font-family=system-ui, -apple-system, \"Segoe UI\", \"P",
+      "pass": true,
+      "repro": "编辑器工具栏「编辑模式」菜单切到 read，读 computed style",
+      "note": ""
+    },
+    {
+      "id": "B07",
+      "section": "B",
+      "name": "B4 主题预设列表可用",
+      "expect": "≥ 5 套内置主题",
+      "actual": "10 套：正文日光白 / 正文石墨灰 / 正文午夜黑 / 正文护眼绿 / 正文静谧蓝 / 正文暖纸黄 / 正文玫瑰粉 / 正文深海青 / 正文暮光紫 / 正文墨石黑",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "B08",
+      "section": "B",
+      "name": "B5 切换深色主题后 <html data-theme> 与正文底色真的变化",
+      "expect": "data-theme=dark 且 --content-bg ≠ #ffffff",
+      "actual": "{\"mode\":\"dark\",\"preset\":\"midnight\",\"contentBg\":\"#14171c\",\"chromeBg\":\"rgba(27, 31, 38, 0.94)\"}",
+      "pass": true,
+      "repro": "设置 → 主题 → 点击「午夜黑」卡片",
+      "note": ""
+    },
+    {
+      "id": "B09",
+      "section": "B",
+      "name": "B6 主题「应用范围」分段控件存在",
+      "expect": "≥ 3 个选项（整体/仅正文/仅界面）",
+      "actual": "3 个",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "B10",
+      "section": "B",
+      "name": "B7 行号开关生效（settings.appearance.showLineNumbers + .nm-show-linenos 类）",
+      "expect": "设置值取反，且切回文档后 .shell__page 的 nm-show-linenos 类随之出现/消失",
+      "actual": "showLineNumbers true → false；shell__page=shell__page nm-page-standard",
+      "pass": true,
+      "repro": "设置 → 编辑器 → 点击「显示正文行号」开关，切回文档看 .shell__page 的 class",
+      "note": ""
+    },
+    {
+      "id": "B11",
+      "section": "B",
+      "name": "B8 拼写检查设置项存在且驱动 .ProseMirror[spellcheck]",
+      "expect": "切换开关后 .ProseMirror 的 spellcheck 属性存在且随开关变化",
+      "actual": "控件找到=true → .ProseMirror[spellcheck]=\"false\"",
+      "pass": true,
+      "repro": "设置 → 编辑器 → 切换「拼写检查」，切回文档读 .ProseMirror 的 spellcheck 属性",
+      "note": ""
+    },
+    {
+      "id": "B12",
+      "section": "B",
+      "name": "B9 设置页不得出现「打字机模式」假开关（反向断言）",
+      "expect": "全部 10 个页签均不含「打字机」（该字段全仓只有类型定义、零消费点，暴露开关等于欺骗用户）",
+      "actual": "命中页签=[]（扫描 10 个页签：通用/编辑器/主题/界面布局/快捷键/对象存储/AI/仓库/知识库/同步与版本）",
+      "pass": true,
+      "repro": "",
+      "note": "lead 决策：从 1.1.9 验收表移除，但保留反向断言防止有人加回假开关"
+    },
+    {
+      "id": "B13",
+      "section": "B",
+      "name": "B10 自动保存开关生效并持久化",
+      "expect": "settings.autosave.enabled 取反且写入 localStorage",
+      "actual": "true → false（控件找到=true）",
+      "pass": true,
+      "repro": "设置 → 编辑器 → 点击「启用自动保存」开关，读 localStorage neomd.settings.v1",
+      "note": ""
+    },
+    {
+      "id": "B14",
+      "section": "B",
+      "name": "B11 命名模板可修改并持久化",
+      "expect": "settings.naming.template 变为「QA119-YYMMDD-HHmm」",
+      "actual": "YYMMDD日HHMM-{input} → QA119-YYMMDD-HHmm",
+      "pass": true,
+      "repro": "设置 → 通用 → 命名模板输入框改为 QA119-YYMMDD-HHmm",
+      "note": ""
+    },
+    {
+      "id": "B15",
+      "section": "B",
+      "name": "B12 命名模板作用于新建文档",
+      "expect": "新建文档标题以 QA119- 开头",
+      "actual": "新标签标题=\"QA119-261030-0151\"",
+      "pass": true,
+      "repro": "设置 → 通用 改模板后按 Ctrl+N",
+      "note": ""
+    },
+    {
+      "id": "B16",
+      "section": "B",
+      "name": "B13 快捷键页有真实内容",
+      "expect": "非空且含 Ctrl 组合键说明",
+      "actual": "文本 610 字符 / Ctrl 命中=true / 行元素 0",
+      "pass": true,
+      "repro": "设置 → 快捷键",
+      "note": ""
+    },
+    {
+      "id": "B17",
+      "section": "B",
+      "name": "B14 插件/功能区按钮开关生效",
+      "expect": "settings.layout.ribbonItems 数组变化，且切回工作台后 .ribbon__btn 数量相应变化",
+      "actual": "ribbonItems [\"daily-notes\",\"random-note\",\"graph\",\"tag-list\",\"bookmarks\",\"file-recovery\",\"whiteboard\",\"slides\",\"database\",\"web-browser\",\"diagram-flowchart\",\"diagram-mindmap\"] → [\"daily-notes\",\"random-note\",\"graph\",\"tag-list\",\"bookmarks\",\"file-recovery\",\"whiteboard\",\"slides\",\"database\",\"web-browser\",\"diagram-mindmap\"]（切换项：流程图）；工作台 ribbon__btn=9",
+      "pass": true,
+      "repro": "设置 → 界面布局 → 显示哪些按钮 → 点掉「流程图」，切回工作台数功能区图标",
+      "note": ""
+    },
+    {
+      "id": "B18",
+      "section": "B",
+      "name": "B15 页宽切换生效（降级断言：编辑器工具栏按钮，非设置页）",
+      "expect": "4 档页宽对应 4 个不同的 max-width（620/760/1080/none），且各自的 nm-page-* class 命中",
+      "actual": "narrow:620px(nm-page-narrow) | standard:760px(nm-page-standard) | wide:1080px(nm-page-wide) | full:none(nm-page-full)",
+      "pass": true,
+      "repro": "",
+      "note": "1.1.7 起设置页已移除页宽控件（字段仅向后兼容），故改断言工具栏按钮"
+    },
+    {
+      "id": "B19",
+      "section": "B",
+      "name": "B16 设置项操作过程无 JS 错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C01",
+      "section": "C",
+      "name": "C1 验收仓库注册",
+      "expect": "200/201 且返回 vaultId",
+      "actual": "201 {\"ok\":true,\"data\":{\"vault\":{\"vaultId\":\"qa119gate\",\"name\":\"1.1.9 验收仓库\",\"docCount\":0,\"bytes\":0,\"status\":\"active\",\"lastSyncedAt\":null,\"createdAt\":\"2026-10-30 01:51",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C02",
+      "section": "C",
+      "name": "C2 上传对象（PUT /api/storage/object）",
+      "expect": "200 且 size 与内容长度一致",
+      "actual": "200 {\"ok\":true,\"data\":{\"key\":\"docs/qa119/1793296283279-probe.md\",\"size\":114,\"etag\":\"\",\"url\":\"https://mdadmin.zhengl.vip/mdadmin/neomd/users/admin/vaults/qa119gate/docs/qa119/1793296283279-probe.md\"}}",
+      "pass": true,
+      "repro": "curl -X PUT -H \"Authorization: Bearer <token>\" -H \"x-vault-id: qa119gate\" -H \"content-type: application/octet-stream\" \"http://127.0.0.1:3200/api/storage/object?key=docs/qa119/1793296283279-probe.md\" --data-binary @file",
+      "note": ""
+    },
+    {
+      "id": "C03",
+      "section": "C",
+      "name": "C3 列举对象（GET /api/storage/list）",
+      "expect": "200 且列表包含 docs/qa119/1793296283279-probe.md",
+      "actual": "200 objects=[\"docs/qa119/1793296283279-probe.md\"]",
+      "pass": true,
+      "repro": "GET http://127.0.0.1:3200/api/storage/list?prefix=docs/ with x-vault-id: qa119gate",
+      "note": ""
+    },
+    {
+      "id": "C04",
+      "section": "C",
+      "name": "C4 下载对象内容一致（GET /api/storage/object）",
+      "expect": "200 且字节级一致",
+      "actual": "200 字符 82 / 字节 114（上传 114 字节） match=true",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C05",
+      "section": "C",
+      "name": "C5 HEAD 存在性探测",
+      "expect": "200 且 content-length 正确、etag 非空",
+      "actual": "200 content-length=114 etag=3BC1651D7C64B8A52C49F3A7E7774D50",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C06",
+      "section": "C",
+      "name": "C6 删除对象并确认 404",
+      "expect": "DELETE 200 deleted=true，随后 GET 返回 404",
+      "actual": "DELETE 200 deleted=true → GET 404",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C07",
+      "section": "C",
+      "name": "C7 浏览器真实同步无失败请求（Failed to fetch / 4xx / 5xx）",
+      "expect": "除 HEAD 404（对象尚不存在的正常探测）外，无 4xx/5xx",
+      "actual": "共 380 次 storage 调用，异常 0 条：",
+      "pass": true,
+      "repro": "登录 → /app → 输入内容 → Ctrl+S → 观察 Network 中 /api/storage/*",
+      "note": ""
+    },
+    {
+      "id": "C08",
+      "section": "C",
+      "name": "C8 同步确实上传了文档正文",
+      "expect": "存在 PUT 200",
+      "actual": "存在 PUT 200",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C09",
+      "section": "C",
+      "name": "C9 当前仓库显示「已同步 + 时间」",
+      "expect": "当前仓库行同时含「已同步」与具体时间",
+      "actual": "行={\"name\":\"admin\",\"status\":\"停用\",\"text\":\"admin当前已启用已同步cloud:admin118 篇·22 KB·上次同步 2026-10-29 17:51 切换 同步 备份 复制 改名 停用 删除\"}",
+      "pass": true,
+      "repro": "设置 → 仓库，查看当前仓库行的状态与「上次同步」",
+      "note": ""
+    },
+    {
+      "id": "C10",
+      "section": "C",
+      "name": "C10 仓库列表不再全部显示「未同步」",
+      "expect": "至少一个仓库处于已同步状态（全部未同步=缺陷）",
+      "actual": "3 个仓库，状态：admin:已同步 | 1.1.9 验收仓库:已同步 | Neo MD:已同步",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C11",
+      "section": "C",
+      "name": "C11 两端仓库清单一致（/api/vaults ↔ 本地注册表）",
+      "expect": "服务端有的仓库本地都有，本地有的服务端都登记",
+      "actual": "服务端 3 个 [admin,qa119gate,vaultmvs9ey2vkpj8q5jy]；本地 3 个 [qa119gate,admin,vaultmvs9ey2vkpj8q5jy]；缺客户端=[]；缺服务端=[]",
+      "pass": true,
+      "repro": "GET /api/vaults 与 localStorage[\"neomd.vaultList.v1\"] 逐项比对",
+      "note": ""
+    },
+    {
+      "id": "C12",
+      "section": "C",
+      "name": "C12 客户端存储请求只传相对 key（不重复拼接作用域前缀）",
+      "expect": "0 条请求把 mdadmin/…/vaults/<id>/ 当 prefix/key 传给服务端",
+      "actual": "99 条 storage 请求中，0 条带完整作用域前缀",
+      "pass": true,
+      "repro": "DevTools Network 过滤 /api/storage/，观察 list?prefix= 与 object?key= 的取值",
+      "note": "当前靠服务端 toRelativeKey/resolveScopedKey 反向剥离才 200，属脆弱点"
+    },
+    {
+      "id": "C13",
+      "section": "C",
+      "name": "C13 同步过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D01",
+      "section": "D",
+      "name": "D1 工具栏按钮 dragstart 事件真实触发",
+      "expect": "≥ 1 次 dragstart（此前 @mousedown.prevent 会把它吞掉）",
+      "actual": "dragstart=1 次，drop=1 次",
+      "pass": true,
+      "repro": "鼠标按住工具栏「二级标题」拖到「加粗」之后；在 document 上监听 dragstart（capture）",
+      "note": ""
+    },
+    {
+      "id": "D02",
+      "section": "D",
+      "name": "D2 拖动后按钮顺序真的改变",
+      "expect": "顺序从 [\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"一级标题 Ctrl+1\",\"二级标题 Ctrl+2\",\"三级标题 Ctrl+3\",\"加粗 Ctrl+B\"] 变为不同顺序",
+      "actual": "拖动前=[\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"一级标题 Ctrl+1\",\"二级标题 Ctrl+2\",\"三级标题 Ctrl+3\",\"加粗 Ctrl+B\"] → 拖动后=[\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"一级标题 Ctrl+1\",\"三级标题 Ctrl+3\",\"加粗 Ctrl+B\",\"斜体 Ctrl+I\"]",
+      "pass": true,
+      "repro": "拖动第 4 个工具栏按钮到第 8 个位置",
+      "note": ""
+    },
+    {
+      "id": "D03",
+      "section": "D",
+      "name": "D3 顺序持久化到 settings.layout.toolbarItems",
+      "expect": "localStorage 中 toolbarItems 为数组且与当前渲染顺序对应",
+      "actual": "toolbarItems=[\"undo\",\"redo\",\"h1\",\"h3\",\"bold\",\"italic\",\"underline\",\"h2\",\"strike\",\"highlight\",\"code\",\"ul\",\"ol\",\"task\",\"quote\",\"table\",\"link\",\"codeblock\",\"hr\"]",
+      "pass": true,
+      "repro": "拖完后读 localStorage[\"neomd.settings.v1\"].layout.toolbarItems",
+      "note": ""
+    },
+    {
+      "id": "D04",
+      "section": "D",
+      "name": "D4a 拖拽 → 等推送完成 → 刷新：顺序保持（用户真实路径）",
+      "expect": "刷新后顺序 === 拖动后顺序",
+      "actual": "拖前=[\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"一级标题 Ctrl+1\",\"三级标题 Ctrl+3\",\"加粗 Ctrl+B\",\"斜体 Ctrl+I\"] → 拖后=[\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"三级标题 Ctrl+3\",\"加粗 Ctrl+B\",\"斜体 Ctrl+I\",\"下划线 Ctrl+U\"] → 刷新后=[\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"三级标题 Ctrl+3\",\"加粗 Ctrl+B\",\"斜体 Ctrl+I\",\"下划线 Ctrl+U\"]；脏标记=null",
+      "pass": true,
+      "repro": "拖动工具栏按钮 → 等 2 秒 → F5 刷新 → 观察顺序",
+      "note": ""
+    },
+    {
+      "id": "D05",
+      "section": "D",
+      "name": "D4b 推送成功后 neomd.layoutDirtySince 被清空",
+      "expect": "推送完成后脏标记为 null",
+      "actual": "layoutDirtySince=null",
+      "pass": true,
+      "repro": "拖拽后等 3 秒，读 localStorage[\"neomd.layoutDirtySince\"]",
+      "note": "lead 实现的 LAYOUT_DIRTY_KEY 生命周期：updateLayout 置标记 → push 成功清除"
+    },
+    {
+      "id": "D06",
+      "section": "D",
+      "name": "D4c 拖拽 → 立刻刷新（推送未完成）：顺序仍保持（脏标记保护）",
+      "expect": "刷新后顺序 === 拖动后顺序（云端旧值不得回滚本地未推送的 layout 改动）",
+      "actual": "拖前=[\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"三级标题 Ctrl+3\",\"加粗 Ctrl+B\",\"斜体 Ctrl+I\",\"下划线 Ctrl+U\"] → 拖后=[\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"三级标题 Ctrl+3\",\"斜体 Ctrl+I\",\"下划线 Ctrl+U\",\"一级标题 Ctrl+1\"] → 刷新后=[\"撤销 Ctrl+Z\",\"重做 Ctrl+Shift+Z\",\"三级标题 Ctrl+3\",\"斜体 Ctrl+I\",\"下划线 Ctrl+U\",\"一级标题 Ctrl+1\"]；刷新前脏标记=null",
+      "pass": true,
+      "repro": "拖动工具栏按钮 → 立刻（<1s）F5 刷新 → 观察顺序是否被云端旧值覆盖",
+      "note": "pullCloudSettings() 需对 layout 做与主题同构的「未推送改动不被云端回滚」保护"
+    },
+    {
+      "id": "D07",
+      "section": "D",
+      "name": "D5 功能区末位图标贴底（插件商店入口）",
+      "expect": "按钮底边距功能区底边 ≤ 12px",
+      "actual": "{\"title\":\"插件商店（管理已装插件 / 安装新插件）\",\"btnBottom\":920,\"ribbonBottom\":920,\"gap\":0,\"vh\":950}",
+      "pass": true,
+      "repro": "观察左侧功能区最下方图标是否贴底",
+      "note": ""
+    },
+    {
+      "id": "D08",
+      "section": "D",
+      "name": "D6 贴底按钮是插件商店入口",
+      "expect": "title 含「插件」",
+      "actual": "插件商店（管理已装插件 / 安装新插件）",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D09",
+      "section": "D",
+      "name": "D7 插件商店以标签页打开",
+      "expect": "存在激活的「插件商店」标签页",
+      "actual": "[{\"text\":\"261030日0151-\",\"active\":false},{\"text\":\"261030日0151-\",\"active\":false},{\"text\":\"插件商店\",\"active\":true}]",
+      "pass": true,
+      "repro": "点击功能区最下方（贴底）图标",
+      "note": ""
+    },
+    {
+      "id": "D10",
+      "section": "D",
+      "name": "D8 插件商店内容非空且尺寸正常",
+      "expect": "面板 w>300 h>300 且文本 > 20 字符",
+      "actual": "{\"w\":1300,\"h\":842} textLen=321 「插件市场 我的插件 发布插件 开发指南 内置插件 导入本地 发布插件 社区开发者精选插件 刷新 商务会议纪要模板 v1.1.0 快速插入含参会人、核心议题、决议事项与待办跟进表的标准化商务会议纪要结构。 作者：效率工具实验室 安装 1840 ★ 419 一键安装并启用 番茄专注时钟 v1.2.0 在写作时启动 25 分钟番茄钟倒计时，完成后自动在当前文档末尾插入专注打卡记录。 作者：Neo MD 」",
+      "pass": true,
+      "repro": "点击贴底插件商店图标后检查 .pc--embedded 尺寸与文案",
+      "note": ""
+    },
+    {
+      "id": "D11",
+      "section": "D",
+      "name": "D9 正文首行文件名行存在且可编辑",
+      "expect": "input[data-testid=doc-title-line] 存在且有值",
+      "actual": "{\"exists\":true,\"value\":\"261030日0151-\",\"position\":\"relative\",\"sticky\":false,\"dividerWidth\":\"1px\",\"dividerStyle\":\"solid\",\"boxShadow\":\"none\",\"hasDivider\":true,\"lineNumbersScope\":\"shell__page nm-page-standard nm-show-linenos\"}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D12",
+      "section": "D",
+      "name": "D10 文件名行不冻结（不 sticky/fixed）",
+      "expect": "position 为 static/relative",
+      "actual": "position=relative",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D13",
+      "section": "D",
+      "name": "D11 文件名行下方有分割线",
+      "expect": "::after/::before 有 border 或 box-shadow",
+      "actual": "border=1px solid shadow=none",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D14",
+      "section": "D",
+      "name": "D12 文件名行不占行号（不在 .ProseMirror 行号计数器作用域内）",
+      "expect": "titleline 不在 .ProseMirror 内部（行号 counter-reset 作用域之外）→ 天然不参与行号计数",
+      "actual": "{\"ok\":true,\"insidePM\":false,\"parentCls\":\"wysiwyg\",\"isDirectChild\":false,\"pmHasCounter\":false,\"pageCls\":\"shell__page nm-page-standard nm-show-linenos\"}",
+      "pass": true,
+      "repro": "",
+      "note": "行号由 `.nm-show-linenos .ProseMirror` 的 counter-reset 计数；标题行在其外层容器（.wysiwyg）里，故不被计数"
+    },
+    {
+      "id": "D15",
+      "section": "D",
+      "name": "D13 改名后文件名真的变化（标题行 + 标签栏同步）",
+      "expect": "改为「QA119-改名验证-20231」后标题行与标签栏都更新",
+      "actual": "旧=261030日0151- 新=QA119-改名验证-20231 标签=[\"QA119-改名验证-20231\",\"261030日0151-\",\"插件商店\"]",
+      "pass": true,
+      "repro": "点击正文首行文件名 → 输入新名 → 回车",
+      "note": ""
+    },
+    {
+      "id": "D16",
+      "section": "D",
+      "name": "D14 右侧多操作区可同时开启",
+      "expect": "panes ≥ 2",
+      "actual": "panes=2，开关按钮 9 个",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D17",
+      "section": "D",
+      "name": "D15 右侧操作区手柄数量正确（n-1，无多余手柄）",
+      "expect": "2 个区块 → 恰好 1 个水平手柄",
+      "actual": "panes=2 水平手柄=1（全部 resizer=2）",
+      "pass": true,
+      "repro": "开启右侧栏并打开 2 个操作区，数 .resizer--horizontal 的数量（当前 EditorPage.vue 的 idx<length 恒真导致多 1 个）",
+      "note": ""
+    },
+    {
+      "id": "D18",
+      "section": "D",
+      "name": "D16 右侧操作区无双层滚动条",
+      "expect": "右栏容器自身 overflow 不产生滚动（scrollH ≤ clientH + 2）",
+      "actual": "{\"scrollH\":850,\"clientH\":850,\"overflowY\":\"auto\"}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D19",
+      "section": "D",
+      "name": "D17 右侧操作区统一标签语义（全部为可切换窗口，非 tab/窗口混用）",
+      "expect": "所有开关按钮都是 aria-pressed 的窗口开关",
+      "actual": "按钮：AI 助手（点击开启/关闭此窗口） / 文件操作（点击开启/关闭此窗口） / 大纲（点击开启/关闭此窗口） / 反向链接（点击开启/关闭此窗口） / 标签（点击开启/关闭此窗口） / 版本历史（点击开启/关闭此窗口） / 文档统计（点击开启/关闭此窗口） / 日历（点击开启/关闭此窗口） / 关闭右侧边栏",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D20",
+      "section": "D",
+      "name": "D18 右侧操作区高度可拖拽",
+      "expect": "拖动分隔条后第一个区块高度变化 > 20px",
+      "actual": "[380,470] → [470,380]",
+      "pass": true,
+      "repro": "开启 2 个右侧操作区，拖动它们之间的分隔线",
+      "note": ""
+    },
+    {
+      "id": "D21",
+      "section": "D",
+      "name": "D19 左右分屏可打开不同文件",
+      "expect": "shell__panes--v 出现，第二栏有编辑器且与主栏文档不同",
+      "actual": "{\"clicked\":true,\"cls\":\"shell__panes shell__panes--v\",\"splitpanes\":1,\"editors\":1,\"pick\":\"261030日0151-\",\"primary\":\"QA119-改名验证-20231\"}",
+      "pass": true,
+      "repro": "标签右键 → 左右分屏",
+      "note": ""
+    },
+    {
+      "id": "D22",
+      "section": "D",
+      "name": "D20 上下分屏可打开不同文件",
+      "expect": "shell__panes--h 出现，第二栏有编辑器",
+      "actual": "{\"clicked\":true,\"cls\":\"shell__panes shell__panes--h\",\"splitpanes\":1,\"editors\":1,\"pick\":\"261030日0151-\",\"primary\":\"QA119-改名验证-20231\"}",
+      "pass": true,
+      "repro": "标签右键 → 上下分屏",
+      "note": ""
+    },
+    {
+      "id": "D23",
+      "section": "D",
+      "name": "D21 标签右键菜单含「移动至新窗口」",
+      "expect": "菜单项存在",
+      "actual": "[\"关闭\",\"锁定阅读视图\",\"源码模式\",\"移动至新窗口\",\"左右分屏\",\"上下分屏\",\"查找\",\"替换\",\"重命名\",\"复制路径\",\"关闭全部\",\"关闭其他\",\"关闭右侧\"]",
+      "pass": true,
+      "repro": "在标签上右键",
+      "note": ""
+    },
+    {
+      "id": "D24",
+      "section": "D",
+      "name": "D22 Web 端点「移动至新窗口」不抛错且有提示",
+      "expect": "点击后无新增 JS 错误，出现提示文案",
+      "actual": "新增错误 0 条；提示=\"已在新窗口/标签页中移动「QA119-改名验证-20231」\"",
+      "pass": true,
+      "repro": "",
+      "note": "Electron 端的真实多窗口行为见 task-6 / tools/verify-119-multiwindow.mjs"
+    },
+    {
+      "id": "D25",
+      "section": "D",
+      "name": "D23 工作台 1280px 无横向溢出",
+      "expect": "溢出 ≤ 1px",
+      "actual": "0px",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D26",
+      "section": "D",
+      "name": "D23 工作台 900px 无横向溢出",
+      "expect": "溢出 ≤ 1px",
+      "actual": "0px",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D27",
+      "section": "D",
+      "name": "D24 工作台交互过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E01",
+      "section": "E",
+      "name": "E1 功能区「流程图 / 思维导图」名称无括号备注",
+      "expect": "名称恰为「流程图」「思维导图」，不含「（…）」注释",
+      "actual": "[\"流程图\",\"思维导图\"]",
+      "pass": true,
+      "repro": "观察左侧功能区图标的 tooltip",
+      "note": ""
+    },
+    {
+      "id": "E02",
+      "section": "E",
+      "name": "E2 流程图四段式尺寸（工具栏 48 / 图形库 200 / 属性 280 / 状态 28）",
+      "expect": "48 / 200 / 280 / 28",
+      "actual": "{\"toolbar\":{\"w\":1300,\"h\":48},\"lib\":{\"w\":200,\"h\":804},\"props\":{\"w\":280,\"h\":804},\"status\":{\"w\":1300,\"h\":28},\"svg\":{\"w\":820,\"h\":804}}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E03",
+      "section": "E",
+      "name": "E3 流程图画布有实际绘制",
+      "expect": "svg 高度 > 200",
+      "actual": "{\"w\":820,\"h\":804}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E04",
+      "section": "E",
+      "name": "E4 画布 viewBox 与实际像素尺寸一致（不再固定 1200×700）",
+      "expect": "viewBox 宽高 ≈ 元素实际宽高（差值 ≤ 2）",
+      "actual": "{\"viewBox\":\"0 0 820 804\",\"w\":820,\"h\":804}",
+      "pass": true,
+      "repro": "",
+      "note": "原缺陷：computed 读非响应式 rect，viewBox 永远 0 0 1200 700 导致坐标错位"
+    },
+    {
+      "id": "E05",
+      "section": "E",
+      "name": "E5 画布坐标命中正确（点击节点中心选中该节点）",
+      "expect": "2/2 命中",
+      "actual": "2/2 命中；节点#0(中心 835,490) → 选中 [0] OK | 节点#1(中心 985,490) → 选中 [1] OK（画布缩放：坐标 0, 0 缩放 100% 节点 2 · 连线 0 自由）",
+      "pass": true,
+      "repro": "流程图 → 点两个图形加入画布 → 缩放到 100% → 分别点击各自视觉中心，看是否选中对应节点",
+      "note": ""
+    },
+    {
+      "id": "E06",
+      "section": "E",
+      "name": "E6 拖拽节点位移量 === 鼠标位移量（±6px）",
+      "expect": "dx=80、dy=50（100% 缩放 + 关闭网格吸附，读世界坐标；容差 ±6px 吸收像素取整）",
+      "actual": "{\"dx\":80,\"dy\":50}（画布缩放：坐标 0, 0 缩放 100% 节点 2 · 连线 0 自由）",
+      "pass": true,
+      "repro": "流程图 → 点「恢复 100%」并关闭「吸附网格」→ 拖动画布节点 (+80, +50)，读 rect 的 x/y 变化",
+      "note": "必须先把画布恢复到 100% 并关闭吸附，且读世界坐标：398% + 20px 世界网格会把 80px 位移量化；选中描边会让 bbox 多 6px"
+    },
+    {
+      "id": "E07",
+      "section": "E",
+      "name": "E7 四种箭头工具都生成「连线」而非「节点」",
+      "expect": "4/4 项：连线数 +1 且节点数不变（原缺陷：箭头被当成 shape:rect 建成矩形）",
+      "actual": "4/4 通过：直线箭头✓(连线+1/节点+0) | 虚线箭头✓(连线+1/节点+0) | 双向箭头✓(连线+1/节点+0) | 曲线箭头✓(连线+1/节点+0)",
+      "pass": true,
+      "repro": "流程图 → 依次点图形库「箭头」分组的 4 个条目，看连线数与节点数",
+      "note": ""
+    },
+    {
+      "id": "E08",
+      "section": "E",
+      "name": "E8 虚线箭头有 dasharray、曲线箭头是贝塞尔",
+      "expect": "虚线箭头 stroke-dasharray 非空；曲线箭头 path 的 d 含 C 命令",
+      "actual": "虚线 dasharray=\"6 4\"；曲线含 C=true",
+      "pass": true,
+      "repro": "分别点虚线箭头与曲线箭头，检查生成的 path 属性",
+      "note": ""
+    },
+    {
+      "id": "E09",
+      "section": "E",
+      "name": "E9 连续点击连线工具两次 → 新增 2 条连线、0 个节点，且状态栏计数一致",
+      "expect": "edges +2、nodes +0，状态栏「连线 N」与 DOM 中 .dcanvas__edges > g 数量一致",
+      "actual": "edges 4→6（+2）；nodes 2→2（+0）；状态栏连线=6；坐标 0, 0 缩放 100% 节点 2 · 连线 6 · 选中连线 自由摆放 快捷键：Tab 加子节点 · Enter 加同级 · Del",
+      "pass": true,
+      "repro": "流程图 → 连点两次图形库「直线箭头」，看连线数与节点数",
+      "note": ""
+    },
+    {
+      "id": "E10",
+      "section": "E",
+      "name": "E9b 节点四边连线锚点可被鼠标命中（不被缩放手柄遮挡）",
+      "expect": "4/4 个 circle[data-anchor] 的 elementFromPoint 命中自身",
+      "actual": "4/4 可达；top→circle[top] | right→circle[right] | bottom→circle[bottom] | left→circle[left]",
+      "pass": true,
+      "repro": "流程图 → 选中一个节点 → 尝试从节点右边中点拖出连线：命中的是缩放手柄（resize），不是连线锚点",
+      "note": "已知缺陷：4 个连线锚点与 8 个缩放手柄位置重合（top≡n、right≡e、bottom≡s、left≡w），且手柄在 DOM 中排在后面 → 锚点被完全遮挡，用户无法从锚点拖出连线"
+    },
+    {
+      "id": "E11",
+      "section": "E",
+      "name": "E10 连续添加两次同一图形，两个节点不重叠",
+      "expect": "新增 2 个节点且两者世界矩形不相交（36px 阶梯错位）",
+      "actual": "节点 2→4；世界矩形 A={\"x\":370,\"y\":92,\"w\":140,\"h\":56} B={\"x\":520,\"y\":92,\"w\":140,\"h\":56}；错位 dx=150 dy=0",
+      "pass": true,
+      "repro": "流程图 → 连点两次「矩形」，比较两个节点在世界坐标下的矩形",
+      "note": "原缺陷：连续点两次完全重叠，看起来像只加了一个"
+    },
+    {
+      "id": "E12",
+      "section": "E",
+      "name": "E11 流程图 900px 无横向溢出",
+      "expect": "溢出 ≤ 1px",
+      "actual": "{\"overflowX\":0,\"flowW\":600,\"vw\":900}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E13",
+      "section": "E",
+      "name": "E12 思维导图挂载且有根节点",
+      "expect": "nodes ≥ 1、treeRows ≥ 1",
+      "actual": "{\"mind\":{\"w\":1300,\"h\":880},\"canvas\":{\"w\":820,\"h\":804},\"svg\":{\"w\":820,\"h\":804},\"viewBox\":\"0 0 820 804\",\"nodes\":1,\"treeRows\":1,\"toolbar\":{\"w\":1300,\"h\":48},\"status\":{\"w\":1300,\"h\":28}}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E14",
+      "section": "E",
+      "name": "E13 思维导图 viewBox 与实际尺寸一致",
+      "expect": "viewBox 宽高 ≈ 元素实际宽高",
+      "actual": "viewBox=0 0 820 804 svg={\"w\":820,\"h\":804}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E15",
+      "section": "E",
+      "name": "E14 折叠后结构树显示 +N 角标",
+      "expect": "树中出现「+N」角标",
+      "actual": "treeBadges=[\"+2\"]",
+      "pass": true,
+      "repro": "思维导图 → 给根节点加 2 个子节点 → 折叠",
+      "note": ""
+    },
+    {
+      "id": "E16",
+      "section": "E",
+      "name": "E15 折叠后画布上也显示 +N 角标（circle[r=\"9\"] + 文本）",
+      "expect": "画布 SVG 中出现 circle[r=\"9\"] 且其文本为 +N",
+      "actual": "canvasBadges=[\"+2\"] allPlus=[\"+2\"] circle9=1；节点 3→1",
+      "pass": true,
+      "repro": "折叠子树后观察画布节点上的角标",
+      "note": "原缺陷：collapsedCount 只传给左侧树，未传给画布"
+    },
+    {
+      "id": "E17",
+      "section": "E",
+      "name": "E16 点击画布角标可展开（节点数增加）",
+      "expect": "点击 +N 后画布节点数从折叠态增加",
+      "actual": "节点 1 → 3；剩余角标 []",
+      "pass": true,
+      "repro": "思维导图 → 折叠根节点 → 点击画布上的 +N 角标",
+      "note": ""
+    },
+    {
+      "id": "E18",
+      "section": "E",
+      "name": "E17 思维导图 900px 无横向溢出",
+      "expect": "溢出 ≤ 1px",
+      "actual": "{\"overflowX\":0,\"mindW\":600}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E19",
+      "section": "E",
+      "name": "E18 图表插件过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F01",
+      "section": "F",
+      "name": "F1 后台管理端可打开（导航挂载）",
+      "expect": "后台导航容器存在",
+      "actual": "{\"hasNav\":true,\"theme\":\"light\"}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F02",
+      "section": "F",
+      "name": "F2 后台使用浅色主题",
+      "expect": "data-theme=light 且 body 背景为浅色（RGB 各通道 > 200）",
+      "actual": "theme=light bg=rgb(242, 244, 247)",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F03",
+      "section": "F",
+      "name": "F3 后台模块齐全（≥ 10 个可点模块）",
+      "expect": "≥ 10",
+      "actual": "18 个：数据看板 / 运营概览 / 用户与配额 / 仓库管理 / 分享与评价 / 发布与分发 / 插件市场 / 积分与兑换码 / 积分流水 / 计费与赠送 / AI 供应商 / 平台模型配置 / AI 运营分析 / 知识库令牌 / 配置中心 / 审计日志 / 个人中心 / 返回编辑器",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F04",
+      "section": "F",
+      "name": "F4 后台每个模块都能打开且有内容（无加载失败）",
+      "expect": "全部模块文本 > 10 字符且不含「加载失败」",
+      "actual": "全部 16 个模块正常",
+      "pass": true,
+      "repro": "逐一点击后台左侧每个模块",
+      "note": ""
+    },
+    {
+      "id": "F05",
+      "section": "F",
+      "name": "F5 后台看板指标卡非空",
+      "expect": "≥ 6 个指标且都有值",
+      "actual": "8 个：[{\"label\":\"总用户数\",\"value\":\"3\"},{\"label\":\"今日活跃\",\"value\":\"1\"},{\"label\":\"总文档数\",\"value\":\"133\"},{\"label\":\"总存储占用\",\"value\":\"31.6 KB\"},{\"label\":\"AI 调用\",\"value\":\"10\"},{\"label\":\"知识库查询\",\"value\":\"0\"},{\"label\":\"AI 失败率（今日）\",\"value\":\"0.0%\"},{\"label\":\"平均响应时间\",\"value\":\"26 ms\"}]",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F06",
+      "section": "F",
+      "name": "F6 后台看板图表已绘制",
+      "expect": "≥ 1 个 SVG 图表",
+      "actual": "1 个 SVG",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F07",
+      "section": "F",
+      "name": "F7 后台看板有真实数据（非全 0 占位）",
+      "expect": "至少一个指标为非 0 数值",
+      "actual": "[{\"label\":\"总用户数\",\"value\":\"3\"},{\"label\":\"今日活跃\",\"value\":\"1\"},{\"label\":\"总文档数\",\"value\":\"133\"},{\"label\":\"总存储占用\",\"value\":\"31.6 KB\"},{\"label\":\"AI 调用\",\"value\":\"10\"},{\"label\":\"知识库查询\",\"value\":\"0\"}]",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F08",
+      "section": "F",
+      "name": "F8 前台不出现「是否开通」语义",
+      "expect": "设置页 AI 区块不含「是否开通 / 未开通 / 去开通」",
+      "actual": "命中=false；标题=[\"AI 服务\"]",
+      "pass": true,
+      "repro": "登录 → 设置 → AI 页签，全文搜索「开通」",
+      "note": ""
+    },
+    {
+      "id": "F09",
+      "section": "F",
+      "name": "F9 平台付费与自带 Key 分成两个独立区块",
+      "expect": "同时存在「平台付费」类区块与「自带 Key / 我的供应商」类区块",
+      "actual": "平台付费命中=true 自带Key命中=true；标题=[\"AI 服务\"]",
+      "pass": true,
+      "repro": "设置 → AI，观察是否分为「平台付费」与「我的 AI 供应商」两块",
+      "note": ""
+    },
+    {
+      "id": "F10",
+      "section": "F",
+      "name": "F10 公开供应商接口绝不泄露 apiKey",
+      "expect": "响应中不含 apiKey/secretKey 字段的**非空值**，也不含 sk- 形态密钥（apiKeyUrl 属公开文档地址，允许）",
+      "actual": "200；长度 3296；含密钥字段=false 含 sk- 密钥=false",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F11",
+      "section": "F",
+      "name": "F11 平台代付组不下发 baseUrl、自带 Key 组必须下发 baseUrl",
+      "expect": "group=platform 的供应商对象无 baseUrl 字段；BYOK 组必须有 baseUrl",
+      "actual": "平台组 8 个，泄露 baseUrl 的=[]；BYOK 组 0 个，缺 baseUrl 的=[]（分组：qa119mock:platform, deepseek:platform, xiaomi-mimo:platform, qwen:platform, tencent-hunyuan:platform, zhipu:platform, volcengine-ark:platform, baidu-qianfan:platform）",
+      "pass": true,
+      "repro": "GET http://127.0.0.1:3200/api/ai/providers，检查每个 provider 的 group 与 baseUrl 字段",
+      "note": "这是「平台付费与客户端 BYOK 彻底分开」的准确断言：平台侧客户端不直连，故无需 baseUrl"
+    },
+    {
+      "id": "F12",
+      "section": "F",
+      "name": "F12 可创建平台 AI 供应商（后台治理接口）",
+      "expect": "200 且 apiKeySet=true",
+      "actual": "200 apiKeySet=true",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F13",
+      "section": "F",
+      "name": "F13 保存模型级系统提示词",
+      "expect": "200",
+      "actual": "200 {\"ok\":true,\"data\":{\"provider\":{\"provider\":\"qa119gate\",\"name\":\"QA119 验收 Mock\",\"enabled\":true,\"apiKeySet\":true,\"models\":[\"qa119-model\"],\"defaultModel\":\"qa119-model\",\"systemPrompt\":\"QA119-供应商级兜底提示词\",\"mod",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F14",
+      "section": "F",
+      "name": "F14 模型级提示词优先级高于供应商级（resolved 生效值）",
+      "expect": "systemPrompt=QA119-模型级系统提示词-1484、source=model",
+      "actual": "{\"model\":\"qa119-model\",\"enabled\":true,\"temperature\":0.3,\"maxTokens\":128,\"priceIn\":1,\"priceOut\":2,\"systemPrompt\":\"QA119-模型级系统提示词-1484\",\"systemPromptSource\":\"model\",\"isDefault\":true}",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F15",
+      "section": "F",
+      "name": "F15 模型级系统提示词真的注入到上游请求体",
+      "expect": "上游 messages[0] = {role:\"system\", content:\"QA119-模型级系统提示词-1484\"}",
+      "actual": "url=/v1/chat/completions system=\"QA119-模型级系统提示词-1484\" temperature=0.3 max_tokens=128",
+      "pass": true,
+      "repro": "后台配置模型级提示词 → 前台用平台 AI 对话 → 抓 mock 上游请求体",
+      "note": ""
+    },
+    {
+      "id": "F16",
+      "section": "F",
+      "name": "F16 模型级 temperature / maxTokens 上限夹逼生效",
+      "expect": "上游 temperature=0.3、max_tokens=128",
+      "actual": "temperature=0.3 max_tokens=128",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F17",
+      "section": "F",
+      "name": "F17 申请知识库令牌（明文仅返回一次）",
+      "expect": "200 且返回明文 token 与 id",
+      "actual": "200 id=31 token=nmd_kb_73llPVK…(47 位)",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F18",
+      "section": "F",
+      "name": "F18 用 Bearer 令牌实测调用 /api/knowledge/stats 通过",
+      "expect": "200 且 authMode=token",
+      "actual": "200 authMode=token",
+      "pass": true,
+      "repro": "curl -H \"Authorization: Bearer <令牌明文>\" http://127.0.0.1:3200/api/knowledge/stats",
+      "note": ""
+    },
+    {
+      "id": "F19",
+      "section": "F",
+      "name": "F19 令牌列表可读且不回传明文",
+      "expect": "列表含该令牌、状态 active、无 token 明文字段",
+      "actual": "200 status=active prefix=nmd_kb_73llP 含明文=false",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F20",
+      "section": "F",
+      "name": "F20 吊销令牌后立即失效",
+      "expect": "DELETE 200，再用该令牌调用返回 401",
+      "actual": "DELETE 200 revokedAt=2026-10-30 01:53:22；再用令牌 → 401 KB_TOKEN_REVOKED",
+      "pass": true,
+      "repro": "申请令牌 → 吊销 → 用原令牌调 /api/knowledge/stats",
+      "note": ""
+    },
+    {
+      "id": "F21",
+      "section": "F",
+      "name": "F21 非法令牌被拒绝",
+      "expect": "401 TOKEN_INVALID",
+      "actual": "401",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F22",
+      "section": "F",
+      "name": "F22 后台与 AI 过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F23",
+      "section": "F",
+      "name": "F23 限流返回 429（不是 500），且 code=RATE_LIMITED",
+      "expect": "连续请求触发限流后：HTTP 429 且 body.error.code=RATE_LIMITED",
+      "actual": "第 11 次请求 → 429 {\"code\":\"RATE_LIMITED\",\"message\":\"登录过于频繁，请 60 秒后再试\"}",
+      "pass": true,
+      "repro": "连续 POST http://127.0.0.1:3200/api/auth/login 超过登录限流阈值，检查状态码与 body.error.code",
+      "note": "原缺陷：errorResponseBuilder 缺 statusCode:429，被 setErrorHandler 包成 500"
+    },
+    {
+      "id": "G01",
+      "section": "G",
+      "name": "G1 packages 类型检查（tsc -p tsconfig.json，含 __tests__）",
+      "expect": "EXIT=0，0 个类型错误",
+      "actual": "EXIT=0",
+      "pass": true,
+      "repro": "npx tsc -p tsconfig.json",
+      "note": "此工程包含 packages/core 与 packages/shared 的源码与测试文件"
+    },
+    {
+      "id": "G02",
+      "section": "G",
+      "name": "G2 apps/web 类型检查（vue-tsc --noEmit，含 .vue + stores）",
+      "expect": "EXIT=0，0 个类型错误",
+      "actual": "EXIT=0",
+      "pass": true,
+      "repro": "cd apps/web && npx vue-tsc --noEmit -p tsconfig.json",
+      "note": "Vue 单文件组件必须用 vue-tsc；tsc 无法解析 .vue"
+    },
+    {
+      "id": "G03",
+      "section": "G",
+      "name": "G3 单元测试 vitest run 全绿",
+      "expect": "EXIT=0，0 failed",
+      "actual": "EXIT=0；passed=204 failed=0 | …······································································································································\n\n Test Files  8 passed (8)\n      Tests  204 passed (204)\n   Start at  01:53:29\n   Duration  518ms (transform 470ms, setup 0ms, collect 1.11s, tests 99ms, environment 1ms, prepare 882ms)",
+      "pass": true,
+      "repro": "npx vitest run",
+      "note": ""
+    },
+    {
+      "id": "G04",
+      "section": "G",
+      "name": "G4 pnpm build:web 成功且产物可加载",
+      "expect": "—",
+      "actual": "跳过：--skip-build 指定跳过（避免与并行任务抢 CPU）",
+      "pass": null,
+      "repro": "",
+      "note": ""
+    }
+  ]
+}

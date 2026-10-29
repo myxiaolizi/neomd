@@ -2018,17 +2018,19 @@ async function sectionE(chromium) {
 
     /* ---------- E9：连线工具（走图形库点击，不经锚点） ---------- */
     /**
-     * 注意：这里**不**用「从节点锚点拖到另一节点」来验证。
-     * 实测发现 4 个连线锚点（`circle[data-anchor]`）在 DOM 里排在
-     * 8 个缩放手柄（`rect[width=8]`）**之前**，而两者位置完全重合
-     * （top/n 都在 (x+w/2, y)，right/e 都在 (x+w, y+h/2) …），
-     * 于是锚点被手柄盖住，`document.elementFromPoint()` 拿到的永远是
-     * 缩放手柄而不是锚点 —— 鼠标根本点不到锚点。这是产品缺陷，
-     * 由 diagram 任务修（见验收报告 E9 的说明），不在本脚本范围内改。
-     *
-     * 因此这里验证「连线工具」本身可用：点图形库「箭头」分组条目
+     * 这里验证「连线工具」本身可用：点图形库「箭头」分组条目
      * → 画布上应新增一条连线（不是节点）。这条已在 E7 覆盖 4 种箭头，
      * 这里再单独验证「连续画多条」与状态栏连线计数一致。
+     *
+     * 至于「从节点锚点拖出连线」这条路径，由 E9b / E9c 覆盖：
+     *  - E9b 验证锚点可被 `elementFromPoint` 命中（不被缩放手柄遮挡）；
+     *  - E9c 验证**真实拖拽**能画出连线（端到端，比 elementFromPoint 更接近用户操作）。
+     *
+     * 历史说明：1.1.9 之前这里有一段注释记录「锚点被缩放手柄完全遮挡、
+     * 鼠标点不到」的产品缺陷，因此当时只敢用图形库点击来验证。
+     * 该缺陷已在 1.1.9 修复（锚点移出节点 `<g>` 并置于手柄之后，
+     * 同时让锚点判断优先于 `hitHandle()`），故注明已修复，避免后人
+     * 读到旧注释后误以为缺陷仍在。
      */
     const edgeCounter = await (async () => {
       const arrowIdx = libItems.findIndex((t) => /^直线箭头/.test(t));
@@ -2091,8 +2093,62 @@ async function sectionE(chromium) {
         : anchorReach.reason,
       reachable === (anchorReach.anchors ?? []).length && reachable > 0,
       {
-        note: '已知缺陷：4 个连线锚点与 8 个缩放手柄位置重合（top≡n、right≡e、bottom≡s、left≡w），且手柄在 DOM 中排在后面 → 锚点被完全遮挡，用户无法从锚点拖出连线',
-        repro: '流程图 → 选中一个节点 → 尝试从节点右边中点拖出连线：命中的是缩放手柄（resize），不是连线锚点',
+        note:
+          '这条断言守住 1.1.9 修过的缺陷不再回归：4 个连线锚点与 8 个缩放手柄位置重合' +
+          '（top≡n、right≡e、bottom≡s、left≡w），若锚点 DOM 顺序又落回手柄之前，' +
+          'elementFromPoint 就会拿到手柄、断言失败。修复方式：锚点移出节点 <g>、置于手柄之后，' +
+          '且 onPointerDown 里锚点判断优先于 hitHandle()。',
+        repro: '流程图 → 选中一个节点 → 检查四边中点的 elementFromPoint 是否命中 circle[data-anchor]',
+      },
+    );
+
+    /* ---------- E9c：从锚点**真实拖拽**能画出连线（端到端） ---------- */
+    /*
+     * 为什么在 E9b 之外还要有这条：`elementFromPoint` 只证明「锚点在最上层」，
+     * 不证明「拖拽链路能通」—— 拖拽还要经过 onPointerDown 的锚点分支、
+     * pointermove 更新 connectTo、pointerup 建边三步。
+     * 1.1.9 修锚点遮挡时实测发现第三层缺陷：`hitHandle()` 的判断排在锚点判断之前，
+     * 所以「点得到锚点」但「拖出来还是 resize」。只验 elementFromPoint 会漏掉它。
+     * 这条断言直接断言 edges 数量 +1，是真正的用户路径。
+     */
+    const anchorDrag = await (async () => {
+      const before = await page.evaluate(() => document.querySelectorAll('.dcanvas__edges > g').length);
+      const geo = await page.evaluate(() => {
+        const anchor = document.querySelector('[data-anchor="right"]');
+        const nodes = [...document.querySelectorAll('.dcanvas__nodes > g')];
+        if (!anchor || nodes.length < 2) return null;
+        const a = anchor.getBoundingClientRect();
+        // 目标取「不是当前选中那个」的另一个节点：选中节点有 4 个锚点，未选中的没有
+        const target = nodes.find((n) => !n.querySelector('[data-anchor]'));
+        if (!target) return null;
+        const t = target.getBoundingClientRect();
+        return {
+          from: { x: a.x + a.width / 2, y: a.y + a.height / 2 },
+          to: { x: t.x + t.width / 2, y: t.y + t.height / 2 },
+        };
+      });
+      if (!geo) return { ok: false, reason: '找不到可用的锚点与目标节点', before };
+      await page.mouse.move(geo.from.x, geo.from.y);
+      await page.mouse.down();
+      await page.mouse.move(geo.to.x, geo.to.y, { steps: 12 });
+      await page.waitForTimeout(120);
+      await page.mouse.up();
+      await page.waitForTimeout(700);
+      const after = await page.evaluate(() => document.querySelectorAll('.dcanvas__edges > g').length);
+      return { ok: after > before, before, after, added: after - before };
+    })();
+    check(
+      'E9c 从节点锚点真实拖拽能画出连线（端到端用户路径）',
+      '拖拽后 .dcanvas__edges > g 数量 +1',
+      anchorDrag.ok
+        ? `连线 ${anchorDrag.before}→${anchorDrag.after}（+${anchorDrag.added}）`
+        : `${anchorDrag.reason ?? '未新增连线'}（连线 ${anchorDrag.before}→${anchorDrag.after ?? '?'}）`,
+      Boolean(anchorDrag.ok),
+      {
+        note:
+          '这条覆盖「点得到锚点但拖出来是 resize」这一层缺陷（onPointerDown 里锚点判断' +
+          '必须优先于 hitHandle）。1.1.9 修复前此处 edges 恒为 +0。',
+        repro: '流程图 → 选中节点 A → 从右锚点拖到节点 B → 看连线数是否 +1',
       },
     );
 
