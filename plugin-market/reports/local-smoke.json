@@ -1,0 +1,64 @@
+{
+  "generatedAt": "2026-10-30T09:59:17.558Z",
+  "base": "http://127.0.0.1:3210",
+  "reachable": true,
+  "payloadPath": "C:\\Data\\BAC\\neomd\\neomd-V1\\plugin-market\\dist\\plugins-payload.json",
+  "payloadAvailable": true,
+  "payloadCount": 50,
+  "planTotal": 50,
+  "planMapped": 50,
+  "authUsed": true,
+  "authSource": "token-file(JWT)",
+  "baselineMarketCount": 3,
+  "summary": {
+    "total": 5,
+    "pass": 5,
+    "fail": 0,
+    "skip": 0,
+    "durationMs": 4765
+  },
+  "results": [
+    {
+      "id": 1,
+      "name": "匿名 GET /api/plugins/market",
+      "status": "PASS",
+      "detail": "HTTP 200，data.items 为数组，基线 3 条",
+      "ms": 36,
+      "failures": []
+    },
+    {
+      "id": 2,
+      "name": "逐条发布 POST /api/plugins（409 → PUT 更新）",
+      "status": "PASS",
+      "detail": "共 50 款：新建 50 · 更新 0 · 失败 0",
+      "ms": 3034,
+      "failures": []
+    },
+    {
+      "id": 3,
+      "name": "市场复核 pluginId 齐全 GET /api/plugins/market",
+      "status": "PASS",
+      "detail": "市场共 53 条，应含 50 个 pluginId，缺失 0",
+      "ms": 39,
+      "failures": []
+    },
+    {
+      "id": 4,
+      "name": "下载回取并 sha256 比对 POST /api/plugins/{id}/download",
+      "status": "PASS",
+      "detail": "共 50 款：一致 50（本地文件 50 · 产物回退 0）· 失败 0",
+      "ms": 1635,
+      "failures": []
+    },
+    {
+      "id": 5,
+      "name": "负向校验（超短 codeJs / 缺失 description）POST /api/plugins",
+      "status": "PASS",
+      "detail": "2 个负向用例均返回 400",
+      "ms": 21,
+      "failures": []
+    }
+  ],
+  "failures": [],
+  "exitCode": 0
+}

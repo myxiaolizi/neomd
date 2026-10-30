@@ -1,5 +1,5 @@
 export const APP_NAME = 'Neo MD';
-export const APP_VERSION = '1.2.0';
+export const APP_VERSION = '1.3.0';
 export const IS_PROD = import.meta.env.PROD;
 export const API_BASE = import.meta.env.VITE_API_BASE ?? '';
 export const SITE_URL = 'https://md.zhengl.vip';

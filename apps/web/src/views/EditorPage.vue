@@ -465,6 +465,32 @@ function buildCommands(): Command[] {
   return base;
 }
 
+/**
+ * 把社区插件源码规范化成可交给 `new Function` 的函数体。
+ *
+ * 插件文件是 ESM 模块，形如：
+ *   /** 说明注释 *\/
+ *   export default { id, name, version, setup(api) { ... } };
+ *
+ * 1.2.x 及以前只用 `/^\s*export\s+default\s+/` 替换，**没有 `m` 标志**——
+ * 于是「文件头带注释」的插件（这是 PLUGIN_DEVELOPMENT_GUIDE 与市场里最常见的写法）
+ * 替换不生效，`new Function` 直接抛 `SyntaxError: Unexpected token 'export'`，
+ * 用户点命令只会看到「插件执行异常」。1.3.0 修正为多行匹配，并兼容：
+ *   - 前置注释 / 空行；
+ *   - `export default` 后换行再写对象；
+ *   - 已经写成 `return {...}` 的旧脚本（幂等，不重复加 return）。
+ */
+function normalizePluginSource(codeJs: string): string {
+  const src = String(codeJs ?? '').replace(/^\uFEFF/, '');
+  if (!/\bexport\s+default\b/.test(src)) {
+    // 已经是函数体（历史脚本），原样返回
+    return src;
+  }
+  const cleaned = src.replace(/^\s*export\s+default\s+/m, 'return ');
+  // 极少数写法把 export default 放在行尾之外的位置，兜底再替换一次
+  return cleaned.replace(/\bexport\s+default\s+/, 'return ');
+}
+
 function runCommunityPlugin(item: { pluginId: string; name: string; codeJs: string }): void {
   const tab = activeTab.value;
   const hostApi = {
@@ -482,7 +508,7 @@ function runCommunityPlugin(item: { pluginId: string; name: string; codeJs: stri
     },
   };
   try {
-    const cleaned = item.codeJs.replace(/^\s*export\s+default\s+/, 'return ');
+    const cleaned = normalizePluginSource(item.codeJs);
     const factory = new Function(cleaned) as () => { setup?: (api: typeof hostApi) => void };
     const mod = factory();
     if (typeof mod?.setup === 'function') {
