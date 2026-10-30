@@ -87,7 +87,23 @@ export function defaultSettings(): Settings {
       accent: '#1677FF',
       fontFamily: 'system-ui',
       fontSize: 16,
-      lineHeight: 1.75,
+      /*
+       * 默认行高 1.6（1.2.1 缺陷1）。
+       *
+       * 改前是 1.75。实测单行高度确实等于 16 × 1.75 = 28px（没有叠加），
+       * 但 28px 行盒里 16px 字号的字形只占 20px，上下各 4px half-leading，
+       * 叠上段落 margin 之后相邻两段的字形间净空白达到 21.6px（1.35em）——
+       * 比一整行还空，这才是用户看到的「行距过大」。
+       *
+       * 为什么改默认值而不是只改 CSS：`--content-line-height` 由
+       * `apps/web/src/stores/settings.ts` 按 `appearance.lineHeight` 写到 <html> 上，
+       * 内联变量会**遮蔽** content.css 里的兜底值。所以只改 CSS 兜底对真实用户
+       * 完全无效，必须连同默认值一起下调，两处才一致。
+       *
+       * 档位语义不变：设置面板仍是 1.2~2.6 的裸倍数，填 1.75 就是 1.75，
+       * 不做任何隐式换算 —— 用户看到的值就是生效的值。
+       */
+      lineHeight: 1.6,
       pageWidth: 'standard' as PageWidth,
       showLineNumbers: true,
       spellcheck: false,

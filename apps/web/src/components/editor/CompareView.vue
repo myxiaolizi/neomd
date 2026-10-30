@@ -20,6 +20,26 @@ const previewEl = ref<HTMLDivElement | null>(null);
 
 const html = computed(() => markdownToHtml(props.modelValue, { externalTarget: '_blank', interactiveLinks: true }));
 
+/**
+ * 预览栏的排版变量（1.2.1 缺陷3）。
+ *
+ * 只写「调用方真的传了」的那几项：`fontSize` / `lineHeight` 是可选的，
+ * 不传时必须保持**不声明**，让 `.nm-content` 回落到 <html> 上的全局变量
+ * （那个值已经按 zoom 换算过）。若这里无条件写 `${fontSize ?? 16}px`，
+ * 反而会遮蔽全局缩放值 —— WysiwygEditor 的历史写法就踩过这个坑
+ * （见 EditorPage.vue 里 effectiveFontSize 的注释）。
+ */
+const previewVars = computed<Record<string, string>>(() => {
+  const vars: Record<string, string> = {};
+  if (typeof props.fontSize === 'number' && props.fontSize > 0) {
+    vars['--content-font-size'] = `${props.fontSize}px`;
+  }
+  if (typeof props.lineHeight === 'number' && props.lineHeight > 0) {
+    vars['--content-line-height'] = String(props.lineHeight);
+  }
+  return vars;
+});
+
 function paint(): void {
   if (previewEl.value) previewEl.value.innerHTML = html.value;
 }
@@ -108,7 +128,14 @@ defineExpose({ scrollToRatio });
       -->
       <div ref="previewScrollEl" class="compare__body compare__body--preview" @scroll="onPreviewScroll">
         <slot name="preview-title" />
-        <div ref="previewEl" class="compare__preview nm-content" />
+        <!--
+          右侧预览也必须跟随「字号 / 行高」设置（1.2.1 缺陷3）。
+          改前 `fontSize` / `lineHeight` 两个 prop 只传给了左侧 SourceEditor，
+          预览栏完全没绑 —— 用户在设置里把正文调到 20px，右栏还是 16px，
+          两栏对照时字号行高都对不上。这里把同一组变量写到预览容器上，
+          `.nm-content` 会照常消费它们（与 WysiwygEditor 的写法一致）。
+        -->
+        <div ref="previewEl" class="compare__preview nm-content" :style="previewVars" />
       </div>
     </section>
   </div>
@@ -158,6 +185,21 @@ defineExpose({ scrollToRatio });
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0 0 120px;
+  /*
+   * 预览栏 = 纸张（1.2.1 缺陷3）。
+   *
+   * 为什么必须显式上色：改前这一栏完全透明，透出来的是祖先 `.shell__main` 的
+   * `background: var(--bg-elevated)`。浅色主题下两者恰好都是白色，看不出问题；
+   * 一旦换成深色主题或护眼绿这类「chrome 色 ≠ 纸张色」的主题，
+   * 左右两栏就成了两种底色，用户看到的就是「右侧预览颜色不对」。
+   *
+   * 取 `--content-bg`（正文纸张）而不是 `--bg-elevated`：
+   * `--bg-elevated` 是「界面抬升层」的语义，主题的「应用范围」选「仅正文」时
+   * 它不会跟着正文主题走；`--content-bg` 才是正文纸张的权威变量。
+   * 文字色取 `--content-fg`，与主编辑器 `.nm-content` 保持同一套。
+   */
+  background: var(--content-bg, var(--bg-elevated));
+  color: var(--content-fg, var(--fg));
 }
 .compare__preview {
   padding: 0 28px;

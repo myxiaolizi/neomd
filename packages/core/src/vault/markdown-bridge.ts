@@ -28,8 +28,15 @@ export function splitFrontmatter(source: string): SplitDoc {
 
 export function joinFrontmatter(split: SplitDoc): string {
   if (!split.frontmatter) return split.body;
-  const sep = split.body.startsWith('\n') ? '' : '\n\n';
-  return `${split.frontmatter}\n${sep}${split.body}`.replace(/\n{3,}$/, '\n');
+  /*
+   * 1.2.1 缺陷4：frontmatter 与正文之间固定只隔**一个空行**（两个换行）。
+   *
+   * 改前这里按 `split.body.startsWith('\n')` 猜分隔符，正文以空行开头时
+   * 会退化成 `'\n'` 甚至更少，于是「frontmatter 后面那个空行」在保存后
+   * 时有时无。现在统一成固定值：正文自身的首部空行由 htmlToSource 负责
+   * 收敛（见下方），这里不再猜测，避免两处各改一半。
+   */
+  return `${split.frontmatter}\n\n${split.body.replace(/^\n+/, '')}`.replace(/\n{3,}$/, '\n');
 }
 
 export function withFrontmatter(source: string, frontmatter: string): string {
@@ -107,6 +114,76 @@ function preInline(text: string): string {
   return preHighlight(preWikilinks(text));
 }
 
+/* ------------------------------------------------------------------ */
+/* 空行保真（1.2.1 缺陷4）                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 围栏代码块起始/结束标记。空行规整**必须**能识别它，
+ * 否则代码块里的空行会被当成「正文空白」压缩掉（那是数据损坏，不是排版）。
+ */
+const FENCE_RE = /^\s{0,3}(`{3,}|~{3,})/;
+
+/** 连续空行的占位令牌（与任务列表同一套「先占位、渲染后回填」手法） */
+const BLANK_TOKEN = (n: number): string => `NEOMDBLANKPLACEHOLDERX${n}XEND`;
+
+/**
+ * 把「2 个及以上连续空行」标记成占位令牌，供渲染后回填成空段落。
+ *
+ * 为什么非做不可：markdown-it 会把连续空行当作块分隔符**直接丢弃**，
+ * `A\n\n\nB` 与 `A\n\nB` 渲染结果完全相同 —— 空行信息在进 HTML 的那一刻就没了，
+ * 之后无论怎么往返都无从还原。这正是「保存后空换行丢失」的根因。
+ *
+ * 为什么用「占位令牌 + 独立段落」而不是直接拼 HTML：
+ * 本文件整条链路都走 markdown-it 渲染（`html:false`，不信任原始 HTML），
+ * 令牌行会被渲染成 `<p>TOKEN</p>`，随后整体替换成 (n-1) 个空段落，
+ * 既不需要打开 HTML 透传，也不会被 wikilink / 高亮预处理干扰。
+ *
+ * 数量关系（务必记住，往返两个方向共用）：
+ *   原文 N 个连续空行 ⇄ 渲染出 N-1 个空段落。
+ *   N=1 是标准段落分隔，不产生空段落（否则每两段之间都会多一行）。
+ */
+function markBlankRuns(body: string): string {
+  const lines = body.split('\n');
+  const out: string[] = [];
+  let fence: string | null = null;
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const fenceHit = FENCE_RE.exec(line);
+    if (fenceHit) {
+      const ch = fenceHit[1]![0]!;
+      if (!fence) fence = ch;
+      else if (ch === fence) fence = null;
+      out.push(line);
+      i += 1;
+      continue;
+    }
+    if (fence) {
+      // 代码块内部逐字保留，连空行统计都不做
+      out.push(line);
+      i += 1;
+      continue;
+    }
+    if (/^[ \t]*$/.test(line)) {
+      let j = i;
+      while (j < lines.length && /^[ \t]*$/.test(lines[j]!)) j += 1;
+      const run = j - i;
+      if (run >= 2) {
+        // 令牌行前后各留一个空行，保证它自成一个段落，不会和相邻正文粘连
+        out.push('', BLANK_TOKEN(run), '');
+      } else {
+        out.push('');
+      }
+      i = j;
+      continue;
+    }
+    out.push(line);
+    i += 1;
+  }
+  return out.join('\n');
+}
+
 export interface RenderOptions {
   interactiveLinks?: boolean;
   externalTarget?: '_blank' | '';
@@ -114,12 +191,25 @@ export interface RenderOptions {
 
 export function markdownToHtml(source: string, options: RenderOptions = {}): string {
   const { body } = splitFrontmatter(source);
-  const { text, blocks } = extractTaskLists(body);
+  const { text, blocks } = extractTaskLists(markBlankRuns(body));
   let html = md.render(preHighlight(preWikilinks(text)));
 
   // 回填任务列表（占位令牌通常被 markdown-it 包进一个空段落）
   html = html.replace(/<p>\s*NEOMDTASKPLACEHOLDERX(\d+)XEND\s*<\/p>/g, (_m, idx: string) => blocks[Number(idx)] ?? '');
   html = html.replace(/NEOMDTASKPLACEHOLDERX(\d+)XEND/g, (_m, idx: string) => blocks[Number(idx)] ?? '');
+
+  /*
+   * 回填空行（1.2.1 缺陷4）：N 个连续空行 → N-1 个空段落。
+   *
+   * 为什么是 N-1：N=1 就是标准的「段落分隔」，markdown-it 已经用两个相邻块表达了；
+   * 只有 N≥2 才是「用户额外要的空行」，多出来的 (N-1) 个空行才需要真实载体。
+   * 空段落同时也是所见即所得里「用户按回车敲出来的空行」的天然表示，
+   * 因此 htmlToMarkdown 只要把空段落再换算回空行，两个方向的语义就对齐了。
+   */
+  html = html.replace(/<p>\s*NEOMDBLANKPLACEHOLDERX(\d+)XEND\s*<\/p>\n?/g, (_m, n: string) =>
+    '<p class="nm-blank"></p>\n'.repeat(Math.max(1, Number(n) - 1)),
+  );
+  html = html.replace(/NEOMDBLANKPLACEHOLDERX(\d+)XEND/g, '');
 
   // 高亮
   html = html.split(HL_OPEN).join('@@NM_HL_O@@').split(HL_CLOSE).join('@@NM_HL_C@@');
@@ -223,7 +313,25 @@ function decodeEntities(s: string): string {
 
 function inlineOf(node: ElNode): string {
   let out = '';
-  for (const c of node.children) out += c.kind === 'text' ? c.text : inlineNode(c);
+  /** 上一个子节点是不是 <br>（决定要不要吃掉紧跟其后的字面换行） */
+  let afterBr = false;
+  for (const c of node.children) {
+    if (c.kind === 'text') {
+      /*
+       * markdown-it 渲染硬换行时输出的是 `<br>\n`：`<br>` 之后那个换行只是
+       * HTML 源码里的排版缩进，**不是内容**。`inlineNode('br')` 已经把硬换行
+       * 表达成 `'  \n'`（Markdown 的行尾两空格语法），若这里再把这个字面换行
+       * 拼进去，`第一行  \n第二行` 往返一次就会变成 `第一行  \n\n第二行`
+       * —— 硬换行被静默升级成段落分隔。所以紧跟 <br> 的第一个换行要丢掉。
+       */
+      const text = afterBr && c.text.startsWith('\n') ? c.text.slice(1) : c.text;
+      out += text;
+      afterBr = false;
+      continue;
+    }
+    out += inlineNode(c);
+    afterBr = c.tag === 'br';
+  }
   return out;
 }
 
@@ -466,8 +574,67 @@ function blockNode(node: ElNode, indent = 0): string {
   }
 }
 
+/**
+ * 该顶层节点是否是一个「空段落」= 用户显式要的一个空行。
+ *
+ * 只认真正空白的段落：含有图片 / 行内代码 / 强调等任何非 br 子节点的段落
+ * 都不算空行（否则 `<p><img></p>` 会被误判成空行，图片就丢了）。
+ */
+function isBlankBlock(node: ElNode): boolean {
+  if (node.tag !== 'p') return false;
+  for (const c of node.children) {
+    if (c.kind === 'text') {
+      if (c.text.replace(/[\s\u200b]/g, '')) return false;
+      continue;
+    }
+    if (c.tag !== 'br') return false;
+  }
+  return true;
+}
+
+/**
+ * 只在「围栏代码块之外」折叠多余的空白行。
+ *
+ * 两件事必须同时成立：
+ * 1. 代码块是**逐字内容**，任何空白压缩都是数据损坏。1.2.1 缺陷4 的第三层就是
+ *    这个问题 —— `a\n\n\nb` 保存后变成 `a\n\nb`，根因是改前对整串 markdown 跑了
+ *    一次全局 `\n{3,}` 折叠，把代码块内部的空行一起吃了；
+ * 2. **不能碰行尾空格**。`inlineNode('br')` 用的是 `'  \n'`（两个空格 + 换行），
+ *    这是 Markdown 的硬换行语法；改前那条全局 `/[ \t]+$/gm` 会把它剪成普通换行，
+ *    硬换行因此在每次保存后静默降级。行尾空白在这里一律原样保留。
+ *
+ * 折叠本身只处理「非代码块里 3 个及以上连续换行」这种由块拼接产生的冗余，
+ * 用户真正想要的空行已由空段落显式表达（见 htmlToMarkdown 的 parts 拼接），
+ * 不会再被这里吃掉。
+ */
+function tidyOutsideFences(text: string): string {
+  const lines = text.split('\n');
+  const out: string[] = [];
+  let fence: string | null = null;
+  let sawFence = false;
+  for (const line of lines) {
+    const m = FENCE_RE.exec(line);
+    if (m) {
+      const ch = m[1]![0]!;
+      if (!fence) {
+        fence = ch;
+        sawFence = true;
+      } else if (ch === fence) {
+        fence = null;
+      }
+      out.push(line);
+      continue;
+    }
+    out.push(line);
+  }
+  const joined = out.join('\n');
+  // 含代码块时不做折叠：折叠会跨过围栏边界，仍然可能误伤代码内容
+  return sawFence ? joined : joined.replace(/\n{3,}/g, '\n\n');
+}
+
 export function htmlToMarkdown(html: string): string {
   const nodes = parseHtml(html);
+  /** 顶层块序列；'' 表示一个空段落（= 一个显式空行） */
   const parts: string[] = [];
   for (const n of nodes) {
     if (n.kind === 'text') {
@@ -475,18 +642,67 @@ export function htmlToMarkdown(html: string): string {
       if (t) parts.push(t);
       continue;
     }
+    // 空段落必须保留成空行 —— 这是「保存后空换行丢失」的主因之一：
+    // 改前 `if (s) parts.push(s)` 把空段落整体丢弃，用户在所见即所得里
+    // 按回车敲出来的空行、以及 markdownToHtml 为连续空行生成的占位，
+    // 都在回写这一步被吃掉。
+    if (isBlankBlock(n)) {
+      parts.push('');
+      continue;
+    }
     const s = blockNode(n);
-    if (s) parts.push(s);
+    if (s) parts.push(tidyOutsideFences(s));
   }
-  return parts
-    .join('\n\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]+$/gm, '')
-    .trim();
+
+  /*
+   * 逐块拼接：相邻非空块之间固定 1 个空行（'\n\n'），每个空段落再多 1 个换行。
+   *
+   * 与 markdownToHtml 的数量关系互为逆运算：
+   *   N 个连续空行 ⇄ (N-1) 个空段落 ⇄ 分隔符 '\n'.repeat(2 + (N-1)) = N+1 个换行。
+   * 校验：N=1 → 2 个换行（`A\n\nB`）✓；N=2 → 3 个换行（`A\n\n\nB`）✓。
+   */
+  let out = '';
+  let pending = 0;
+  let started = false;
+  for (const part of parts) {
+    if (part === '') {
+      pending += 1;
+      continue;
+    }
+    if (!started) {
+      // 开头的空段落丢弃：markdown 没有「文件以空行开头」的语义
+      out = part;
+      started = true;
+      pending = 0;
+      continue;
+    }
+    out += '\n'.repeat(2 + pending) + part;
+    pending = 0;
+  }
+  if (!started) return '';
+  // 文末：至少 1 个换行（文件应以换行结尾），每个尾部空段落再多 1 个。
+  // 改前这里用 `.trim()` 收尾，把文末换行整个吃掉，于是每次保存 git 都报
+  // `\ No newline at end of file` —— 也是「保存后文件变了」的一个来源。
+  out += '\n'.repeat(1 + pending);
+  return out;
 }
 
 export function htmlToSource(html: string, originalSource: string): string {
-  const { frontmatter } = splitFrontmatter(originalSource);
-  const body = htmlToMarkdown(html);
+  const { frontmatter, body: originalBody } = splitFrontmatter(originalSource);
+  let body = htmlToMarkdown(html);
+
+  /*
+   * 文末换行以**原文件惯例**为准（1.2.1）。
+   *
+   * htmlToMarkdown 只能保证「至少 1 个换行」，但原文件可能是 0 个（手写的单行文件）
+   * 或 N 个（尾部留白）。若不一并对齐，同一次「打开 → 保存」就会改写文件末尾，
+   * 让用户在 git 里看到一条莫名其妙的 diff。这里取两者的较大者：
+   * - 正文自身带尾部空段落（用户新敲的空行）→ 用正文推导值，不能丢；
+   * - 正文没有尾部空行 → 完全沿用原文件的换行个数。
+   */
+  const contentTail = (/\n*$/.exec(body)?.[0] ?? '').length;
+  const originalTail = (/\n*$/.exec(originalBody)?.[0] ?? '').length;
+  const tail = contentTail > 1 ? contentTail : originalTail;
+  body = body.replace(/\n+$/, '') + '\n'.repeat(tail);
   return joinFrontmatter({ frontmatter, body });
 }

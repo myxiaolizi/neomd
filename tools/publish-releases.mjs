@@ -89,11 +89,25 @@ async function putBucketPolicy(policyXml) {
 }
 
 async function main() {
+  /*
+   * 产物清单**从 package.json 推导**，不再硬编码版本号。
+   *
+   * 原先这里写死 `NeoMD-1.1.8-*`，与 `services/api/src/routes/download.js`
+   * 的硬编码清单是同一个隐患：发版时漏改就会「构建成功但客户端下载 404」，
+   * 而且构建日志全绿、只有用户点下载才发现。1.3.1 把两处一起改成动态推导，
+   * 版本号自此只有 `package.json` 一个事实源。
+   *
+   * 只发布当前版本的产物：历史版本仍留在 OSS 桶里（不删除），
+   * 旧链接继续可用，只是本脚本不重复上传。
+   */
+  const { version } = JSON.parse(fs.readFileSync(path.join(repo, 'package.json'), 'utf8'));
   const releases = [
-    { file: 'NeoMD-1.1.8-win-x64.zip', type: 'application/zip' },
-    { file: 'NeoMD-1.1.8-setup.exe', type: 'application/vnd.microsoft.portable-executable' },
-    { file: 'NeoMD-1.1.8.apk', type: 'application/vnd.android.package-archive' },
+    { file: `NeoMD-${version}-win-x64.zip`, type: 'application/zip' },
+    { file: `NeoMD-${version}-setup.exe`, type: 'application/vnd.microsoft.portable-executable' },
+    { file: `NeoMD-${version}.apk`, type: 'application/vnd.android.package-archive' },
   ];
+  console.log(`发布版本：${version}`);
+  console.log(`产物：${releases.map((r) => r.file).join(' / ')}`);
 
   console.log('1. 开放 releases/ 前缀匿名读取（可选，桶策略）');
   console.log('   说明：线上 OSS_PUBLIC_READ=false，所有下载均走 /api/download/:file 的 302 预签名直链，');

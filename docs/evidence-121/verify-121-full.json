@@ -1,0 +1,466 @@
+{
+  "base": "http://127.0.0.1:5178",
+  "api": "http://127.0.0.1:3200",
+  "startedAt": "2026-10-30T12:54:35.331Z",
+  "durationMs": 188111,
+  "sections": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E",
+    "F"
+  ],
+  "results": [
+    {
+      "id": "A01",
+      "section": "A",
+      "name": "A1 行高比 lineHeight/fontSize 在合理区间（默认设置）",
+      "expect": "1.4 <= ratio <= 1.85（1.1.9 默认 1.75；1.2.1 收严到 1.6）",
+      "actual": "font-size=16px line-height=25.6px ratio=1.6（--content-line-height=1.6）",
+      "pass": true,
+      "repro": "node tools/verify-121.mjs --only=A（不注入字号/行高，走 defaultSettings）",
+      "note": ""
+    },
+    {
+      "id": "A02",
+      "section": "A",
+      "name": "A2 行高未被两层 line-height 叠加放大",
+      "expect": "computed line-height = fontSize x --content-line-height = 25.6px，且不得等于平方值 40.96px",
+      "actual": "computed=25.6px；祖先链带数值 line-height 的节点=[{\"cls\":\"tiptap ProseMirror nm-content ProseMirro\",\"lh\":\"25.6px\",\"fs\":\"16px\"},{\"cls\":\"wysiwyg__host nm-content\",\"lh\":\"25.6px\",\"fs\":\"16px\"}]",
+      "pass": true,
+      "repro": "node tools/verify-121.mjs --only=A",
+      "note": "CSS 里无单位 line-height 是覆盖而非相乘；这条防止有人改成 em/% 叠乘"
+    },
+    {
+      "id": "A03",
+      "section": "A",
+      "name": "A3b 段落间夹 1 个显式空行时净空白不过大（缺陷1 核心，修复有效性证据）",
+      "expect": "0.5em <= gap <= 2.2em（35.2px）；修复前 55.18px = 3.449em（必然失败），修复后 31.19px = 1.949em",
+      "actual": "gap=25.59px = 1.6em（中间 1 个空段落）",
+      "pass": true,
+      "repro": "node tools/verify-121.mjs --only=A（写入「段-空行-段」，WYSIWYG 表现为「段-空段落-段」）",
+      "note": "上限 2.2em 留 0.25em 余量防渲染假失败；相对修复前 3.449em 仍有 1.25em 区分度"
+    },
+    {
+      "id": "A04",
+      "section": "A",
+      "name": "A5 空行 = 恰好一个行盒（空段落 margin 清零）",
+      "expect": "空段落 height 约等于 1 个行盒（25.6px +-2）且 margin-top/bottom = 0px",
+      "actual": "height=25.59px margin=0px/0px line-height=25.6px",
+      "pass": true,
+      "repro": "node tools/verify-121.mjs --only=A（「段-空行-段」里的空段落）",
+      "note": "空段落是「一个空行」的唯一载体，不能 display:none；但 margin 必须为 0，否则与行盒叠加"
+    },
+    {
+      "id": "A05",
+      "section": "A",
+      "name": "A3a 相邻段落（中间无空段落）净空白正常",
+      "expect": "0.5em <= gap <= 2em（32px）；修复前 21.59px = 1.35em",
+      "actual": "gap=9.59px = 0.6em（中间 0 个空段落）",
+      "pass": true,
+      "repro": "node tools/verify-121.mjs --only=A（用 Enter 造三段相邻正文，中间不留空段落）",
+      "note": "这条修复前本来就通过（1.35em < 2.0em），保留用于防「为修 A3b 把段落 margin 压成 0」"
+    },
+    {
+      "id": "A06",
+      "section": "A",
+      "name": "A4 空行数据可逆（源码 -> 所见即所得 -> 源码，不落盘）",
+      "expect": "往返后段落间 2 空行 / 文末 3 空行 / 代码块内 2 空行逐项一致，且整体字节级相等",
+      "actual": "字节级一致; 空行统计 段间=2->2 文末=3->3 代码块内=2->2; WYSIWYG 空段落=3",
+      "pass": true,
+      "repro": "源码模式写入 -> 切所见即所得 -> 切回源码（全程不保存）-> 比对 activeTab.content",
+      "note": "与 D 段分工：A4 测桥接层内存往返，D 段测落盘 + 重开链路；两者独立"
+    },
+    {
+      "id": "A07",
+      "section": "A",
+      "name": "A6 排版操作过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "A08",
+      "section": "A",
+      "name": "A7 行高档位语义正确（1.2 / 1.6 / 2.0 各自如实生效）",
+      "expect": "每一档 computed lineHeight/fontSize 约等于设定值（+-0.03），不得被默认值或其它层覆盖",
+      "actual": "设1.2->实测1.2 / 设1.6->实测1.6 / 设2->实测2",
+      "pass": true,
+      "repro": "node tools/verify-121.mjs --only=A（直接调 settings.updateAppearance 三档）",
+      "note": ""
+    },
+    {
+      "id": "B01",
+      "section": "B",
+      "name": "B 浅色主题：右侧预览栏自身声明背景 = 正文纸张色（不靠祖先透出）",
+      "expect": "预览栏（.compare__preview -> .compare__pane 之间）存在不透明背景且约等于 --content-bg（rgb(255, 255, 255)，+-2/通道）",
+      "actual": "声明者=compare__body compare__body--preview bg=rgb(255, 255, 255)；--content-bg=#ffffff；--bg-elevated=#ffffff",
+      "pass": true,
+      "repro": "设置主题=daylight -> 切「对照模式」-> 读 .compare__preview 到 .compare__pane 之间第一个不透明背景",
+      "note": "修复前该链完全透明；浅色主题下祖先恰好同色才看不出问题，深色/护眼主题立刻两栏两色"
+    },
+    {
+      "id": "B02",
+      "section": "B",
+      "name": "B 浅色主题：右侧预览文字色 = 主编辑器文字色",
+      "expect": "preview color === .ProseMirror color（+-2/通道）",
+      "actual": "preview=rgb(31, 35, 41) / 主编辑器=rgb(31, 35, 41)（--content-fg=#1f2329）",
+      "pass": true,
+      "repro": "切对照模式，比对 .compare__preview 与 .ProseMirror 的 computed color",
+      "note": ""
+    },
+    {
+      "id": "B03",
+      "section": "B",
+      "name": "B 浅色主题：右侧预览字号/行高 = 主编辑器",
+      "expect": "preview fontSize/lineHeight === .ProseMirror 的 fontSize/lineHeight",
+      "actual": "preview=17px/29.75px vs 主编辑器=17px/29.75px",
+      "pass": true,
+      "repro": "设置正文字号 17px / 行高 1.75 -> 切对照模式 -> 比对两栏 computed fontSize/lineHeight",
+      "note": "修复前 CompareView 的 fontSize/lineHeight 两个 prop 只传给了左侧源码栏，右栏完全没绑"
+    },
+    {
+      "id": "B04",
+      "section": "B",
+      "name": "B 浅色主题：两栏有效背景一致（视觉兜底）",
+      "expect": "preview 有效背景 === 主编辑器有效背景（含祖先透出）",
+      "actual": "preview 有效={\"bg\":\"rgb(255, 255, 255)\",\"from\":\"compare__body compare__body--preview\"} / 主编辑器有效={\"bg\":\"rgb(255, 255, 255)\",\"from\":\"shell__main\"}",
+      "pass": true,
+      "repro": "切对照模式，沿祖先链取第一个非透明背景比对",
+      "note": ""
+    },
+    {
+      "id": "B05",
+      "section": "B",
+      "name": "B 深色主题：右侧预览栏自身声明背景 = 正文纸张色（不靠祖先透出）",
+      "expect": "预览栏（.compare__preview -> .compare__pane 之间）存在不透明背景且约等于 --content-bg（rgb(20, 23, 28)，+-2/通道）",
+      "actual": "声明者=compare__body compare__body--preview bg=rgb(20, 23, 28)；--content-bg=#14171c；--bg-elevated=#14171c",
+      "pass": true,
+      "repro": "设置主题=midnight -> 切「对照模式」-> 读 .compare__preview 到 .compare__pane 之间第一个不透明背景",
+      "note": "修复前该链完全透明；浅色主题下祖先恰好同色才看不出问题，深色/护眼主题立刻两栏两色"
+    },
+    {
+      "id": "B06",
+      "section": "B",
+      "name": "B 深色主题：右侧预览文字色 = 主编辑器文字色",
+      "expect": "preview color === .ProseMirror color（+-2/通道）",
+      "actual": "preview=rgb(229, 231, 235) / 主编辑器=rgb(229, 231, 235)（--content-fg=#e5e7eb）",
+      "pass": true,
+      "repro": "切对照模式，比对 .compare__preview 与 .ProseMirror 的 computed color",
+      "note": ""
+    },
+    {
+      "id": "B07",
+      "section": "B",
+      "name": "B 深色主题：右侧预览字号/行高 = 主编辑器",
+      "expect": "preview fontSize/lineHeight === .ProseMirror 的 fontSize/lineHeight",
+      "actual": "preview=17px/29.75px vs 主编辑器=17px/29.75px",
+      "pass": true,
+      "repro": "设置正文字号 17px / 行高 1.75 -> 切对照模式 -> 比对两栏 computed fontSize/lineHeight",
+      "note": "修复前 CompareView 的 fontSize/lineHeight 两个 prop 只传给了左侧源码栏，右栏完全没绑"
+    },
+    {
+      "id": "B08",
+      "section": "B",
+      "name": "B 深色主题：两栏有效背景一致（视觉兜底）",
+      "expect": "preview 有效背景 === 主编辑器有效背景（含祖先透出）",
+      "actual": "preview 有效={\"bg\":\"rgb(20, 23, 28)\",\"from\":\"compare__body compare__body--preview\"} / 主编辑器有效={\"bg\":\"rgb(20, 23, 28)\",\"from\":\"shell__main\"}",
+      "pass": true,
+      "repro": "切对照模式，沿祖先链取第一个非透明背景比对",
+      "note": ""
+    },
+    {
+      "id": "C01",
+      "section": "C",
+      "name": "C1 字体「衬线（Georgia / 宋体）」设置后等待 95s 未被自动恢复（DOM 实际字体）",
+      "expect": "等待后 .ProseMirror computed font-family 仍为用户所选「Georgia, 'Songti SC', 'SimSun', serif」",
+      "actual": "设置前=SimHei, sans-serif -> 设置后=Georgia, \"Songti SC\", SimSun, serif -> 等待后=Georgia, \"Songti SC\", SimSun, serif（focus/visibilitychange 脉冲 19 次，PUT 全部 409）",
+      "pass": true,
+      "repro": "设置 -> 编辑器 -> 正文字体选「衬线（Georgia / 宋体）」-> 等 95s 并切窗口 -> 读 computed font-family",
+      "note": "云端恒为旧字体且推送恒失败，正是缺陷触发条件；修复后本地未推送改动必须被保护"
+    },
+    {
+      "id": "C02",
+      "section": "C",
+      "name": "C1 字体「衬线（Georgia / 宋体）」设置项与 localStorage 仍为该字体",
+      "expect": "settings.appearance.fontFamily 与设置页下拉值都等于用户所选",
+      "actual": "localStorage=Georgia, 'Songti SC', 'SimSun', serif / 下拉=Georgia, 'Songti SC', 'SimSun', serif",
+      "pass": true,
+      "repro": "同上，再读 localStorage neomd.settings.v1 与 select[aria-label=\"正文字体\"] 的 value",
+      "note": ""
+    },
+    {
+      "id": "C03",
+      "section": "C",
+      "name": "C1 字体「衬线（Georgia / 宋体）」等待期间无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C04",
+      "section": "C",
+      "name": "C3 字体「楷体（KaiTi / Kaiti SC）」设置后等待 95s 未被自动恢复（DOM 实际字体）",
+      "expect": "等待后 .ProseMirror computed font-family 仍为用户所选「KaiTi, 'Kaiti SC', serif」",
+      "actual": "设置前=SimHei, sans-serif -> 设置后=KaiTi, \"Kaiti SC\", serif -> 等待后=KaiTi, \"Kaiti SC\", serif（focus/visibilitychange 脉冲 19 次，PUT 全部 409）",
+      "pass": true,
+      "repro": "设置 -> 编辑器 -> 正文字体选「楷体（KaiTi / Kaiti SC）」-> 等 95s 并切窗口 -> 读 computed font-family",
+      "note": "云端恒为旧字体且推送恒失败，正是缺陷触发条件；修复后本地未推送改动必须被保护"
+    },
+    {
+      "id": "C05",
+      "section": "C",
+      "name": "C3 字体「楷体（KaiTi / Kaiti SC）」设置项与 localStorage 仍为该字体",
+      "expect": "settings.appearance.fontFamily 与设置页下拉值都等于用户所选",
+      "actual": "localStorage=KaiTi, 'Kaiti SC', serif / 下拉=KaiTi, 'Kaiti SC', serif",
+      "pass": true,
+      "repro": "同上，再读 localStorage neomd.settings.v1 与 select[aria-label=\"正文字体\"] 的 value",
+      "note": ""
+    },
+    {
+      "id": "C06",
+      "section": "C",
+      "name": "C3 字体「楷体（KaiTi / Kaiti SC）」等待期间无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "C07",
+      "section": "C",
+      "name": "C2 字体「等宽（Consolas / 苹方等宽）」设置后等待 95s 未被自动恢复（DOM 实际字体）",
+      "expect": "等待后 .ProseMirror computed font-family 仍为用户所选「'Cascadia Code', Consolas, Menlo, monospace」",
+      "actual": "设置前=SimHei, sans-serif -> 设置后=\"Cascadia Code\", Consolas, Menlo, monospace -> 等待后=\"Cascadia Code\", Consolas, Menlo, monospace（focus/visibilitychange 脉冲 19 次，PUT 全部 409）",
+      "pass": true,
+      "repro": "设置 -> 编辑器 -> 正文字体选「等宽（Consolas / 苹方等宽）」-> 等 95s 并切窗口 -> 读 computed font-family",
+      "note": "云端恒为旧字体且推送恒失败，正是缺陷触发条件；修复后本地未推送改动必须被保护"
+    },
+    {
+      "id": "C08",
+      "section": "C",
+      "name": "C2 字体「等宽（Consolas / 苹方等宽）」设置项与 localStorage 仍为该字体",
+      "expect": "settings.appearance.fontFamily 与设置页下拉值都等于用户所选",
+      "actual": "localStorage='Cascadia Code', Consolas, Menlo, monospace / 下拉='Cascadia Code', Consolas, Menlo, monospace",
+      "pass": true,
+      "repro": "同上，再读 localStorage neomd.settings.v1 与 select[aria-label=\"正文字体\"] 的 value",
+      "note": ""
+    },
+    {
+      "id": "C09",
+      "section": "C",
+      "name": "C2 字体「等宽（Consolas / 苹方等宽）」等待期间无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D01",
+      "section": "D",
+      "name": "D1 源码模式写入的 Markdown 原样进入文档模型",
+      "expect": "编辑器内容 === 写入内容（字节级）",
+      "actual": "写入 67B / 实测 67B（一致）",
+      "pass": true,
+      "repro": "切源码模式 -> 全选删除 -> 逐字输入含空行的 Markdown -> 读 activeTab.content",
+      "note": ""
+    },
+    {
+      "id": "D02",
+      "section": "D",
+      "name": "D2 源码 <-> 所见即所得 往返后空行不丢",
+      "expect": "往返后内容仍与写入完全一致（字节级）",
+      "actual": "一致；WYSIWYG 块结构=[{\"tag\":\"P\",\"empty\":false},{\"tag\":\"P\",\"empty\":true},{\"tag\":\"P\",\"empty\":false},{\"tag\":\"PRE\",\"empty\":false},{\"tag\":\"P\",\"empty\":true},{\"tag\":\"P\",\"empty\":true}]",
+      "pass": true,
+      "repro": "源码模式写入 -> 切所见即所得 -> 再切回源码 -> 读 activeTab.content",
+      "note": "空行在 WYSIWYG 里必须表现为空段落（blocks 里 empty=true），否则数据不可逆"
+    },
+    {
+      "id": "D03",
+      "section": "D",
+      "name": "D3 保存后仓库文件内容与写入完全一致（不丢空行、不规范化）",
+      "expect": "vault.read(docId) === 写入内容（字节级）",
+      "actual": "一致",
+      "pass": true,
+      "repro": "写入后 Ctrl+S（store.saveActiveTab）-> 读 vault.read(docId)",
+      "note": ""
+    },
+    {
+      "id": "D04",
+      "section": "D",
+      "name": "D4 空行数量精确保持（段落间 2 / 文末 3 / 代码块内 2）",
+      "expect": "段落间最大连续空行 = 2；文末换行数 = 3（>0 才证明未被 trim 吃掉）；代码块内空行 = 2（>1 才证明未被压缩）",
+      "actual": "段落间=2 文末换行=3 代码块内=2（写入基线：2 / 3 / 2）",
+      "pass": true,
+      "repro": "同 D3，用 blankStats 精确统计各类空行数量",
+      "note": "三类空行分别对应：段落间隙 / 文末换行被 trim / 代码块内空行被压"
+    },
+    {
+      "id": "D05",
+      "section": "D",
+      "name": "D5 重新打开文档后空行仍不丢（重开链路）",
+      "expect": "刷新页面并重开文档后，仓库内容与标签内容都与写入一致",
+      "actual": "vault=一致 / tab=一致",
+      "pass": true,
+      "repro": "保存后 page.reload() -> openDoc(docId) -> 读 vault.read 与 activeTab.content",
+      "note": ""
+    },
+    {
+      "id": "D06",
+      "section": "D",
+      "name": "D6 空行往返过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E01",
+      "section": "E",
+      "name": "E1 云端历史版本对象 >= 5 条",
+      "expect": "versions/docmvuz8at310vypf0h/ 下 >= 5 个版本对象",
+      "actual": "实测 11 个：1793365023309-1-09c58fd2b94195cf.md, 1793365023661-1-09c58fd2b94195cf.md, 1793365025501-2-109ab35427c50bad.md, 1793365025964-2-109ab35427c50bad.md, 1793365027813-3-2f6f8c82199cc3f9.md, 1793365028272-3-2f6f8c82199cc3f9.md, 1793365030146-4-5411eebd1edc2377.md, 1793365030591-4-5411eebd1edc2377.md",
+      "pass": true,
+      "repro": "同一文档连续保存 6 次不同内容 -> GET /api/storage/list?prefix=versions/<docId>/",
+      "note": ""
+    },
+    {
+      "id": "E02",
+      "section": "E",
+      "name": "E2 历史版本内容互不相同（>=3 条不同 sha256）",
+      "expect": ">= 3 个不同内容哈希（防止「5 条但内容全一样」误判通过）",
+      "actual": "11 条版本 -> 6 个不同哈希：1793365023309-1-09c58fd2b94195cf.md=09c58fd2 / 1793365023661-1-09c58fd2b94195cf.md=09c58fd2 / 1793365025501-2-109ab35427c50bad.md=109ab354 / 1793365025964-2-109ab35427c50bad.md=109ab354 / 1793365027813-3-2f6f8c82199cc3f9.md=2f6f8c82 / 1793365028272-3-2f6f8c82199cc3f9.md=2f6f8c82 / 1793365030146-4-5411eebd1edc2377.md=5411eebd / 1793365030591-4-5411eebd1edc2377.md=5411eebd / 1793365032543-5-69e75ff6d36f718f.md=69e75ff6 / 1793365032914-5-69e75ff6d36f718f.md=69e75ff6 / 1793365034814-6-c0e86b05f7902ec5.md=c0e86b05",
+      "pass": true,
+      "repro": "逐个 GET 版本对象并计算 sha256",
+      "note": "lead 加严要求：只数条数会被「同内容重复归档」骗过"
+    },
+    {
+      "id": "E03",
+      "section": "E",
+      "name": "E3 历史版本面板列出 >= 5 条（UI）",
+      "expect": "面板 .history__list .ver >= 5 条",
+      "actual": "实测 6 条：[\"v6刚刚67 B云端\",\"v5刚刚66 B云端\",\"v4刚刚65 B云端\",\"v3刚刚64 B云端\",\"v2刚刚63 B云端\",\"v1刚刚62 B云端\"]",
+      "pass": true,
+      "repro": "保存 6 次 -> 点工具栏「历史版本」-> 数 .history__list .ver",
+      "note": "修复前 HistoryModal 只要本地有任意一条就不查云端，导致只显示 1 条"
+    },
+    {
+      "id": "E04",
+      "section": "E",
+      "name": "E4 选中第 2 版时预览内容 != 最新版",
+      "expect": "第 2 版预览文本非空，且与当前（最新）正文不同",
+      "actual": "第 2 版=v5刚刚66 B云端；预览 81 字符：−# 版本 6+# 版本 5  −这是第 6 版正文，内容标识 QA121-E-V6-xxxxxx+这是第 5 版正文，内容标识 QA121-E-V5-xxxx；最新正文 41 字符",
+      "pass": true,
+      "repro": "打开历史面板 -> 点列表第 2 条 -> 读 .history__code",
+      "note": ""
+    },
+    {
+      "id": "E05",
+      "section": "E",
+      "name": "E5 恢复后正文变成所选版本内容",
+      "expect": "恢复后 activeTab.content 与仓库内容都等于该版本正文（按 UI 版本号回查云端对象精确比对）",
+      "actual": "所选=v5刚刚66 B云端（rev=5）；期望 1793365032543-5-69e75ff6d36f718f.md（40B）；恢复后标签 40B / 仓库 40B",
+      "pass": true,
+      "repro": "历史面板选中某版本 -> 点「恢复此版本」-> 读 activeTab.content 与 vault.read",
+      "note": "恢复会弹 window.confirm，脚本已自动确认（page.on(\"dialog\") 默认 accept）"
+    },
+    {
+      "id": "E06",
+      "section": "E",
+      "name": "E6 历史版本流程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "F01",
+      "section": "F",
+      "name": "F1 设置控件的 aria-label 不被两个不同控件共用",
+      "expect": "0 个 aria-label 被 >=2 个不同控件使用（已排除页签导航容器 .settings__nav）",
+      "actual": "0 个（共 33 个控件带 aria-label / 10 个页签）",
+      "pass": true,
+      "repro": "打开设置 -> 逐页签收集 [aria-label]（排除 .settings__nav）-> 按控件 DOM 路径去重后统计",
+      "note": ""
+    },
+    {
+      "id": "F02",
+      "section": "F",
+      "name": "F2 语义去重：字体/字号/行高 等设置项不得跨页签重复",
+      "expect": "每个语义项（font-family / font-size / line-height / page-width / line-numbers / spellcheck / typewriter / zoom）只出现在**一个**页签",
+      "actual": "0 项跨页签重复：{\"font-family\":[\"编辑器/正文字体\"],\"font-size\":[\"编辑器/编辑器正文字号\"],\"line-height\":[\"编辑器/编辑器正文行高\"],\"zoom\":[\"编辑器/正文缩放比例\"],\"line-numbers\":[\"编辑器/显示正文行号\"],\"spellcheck\":[\"编辑器/拼写检查\"]}",
+      "pass": true,
+      "repro": "设置 -> 主题 与 设置 -> 编辑器 两个页签都能看到字体/字号/行高控件（修复前）",
+      "note": "用户反馈「设置里选项重复出现」的落点；按控件路径去重，避免 aria-label 与可视 label 被算两次"
+    },
+    {
+      "id": "F03",
+      "section": "F",
+      "name": "F3 正文字体 / 字号 / 行高 各恰好 1 个控件",
+      "expect": "font-family = 1、font-size = 1、line-height = 1（既不多也不少，防止「全删了」也算通过）",
+      "actual": "{\"font-family\":1,\"font-size\":1,\"line-height\":1}",
+      "pass": true,
+      "repro": "同上；统计各语义项的控件数量",
+      "note": ""
+    },
+    {
+      "id": "F04",
+      "section": "F",
+      "name": "F4 同一页签内无重复语义控件（页内不重复）",
+      "expect": "0 个页签出现同一语义项的 2 个控件",
+      "actual": "0 个",
+      "pass": true,
+      "repro": "设置 -> 编辑器：字体与排版区块原先出现两次（⑤ 字体与排版 / 字体、字号与排版）",
+      "note": ""
+    },
+    {
+      "id": "F05",
+      "section": "F",
+      "name": "F5 设置项（字段容器）不重名：同一标签不得出现在两个设置项里",
+      "expect": "0 个设置项标签被 >=2 个不同设置项使用",
+      "actual": "0 个（共 32 个设置项，覆盖 10 个页签）",
+      "pass": true,
+      "repro": "逐页签收集 .field 容器与其 .nm-label 文本 -> 统计重名",
+      "note": "同一 .field 内多个控件（色板组、字段+重置按钮）共享 label 属正常，按字段容器计"
+    },
+    {
+      "id": "F06",
+      "section": "F",
+      "name": "F6 设置页遍历过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "P01",
+      "section": "P",
+      "name": "P1 本脚本未向生产库写设置（设置类改动全程走浏览器内假云端）",
+      "expect": "自证口径：本脚本自身对 /api/settings 的 PUT 请求为 0 条（Playwright 拦截的请求不经过 httpJson，不计入）",
+      "actual": "自身写请求 0 条；生产设置版本 跑测前=276 跑测后=277",
+      "pass": true,
+      "repro": "",
+      "note": "版本号变化也可能来自并行任务/其它设备；真正能归因的是「本脚本有没有发过 PUT」"
+    },
+    {
+      "id": "P02",
+      "section": "P",
+      "name": "P2 本脚本未发起任何建仓/改仓请求",
+      "expect": "自证口径：本脚本自身对 /api/vaults 的写请求为 0 条",
+      "actual": "自身写请求 0 条；仓库集合变化 无",
+      "pass": true,
+      "repro": "",
+      "note": "并行修复组会建/删自己的临时仓库，总数变化不可归因于本脚本"
+    }
+  ]
+}

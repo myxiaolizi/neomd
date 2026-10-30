@@ -130,7 +130,9 @@ function buildState(doc: string): EditorState {
       syntaxHighlighting(nmHighlight),
       cmPlaceholder('开始写作… 输入 / 唤起命令，或按 Ctrl+P 打开命令面板'),
       EditorView.lineWrapping,
-      themeCompartment.of(baseTheme(props.fontSize ?? 16, props.lineHeight ?? 1.75)),
+      // 兜底行高 1.6：与 core 的默认值（settings.ts 的 appearance.lineHeight）
+      // 以及 content.css 的 var(--content-line-height, 1.6) 保持一致（1.2.1 缺陷1）。
+      themeCompartment.of(baseTheme(props.fontSize ?? 16, props.lineHeight ?? 1.6)),
       readOnlyCompartment.of(EditorState.readOnly.of(Boolean(props.readonly))),
       keymap.of([
         {
@@ -187,7 +189,7 @@ watch(
   () => [props.fontSize, props.lineHeight],
   () => {
     view?.dispatch({
-      effects: themeCompartment.reconfigure(baseTheme(props.fontSize ?? 16, props.lineHeight ?? 1.75)),
+      effects: themeCompartment.reconfigure(baseTheme(props.fontSize ?? 16, props.lineHeight ?? 1.6)),
     });
   },
 );

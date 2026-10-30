@@ -1,0 +1,145 @@
+{
+  "agent": "independent-evidence-C",
+  "release": "Neo MD 1.2.1",
+  "measuredAt": "2026-10-30T17:33:09+08:00",
+  "scope": {
+    "readOnlySource": true,
+    "productionSafety": "Browser localStorage neomd.settings.v1 was snapshotted before the test and restored afterwards. /api/settings PUT was intercepted and returned synthetic 200/version=999, so the production settings record was not modified by this test."
+  },
+  "sourceMtimes": {
+    "apps/web/src/stores/settings.ts": {
+      "lastWriteTimeUtc": "2026-10-30T09:01:40.983Z",
+      "bytes": 49075
+    },
+    "apps/web/src/views/SettingsPage.vue": {
+      "lastWriteTimeUtc": "2026-10-30T08:57:52.803Z",
+      "bytes": 150765
+    }
+  },
+  "E": {
+    "rootCause": "Current source does not support the suspected platform-old-value or whole-appearance-merge explanation: fontFamily is explicitly classified as a global appearance field, splitRemotePayload strips global fields out of remote platform.appearance, and pullCloudSettings merges global before platform. The proved chain is patchAppearance -> updateAppearance -> persist/applyTheme/scheduleCloudPush -> 1-second PUT. If the real PUT fails twice, themeDirtySince remains set and a later pull is intended to preserve global theme fields; however the preservation block accidentally omits fontFamily. Therefore a failed push followed by focus/visibility pull or 60s version-poll pull can overwrite the new fontFamily with the cloud value. This is a field-omission regression in the dirty-field restore, not a missing push and not an appearance whole-object merge. The UI has a second independent visual issue: applyTheme writes --font-content but the Settings page contains no .nm-content editor element, so Settings-page computed body font is not proof of editor rendering; measure .nm-content on an editor screen for final reproduction.",
+    "evidence": [
+      {
+        "kind": "source",
+        "detail": "GLOBAL_APPEARANCE_FIELDS includes fontFamily; splitSettingsPartitions puts it in payload.global.appearance, while other appearance fields remain platform-scoped.",
+        "lines": [79, 84, 258, 271]
+      },
+      {
+        "kind": "source",
+        "detail": "splitRemotePayload removes theme/global fields from remote platform.appearance before pull merge; only readingPart is merged as remotePlatform. This rules out platform old fontFamily overwriting remoteGlobal's fontFamily in current source.",
+        "lines": [293, 312, 330]
+      },
+      {
+        "kind": "source",
+        "detail": "pullCloudSettings merges remoteGlobal then remotePlatform. Its dirty restore preserves theme, themePresetId, accent, customThemes, editorColorScheme, customEditorBg and customEditorFg, but NOT fontFamily even though fontFamily is global. Thus stale cloud fontFamily can write over pending local fontFamily after a failed push.",
+        "lines": [638, 667, 671, 682]
+      },
+      {
+        "kind": "source",
+        "detail": "updateAppearance shallow-merges the field patch, persists immediately, applies theme, marks dirty when any GLOBAL_APPEARANCE_FIELDS field is touched, and schedules a cloud push. There is no whole-appearance replacement on the Settings page path.",
+        "lines": [819, 850]
+      },
+      {
+        "kind": "browser",
+        "detail": "At 2026-10-30T09:33:06Z three distinct font select values were changed on the Editor tab. At about 1.01s after each change, localStorage appearance.fontFamily held the selected value. Captured network shows /api/settings PUT attempts at 09:33:07.536/07.537, 08.581/08.582, 09.625/09.625. PUT was deliberately intercepted, never reached production, and synthetic success prevents a genuine cloud-pull overwrite experiment. This proves SettingsPage does trigger push; it does not prove a real server failure occurred in this run."
+      },
+      {
+        "kind": "browser",
+        "detail": "The current Settings Page has no .nm-content. The select changed and localStorage changed; document.body computed font stayed Segoe UI because applyTheme updates --font-content for editor content, not the Settings pane. A screenshot is stored as shots/subagentC-editor-duplicates.png."
+      }
+    ],
+    "timeline": [
+      "T+0: select @change calls SettingsPage.patchAppearance (SettingsPage.vue:339-342).",
+      "T+0: settingsStore.updateAppearance shallow-merges fontFamily, calls markThemeDirty, persist, applyTheme and scheduleCloudPush (settings.ts:824-850).",
+      "T+1s: scheduleCloudPush invokes pushCloudSettings. Browser intercept recorded each PUT; no UI path omits the request.",
+      "On real PUT success: pushCloudSettings clears themeDirtySince (settings.ts:724-759), so a subsequent pull should receive the same cloud global fontFamily.",
+      "On real PUT failure after retry: dirty marker remains. Focus/visible events request a throttled pull (30s); version check runs every 60s and pulls when remote version is newer (settings.ts:623-636, 767-791).",
+      "During that later pull, global cloud appearance merges over local. pendingTheme restore does not restore fontFamily, so local font can revert precisely at that GET."
+    ],
+    "affectedLines": [
+      "apps/web/src/stores/settings.ts:79-90",
+      "apps/web/src/stores/settings.ts:258-330",
+      "apps/web/src/stores/settings.ts:606-620",
+      "apps/web/src/stores/settings.ts:638-683",
+      "apps/web/src/stores/settings.ts:724-764",
+      "apps/web/src/stores/settings.ts:767-791",
+      "apps/web/src/stores/settings.ts:819-850",
+      "apps/web/src/views/SettingsPage.vue:338-342",
+      "apps/web/src/views/SettingsPage.vue:1977-1986"
+    ],
+    "suggestedFix": [
+      "Replace the hard-coded pendingTheme restore at settings.ts:671-680 with a loop over GLOBAL_APPEARANCE_FIELDS, or at minimum add fontFamily: pendingTheme.fontFamily. The loop prevents future global appearance fields from being omitted.",
+      "Rename themeDirtySince/pendingTheme to globalAppearanceDirtySince/pendingGlobalAppearance if scope expansion is intended; the current name made fontFamily omission likely.",
+      "Keep pull merge field-level as it is; do not move whole appearance into either partition.",
+      "For a final non-production reproduction, force /api/settings PUT to fail, retain stale server font, then trigger focus after 30s or advance the 60s poll; capture GET immediately preceding font revert. Do not run that test against production without a full PUT rollback plan."
+    ]
+  },
+  "F": {
+    "rootCause": "The same font-family/font-size/line-height controls are rendered in both the theme section and the editor section and write the same appearance fields through the same patchAppearance handler. This is an actual duplicate configuration surface, not merely repeated labels. Page-width is explicitly removed from the Settings UI, and line number/spellcheck/typewriter are not duplicates in this component.",
+    "evidence": [
+      {
+        "kind": "source-control-count",
+        "items": [
+          {
+            "option": "font family",
+            "occurrences": [
+              {"tab": "theme", "label": "字体族", "control": "aria-label=正文字体族", "line": 1828, "controlLine": 1840},
+              {"tab": "editor", "label": "正文字体", "control": "aria-label=正文字体", "line": 1966, "controlLine": 1977}
+            ]
+          },
+          {
+            "option": "font size",
+            "occurrences": [
+              {"tab": "theme", "label": "正文字号（px）", "line": 1853, "controlLine": 1854},
+              {"tab": "editor", "label": "正文字号（px）", "line": 1991, "controlLine": 1992}
+            ]
+          },
+          {
+            "option": "line height",
+            "occurrences": [
+              {"tab": "theme", "label": "行高", "line": 1865, "controlLine": 1866},
+              {"tab": "editor", "label": "正文行高", "line": 2003, "controlLine": 2004}
+            ]
+          },
+          {
+            "option": "page width",
+            "occurrences": [],
+            "note": "Removed; explicit comment at line 1878 says pageWidth remains only for backward compatibility."
+          },
+          {
+            "option": "line numbers",
+            "occurrences": [{"tab": "editor", "label": "显示正文行号", "line": 2018, "controlLine": 2021}]
+          },
+          {
+            "option": "spellcheck",
+            "occurrences": [{"tab": "editor", "label": "拼写检查", "line": 2043, "controlLine": 2046}]
+          },
+          {
+            "option": "typewriter mode",
+            "occurrences": [],
+            "note": "No SettingsPage template control found for appearance.typewriterMode."
+          }
+        ]
+      },
+      {
+        "kind": "browser",
+        "detail": "Live DOM captured on theme tab: labels [字体族, 正文字号（px）, 行高], aria labels [正文字体族, 正文字号, 正文行高], one font control. Editor screenshot was captured separately. Both screenshots show that each tab independently exposes the same three values; framework v-if means inactive tab DOM is absent, so a per-current-tab DOM count is one, while cross-tab product count is two."
+      }
+    ],
+    "timeline": [
+      "Theme template block at 1823-1895 renders the three typography controls.",
+      "Editor template block at 1962-2015 renders the same three fields and same update path.",
+      "Both use patchAppearance, so changing either location changes one shared appearance object and schedules the same cloud PUT."
+    ],
+    "affectedLines": [
+      "apps/web/src/views/SettingsPage.vue:1823-1895",
+      "apps/web/src/views/SettingsPage.vue:1962-2057",
+      "apps/web/src/views/SettingsPage.vue:338-342"
+    ],
+    "suggestedFix": [
+      "Put font family, font size, line height, zoom, line numbers, spellcheck and typewriter mode only in the Editor tab. They directly control reading/editing behavior and belong together for fast discovery.",
+      "Keep Theme tab for theme preset, light/dark/system, accent, theme scope, color refinement, and custom-theme management. Remove its font/typography block at 1823-1895 rather than retaining two editing locations.",
+      "If product deliberately wants font family treated as visual identity, keep only fontFamily in Theme and place size/line-height/zoom in Editor, but this is less coherent with system-level typography being a reading preference. Current comments call the full block visual, but the duplicated Editor tab and user report demonstrate the IA cost."
+    ]
+  }
+}

@@ -13,6 +13,83 @@
 
 ---
 
+## [1.3.1] - 2026-10-30
+
+本版是**纯缺陷修复版**，把六项用户可感知的问题逐条根治：编辑器排版（行距 / 分屏配色 / 空行保真）、设置项（字体改完自动恢复 / 选项重复）、历史版本（多版本列表与回滚）。不含新功能。
+
+> **版本号说明**：原计划发布为 `1.2.1`，但因 1.3.0 已先行公开发布，按语义化版本改为 `1.3.1`，避免"新发布的版本号小于已公开版本号"的倒挂。
+
+### Fixed
+
+- **编辑器行距过大**：根因**不是**「两层 `line-height` 相乘」——实测 `.nm-content` / `.ProseMirror` / `p` 三层的 computed `line-height` 均为 `28px`（16px × 1.75），无单位行高是**覆盖**而非相乘。真实成因是「默认 1.75 偏松（28px 行盒 vs 20px 字形盒，每行上下各 4px half-leading）」与「`p` 的 `margin: 0.85em`」**同向放大**，字形间净空白达 `1.35em`，比一整行还空。
+  - 默认行高 `1.75 → 1.6`（`packages/core/src/settings/settings.ts`、`content.css` 兜底、`WysiwygEditor` / `SourceEditor` 内联兜底同步）；
+  - 段落 margin `0.85em → 0.6em`；
+  - 实测：相邻非空段落净空白 `21.59px / 1.35em → 15.19px / 0.949em`；段间夹一个显式空行 `55.18px / 3.449em → 31.19px / 1.949em`。设置面板 1.2~2.2 七档逐一实测，ratio 与设置值精确一致、无法隐含换算，各档净空白均 ≤ 2.0em。
+
+- **左右分屏时右侧编辑器颜色不对**：两个独立成因。
+  - 对照模式 `.compare__preview` 完全没上纸色（`rgba(0,0,0,0)`，透出祖先底色），且 `--content-font-size` / `--content-line-height` 只传给了左侧 `SourceEditor` —— 用户把正文调到 20px 时右栏仍是 16px，两栏对照字号行高都对不上；
+  - 左右分屏 `.shell__splitpane` 写死 `background: var(--bg)`，那是**界面外壳色**（`--chrome-bg`），而左侧透出的是**纸张色** `--bg-elevated`。浅色主题下两者都接近白（`#ffffff` vs `#f2f4f7`）不易察觉，深色主题下就是左 `#14171c` / 右 `#1b1f26`、护眼绿下是左 `#e8f5e9` / 右 `#d9efdb`。
+  - 统一改取 `--content-bg` 并用与主栏相同的兜底，预览栏补齐排版变量。实测浅色左=右 `rgb(255,255,255)`、深色左=右 `rgb(20,23,28)`。
+  - 另修正 `.nm-content` 的文字色为 `var(--content-fg, var(--fg))`：主题「应用范围」选「仅正文」时只写 `--content-*` 系列、不写 `--fg`，旧写法会让正文自定义字色失效。
+
+- **文件保存后空换行丢失**：三层缺陷。
+  1. `markdown-it` 把连续空行当**块分隔符直接丢弃**（`markdownToHtml('A\n\n\nB')` === `"<p>A</p>\n<p>B</p>"`，不产生空段落），空行信息在进 HTML 那一刻就没了，之后无论怎么往返都无从还原；
+  2. `htmlToMarkdown` 的 `if (s) parts.push(s)` 把空段落整体丢弃，末尾 `.trim()` 又吃掉文末换行（每次保存 git 都报 `\ No newline at end of file`）；
+  3. 全局 `\n{3,}` 折叠把**围栏代码块内部**的空行一起吃了（`a\n\n\nb` → `a\n\nb`，这是数据损坏而非排版）。
+  - 空行现在有**双向可逆载体**：`N` 个连续空行 ⇄ 渲染 `(N-1)` 个 `<p class="nm-blank">` ⇄ 回写 `2+(N-1)` 个换行。`N=1 → 2` 换行、`N=2 → 3`、`N=4 → 5`，两个方向互为逆运算；
+  - 新增 `markBlankRuns()`（围栏感知，代码块内部逐字保留）、`isBlankBlock()`、`tidyOutsideFences()`；
+  - 文末换行改为**按原文件惯例保留**（原文 N 个就保 N 个），不再无条件 trim；
+  - 顺带修掉 `<br>\n` 硬换行被升级成段落分隔、以及行尾两空格（Markdown 硬换行语法）被 `/[ \t]+$/gm` 静默剪掉的缺陷；
+  - 导出链路同步（`exporters.ts` BASE_CSS）：`p{margin:.6em 0}` + `p.nm-blank{margin:0;min-height:1.6em}`，导出的空行恰好一个行盒（实测 25.59px vs 25.6px）。
+
+- **历史版本无法使用：多次修改只能看到最近一版**：根因链 6 条。
+  1. `HistoryModal` 的 `if (local.length) { 用 local; return }` —— 本地残留 1 条旧快照，云端真实存在的 N 条被**整体忽略**；`EditorPage.loadRightHistoryVersions()` 是同一处缺陷的复制品，右侧栏区块同样只显示 1 条；
+  2. 归档挂在 5 分钟节流 / 300 字阈值上，而自动保存间隔是 1.5s —— `shouldVersion` 长期为 false，**自动保存路径根本不产生历史**；条件还带 `!keepLocal`，开了本地留痕的用户**永不**上云；
+  3. `void archiveVersionToCloud(...)` 是 fire-and-forget，刷新或切仓库时 PUT 被中断，失败只写日志；
+  4. 版本 key 唯一性：本地 `<rev>-<hash>-<dev>.md` 纯内容派生 + `if (!exists(key))` 短路 → 同 rev+hash **必然覆盖**；云端 `ts` 用 `Date.now()`，同毫秒两次归档撞 key。两处均改为单调递增 `ts` + 无条件写入；
+  5. 网页端 `listVersions()` **永远返回空**：`BrowserVaultAdapter.listDir()` 由 `listAll()` 派生，而 `listAll()` 过滤掉 `.neomd/**` —— 快照明明写了却列不出来。改为「索引 ∪ 目录」并新增 `.neomd/versions/index.json`；
+  6. 恢复**100% 失败**：旧 `restoreVersion` 把云端对象键直接交给本地 adapter（报 `文件不存在: mdadmin/neomd/users/.../versions/...md`）。合并列表后两种 key 混排，必须按 key 形态路由。
+  - 实测：同一份数据只换算法，**修复前 1 条 → 修复后 8 条**；保存 5 次后面板 6 条全部内容各异；回滚到 v2 后**正文 / 磁盘文件 / 编辑器标签页三者同时**变回该版；右侧栏 DOM 实测 6 行（修复前 2 条）。
+  - 另修「误点恢复即永久丢失」：恢复前先把当前内容归档（确认框早已承诺，旧实现没做）。
+
+- **PC 端设置字体后一下又自动恢复**：根因两层，且**两层都与此前的推理不同**。
+  1. **主因（服务端）**：`services/api/src/routes/settings.js` 的 `flattenSettings()` 用 `Object.assign(view, group)` 把 `platform.<p>.appearance` **整块**盖到 `global.appearance` 上。`appearance` 是一个整体对象键，所以不是逐字段覆盖而是整块替换。1.1.7 及更早把 `fontFamily` 写在平台分区，旧值至今仍在 `platform.web.appearance` / `platform.desktop.appearance` —— 1.1.8+ 改成写 global 后，客户端拉到的拍平视图里 `fontFamily` **永远是平台分区的旧值**，被当成云端权威值覆盖回本地。实测：global 写 `midnight` / `KaiTi` 后 `GET ?platform=web` 仍返回 `daylight` / `system-ui`，而 `GET ?platform=__global_only__` 返回正确值。这正是"1.1.9 把 fontFamily 加进 global 名单但问题仍在"的原因：改名单位置没错，**读侧被服务端拍平逻辑污染了**。
+  2. **触发点与假设不符**：`installCloudAutoPull()`（全仓库唯一注册 `focus` / `visibilitychange` / 60s 轮询的地方）**只有定义、0 次调用，且未被 store 导出**。运行时实证：派发 focus + visibilitychange 后 4s 内 0 条 `/api/settings` 请求，静等 65s 内 0 条 `/api/settings/version`。真实触发点是**打开设置页**（`requestCloudPull()`）。
+  - 修复：客户端用哨兵平台名读「纯 global 视图」纠正拍平污染（`applyGlobalAppearanceAuthority`，只动 8 个主题类字段，阅读体验字段仍按端独立）；字段级基线 + 字段级「待推送」集合（与 `layout` 同构，且推送成功即清空，**不会退化成 1.1.9 那种永久僵住的脏标记**）；拉取结束**补发一次推送**（`scheduleCloudPush` 在 `pullingCloud=true` 时直接 return，而还原本地字段恰好发生在拉取中，不补发就会变成"本地改动永远推不上去"）；写侧把主题类字段镜像进平台分组做自愈。
+  - 实测：修复前 3 个字体值里 2 个在 95s + focus 后被打回；修复后 **12/12 通过**，含"跨端改主题仍能同步"（没有退化成永久拒绝云端）与"推送失败后本地不丢、解除后能收敛"。
+
+- **设置里部分选项重复出现（字体在「编辑」和「主题」都出现）**：主题页签的「⑤ 字体与排版」（字体族 / 正文字号 / 行高 / 缩放）与编辑器页签的「字体、字号与排版」是同一批控件，两处都调 `patchAppearance`。
+  - 按信息架构收敛：**主题页签只负责配色**（主题预设 / 配色细化 / 应用范围 / 自定义主题），**凡影响排版与编辑行为的统一归「编辑器」页签**；
+  - 删掉主题页签的重复整块，并把原先只存在于主题页签的「正文缩放」**迁入**编辑器页签（直接删会丢功能）；
+  - 顺带给「显示正文行号」「拼写检查」两个 toggle 补 `aria-label`（此前只有可视 label，无障碍名为空）；
+  - 实测唯一性：label 54 处去重 54、aria-label 40 处去重 40、**重复 0 项**，10 个关键控件全页各 1 次。
+
+### Changed
+
+- **`pruneVersions` 默认保留策略由 30 天 / 50 版放宽为 180 天 / 200 版**，并修正在清理时同步删除版本索引条目。这是**行为变更**：开启「本地留痕」的用户本地磁盘占用会上升；未开启者（默认 `keepLocalVersions=false`）无感。
+- **验收门禁 `verify-119-full.mjs` 的 B 段选择器随信息架构调整**：改为按控件存在性选择页签、按多个候选 `aria-label` 定位输入框，使同一份门禁可同时跑在收敛前后两个版本上。这不是放宽断言——B 段由"整段中断"恢复为 **19/19 全通过**（比 1.2.0 基线的 18 条还多 1 条）。
+- 生产环境升级到 1.3.1，`/api/health` 的 `version` 字段与前端静态产物同步。
+
+### Docs
+
+- 新增 `docs/ACCEPTANCE-131.md`（六项缺陷逐条根因 + 修复前后实测数值 + 未覆盖项如实记录）、`docs/RELEASE-131.md`、`docs/DEPLOY-131.md`。
+- 新增缺陷回归门禁 `tools/verify-121.mjs` + `tools/re121/`（A~F 六段 + N 负向对照 + G 回归 + P 零污染自证，共 45 条断言），以及各修复组的独立取证脚本。
+
+### 修复过程中一并清理的仓库脏数据
+
+- **`apps/web/src/stores/settings.ts` 的中文注释在 1.2.0 已发布版本里就是 GBK 乱码**（98 行真乱码 + 14 行「注释原文编码损坏，已清理」占位符）。根因是历史上用 PowerShell `Set-Content` 写 UTF-8 无 BOM 文件——被按 GBK 读入再写回，多字节中文与全角标点被吞。本版按语义还原 **112 行**，并保留全部"为什么"解释；另附两个可复跑校验脚本（`re121-verify-mojibake.mjs` 查残留、`re121-verify-lexical.mjs` 用逐字符状态机确认块注释闭合）。
+  - **教训（已写入 `PROJECT_CONTEXT.md`）**：编辑含中文的源文件一律用 `write` / `edit` 工具，禁用 PowerShell 重定向与 `Set-Content`。
+
+### 已知遗留（不在本版范围）
+
+1. **云端历史版本没有数量上限**：去重后每版一个对象，长期使用单文档可达上千个。`pruneRemoteVersions` 存在但**没有任何调用点**。建议后续加「云端历史保留天数」设置并接上。
+2. **导出侧相邻 `margin` 未与编辑器完全对齐**：编辑器靠 `:has()` 把空段落两侧段落 margin 清零，导出 `BASE_CSS` 只清了空段落自身 → 导出里一个显式空行段间距 44.78px，编辑器 31.19px。纯视觉，不影响数据。
+3. **`p:has(> br.ProseMirror-trailingBreak)` 依赖 TipTap 内部类名**：升级后若改名，空段落 margin 归零会失效（视觉变松，数据不受影响）；`p:empty` / `p.nm-blank` 两条兜底仍在。
+4. **`@neomd/core/dist/` 是坏的**：`tsc` 产物是省略扩展名的 ESM + 空 `index.js`，Node 直接 import 会 `ERR_MODULE_NOT_FOUND`，只有 Vite 能靠 bundler 解析。当前构建链路不依赖它（Vite 直读源码），但 CI 若跑 `pnpm build:core` 后消费产物会踩。
+5. **`SettingsModal.vue` 是死代码**：全仓库无任何 `import`，不影响运行时，可后续删除。
+
+---
+
 ## [1.3.0] - 2026-10-30
 
 本版是 Neo MD 的**首个插件生态版本**：上线插件商店「50 款日常与协作插件套件」，覆盖记录、整理、会议、评审、分派五类高频环节；配套 6 类校验门禁保证三端一致。

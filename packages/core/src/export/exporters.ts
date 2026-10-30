@@ -23,14 +23,31 @@ const BASE_CSS = `
 *{box-sizing:border-box}
 html,body{margin:0;padding:0;background:var(--bg);color:var(--fg)}
 body{font-family:-apple-system,"Segoe UI Variable","Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
- font-size:16px;line-height:1.75;-webkit-font-smoothing:antialiased}
+ font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased}
 .neomd-export{max-width:820px;margin:0 auto;padding:56px 40px 96px}
 .neomd-export h1,.neomd-export h2,.neomd-export h3,.neomd-export h4,.neomd-export h5,.neomd-export h6{
  line-height:1.35;margin:1.6em 0 .6em;font-weight:600;scroll-margin-top:24px}
 .neomd-export h1{font-size:2em;border-bottom:1px solid var(--border);padding-bottom:.3em}
 .neomd-export h2{font-size:1.5em;border-bottom:1px solid var(--border);padding-bottom:.25em}
 .neomd-export h3{font-size:1.25em}
-.neomd-export p{margin:.85em 0}
+/*
+ * 段落间距与行高必须和编辑器正文（packages/ui/src/styles/content.css）保持一致，
+ * 否则「编辑器里看到的排版」和「导出文件里的排版」是两回事。
+ * 1.2.1 起编辑器侧：line-height 1.6、p margin 0.6em；这里同步（原为 1.75 / .85em）。
+ */
+.neomd-export p{margin:.6em 0}
+/*
+ * 空段落 = 用户显式要的「一个空行」（1.2.1 缺陷4 配套）。
+ *
+ * markdownToHtml 为「N 个连续空行」生成 (N-1) 个 p.nm-blank，导出 HTML 会原样带出。
+ * 若不处理，它们会按普通段落渲染（margin .6em 上下 + 一个行盒），
+ * 导出的空行比编辑器里更松。这里把 margin 清零、只保留一个行盒的高度，
+ * 语义与编辑器完全对齐：一个空段落 = 恰好一个空行。
+ * min-height 用正文默认行高 1.6em，不能写 1.75em ——
+ * 那样导出的空行会比编辑器里高出一截。
+ * 注意：本文件是模板字符串，注释里不能出现反引号（会截断字符串）。
+ */
+.neomd-export p.nm-blank{margin:0;min-height:1.6em}
 .neomd-export a{color:var(--accent);text-decoration:none}
 .neomd-export a:hover{text-decoration:underline}
 .neomd-export ul,.neomd-export ol{padding-left:1.6em;margin:.8em 0}

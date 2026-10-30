@@ -439,6 +439,45 @@ async function openSettings(page, tabLabel) {
   }
 }
 
+/**
+ * 打开设置页并把「排版类」控件所在的页签切到前台。
+ *
+ * 为什么不能写死「主题」：1.2.1（缺陷6）把字体族 / 正文字号 / 行高 / 缩放
+ * 从「主题」页签收敛到「编辑器」页签——它们原本在两个页签各有一份，用户改了
+ * 互相不知道改的是哪一个。收敛之后，旧门禁里所有 `openSettings(page,'主题')`
+ * 再去找 `[data-testid="font-family"]` 的写法都会超时，导致 B 段整段中断
+ * （实测 92 vs 基线 110，正好是 B 段 18 条）。
+ *
+ * 这里改成**按控件是否存在**来选页签，而不是按名字猜：
+ *  - 先试「编辑器」（1.2.1 起的归属）；
+ *  - 找不到再回落到「主题」（1.2.0 及以前的归属）。
+ * 这样同一份门禁可以同时跑在收敛前后两个版本上，不会因为一次信息架构调整
+ * 就把「无回归」的结论建立在一个白名单上。
+ */
+async function openSettingsForTypography(page) {
+  await openSettings(page, '编辑器');
+  const hit = await page.locator('[data-testid="font-family"]').count();
+  if (!hit) await openSettings(page, '主题');
+}
+
+/**
+ * 按「多个候选 aria-label」定位输入框并填值。
+ *
+ * 1.2.1 给字号/行高补了「编辑器」前缀（`正文字号` → `编辑器正文字号`），
+ * 原因是缺陷6 里要给同行控件补无障碍名、且要能区分页签来源。
+ * 门禁若只认旧名，会静默填不进去（`fill` 超时），断言随之变假。
+ */
+async function fillByAnyLabel(page, labels, value) {
+  for (const label of labels) {
+    const sel = `input[aria-label="${label}"]`;
+    if (await page.locator(sel).count()) {
+      await page.fill(sel, value);
+      return label;
+    }
+  }
+  throw new Error(`找不到任何候选 aria-label：${labels.join(' / ')}`);
+}
+
 /** 切换编辑器模式（wysiwyg / source / compare / read） */
 async function setMode(page, modeId) {
   const labelMap = { wysiwyg: '所见即所得', source: '源码模式', compare: '对照模式', read: '阅读视图' };
@@ -656,7 +695,8 @@ async function sectionB(chromium) {
     state.settingsSnapshot = await page.evaluate(() => localStorage.getItem('neomd.settings.v1'));
 
     /* ---------- B1 字体 / 字号 / 行高 / 缩放：四模式全覆盖 ---------- */
-    await openSettings(page, '主题');
+    // 页签按控件存在性选择（1.2.1 起排版控件归「编辑器」，见 openSettingsForTypography）
+    await openSettingsForTypography(page);
     const before = await readBodyStyle(page);
     const fontOptions = await page.evaluate(() =>
       Array.from(document.querySelectorAll('[data-testid="font-family"] option')).map((o) => ({ value: o.value, label: (o.textContent || '').trim() })),
@@ -670,11 +710,12 @@ async function sectionB(chromium) {
       await page.selectOption('[data-testid="font-family"]', targetFont);
       await page.waitForTimeout(500);
     }
-    await page.fill('input[aria-label="正文字号"]', '22');
+    // aria-label 兼容：1.2.0 为「正文字号/正文行高」，1.2.1 起为「编辑器正文字号/编辑器正文行高」
+    await fillByAnyLabel(page, ['编辑器正文字号', '正文字号'], '22');
     await page.waitForTimeout(300);
-    await page.fill('input[aria-label="正文行高"]', '2.1');
+    await fillByAnyLabel(page, ['编辑器正文行高', '正文行高'], '2.1');
     await page.waitForTimeout(300);
-    await page.fill('input[aria-label="正文缩放比例"]', '150');
+    await fillByAnyLabel(page, ['正文缩放比例', '编辑器正文缩放比例'], '150');
     await page.waitForTimeout(600);
 
     // 根变量写在 <html> 上，与当前标签页无关，可直接读

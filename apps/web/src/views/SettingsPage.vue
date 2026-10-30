@@ -1820,79 +1820,16 @@ void app;
             </button>
           </div>
 
-          <!-- ⑤ 字体与排版（从「编辑器」页签迁来，均属观感） -->
-          <div class="nm-divider" />
-          <h3 class="pane__title">字体与排版</h3>
-          <div class="field">
-            <div class="row-between">
-              <label class="nm-label">字体族</label>
-              <button
-                type="button"
-                class="nm-btn nm-btn--sm"
-                data-testid="font-reset"
-                title="恢复到系统默认字体与默认字号/行高"
-                @click="resetFontSettings"
-              >
-                <NmIcon name="restore" :size="12" />
-                恢复默认字体
-              </button>
-            </div>
-            <select
-              class="nm-input"
-              :value="appearance.fontFamily"
-              aria-label="正文字体族"
-              data-testid="font-family"
-              @change="patchAppearance({ fontFamily: ($event.target as HTMLSelectElement).value })"
-            >
-              <option v-for="f in FONT_OPTIONS" :key="f.value" :value="f.value">{{ f.label }}</option>
-            </select>
-            <p class="nm-hint">{{ fontHint }}</p>
-          </div>
-          <div class="grid2">
-            <div class="field">
-              <label class="nm-label">正文字号（px）</label>
-              <input
-                class="nm-input"
-                type="number"
-                min="12"
-                max="32"
-                :value="appearance.fontSize"
-                aria-label="正文字号"
-                @input="patchAppearance({ fontSize: Number(($event.target as HTMLInputElement).value) })"
-              />
-            </div>
-            <div class="field">
-              <label class="nm-label">行高</label>
-              <input
-                class="nm-input"
-                type="number"
-                min="1.2"
-                max="2.6"
-                step="0.05"
-                :value="appearance.lineHeight"
-                aria-label="正文行高"
-                @input="patchAppearance({ lineHeight: Number(($event.target as HTMLInputElement).value) })"
-              />
-            </div>
-          </div>
-          <!-- 1.1.7：页宽设置已移除（编辑器固定自适应宽度），pageWidth 字段保留仅作向后兼容 -->
-          <div class="field">
-            <label class="nm-label">正文缩放（50% - 300%）</label>
-            <div class="row-with-btn">
-              <input
-                class="nm-input"
-                type="number"
-                min="50"
-                max="300"
-                step="5"
-                :value="appearance.zoom ?? 100"
-                aria-label="正文缩放比例"
-                @input="patchAppearance({ zoom: Number(($event.target as HTMLInputElement).value) })"
-              />
-              <span class="nm-hint" style="margin: 0">%</span>
-            </div>
-            <p class="nm-hint">也可以直接在正文里按 Ctrl + 滚轮调整，每格 5%。</p>
-          </div>
+          <!--
+            1.2.1（缺陷6）：此处原有的「⑤ 字体与排版」整块已删除。
+            它和「编辑器」页签的「字体、字号与排版」是同一批控件（字体族 / 正文字号 / 行高 /
+            正文缩放），两处都调 `patchAppearance`，用户在两个页签看到同一项、改了互相不知道
+            改的是哪一个 —— 这正是「设置项重复出现」的现场。
+
+            信息架构收敛原则：主题页签只负责**配色**（主题预设 / 配色细化 / 应用范围 /
+            自定义主题），凡是影响「排版与编辑行为」的（字体、字号、行高、缩放、行号、
+            拼写检查）统一归「编辑器」页签，全页仅此一处。
+          -->
 
           <!-- ⑥ 自定义主题管理 -->
           <div class="nm-divider" />
@@ -1967,6 +1904,7 @@ void app;
               <button
                 type="button"
                 class="nm-btn nm-btn--sm"
+                data-testid="font-reset"
                 title="恢复到系统默认字体与默认字号/行高"
                 @click="resetFontSettings"
               >
@@ -1978,6 +1916,7 @@ void app;
               class="nm-input"
               :value="appearance.fontFamily"
               aria-label="正文字体"
+              data-testid="font-family"
               @change="patchAppearance({ fontFamily: ($event.target as HTMLSelectElement).value })"
             >
               <option v-for="f in FONT_OPTIONS" :key="f.value" :value="f.value" :style="{ fontFamily: f.value }">
@@ -2013,6 +1952,23 @@ void app;
               />
             </div>
           </div>
+          <div class="field">
+            <label class="nm-label">正文缩放（50% - 300%）</label>
+            <div class="row-with-btn">
+              <input
+                class="nm-input"
+                type="number"
+                min="50"
+                max="300"
+                step="5"
+                :value="appearance.zoom ?? 100"
+                aria-label="正文缩放比例"
+                @input="patchAppearance({ zoom: Number(($event.target as HTMLInputElement).value) })"
+              />
+              <span class="nm-hint" style="margin: 0">%</span>
+            </div>
+            <p class="nm-hint">也可以直接在正文里按 Ctrl + 滚轮调整，每格 5%。</p>
+          </div>
           <div class="field field--row">
             <div>
               <label class="nm-label">显示正文行号</label>
@@ -2022,6 +1978,7 @@ void app;
               type="button"
               class="toggle-btn"
               data-testid="editor-line-numbers"
+              aria-label="显示正文行号"
               :class="{ 'is-on': appearance.showLineNumbers }"
               :title="appearance.showLineNumbers ? '关闭正文行号' : '开启正文行号'"
               :aria-pressed="appearance.showLineNumbers"
@@ -2047,6 +2004,7 @@ void app;
               type="button"
               class="toggle-btn"
               data-testid="editor-spellcheck"
+              aria-label="拼写检查"
               :class="{ 'is-on': appearance.spellcheck }"
               :title="appearance.spellcheck ? '关闭拼写检查' : '开启拼写检查'"
               :aria-pressed="appearance.spellcheck"

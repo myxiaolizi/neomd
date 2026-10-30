@@ -1,0 +1,62 @@
+{
+  "at": "2026-10-30T12:08:30.586Z",
+  "web": "http://127.0.0.1:5178",
+  "exitCode": 0,
+  "setup": {
+    "vaultId": "re121rightdommvuxhmzg",
+    "docId": "docmvuxho9a70hwxkcy",
+    "docPath": "RE121-RIGHT-历史版本.md",
+    "rev": 6,
+    "mergedCount": 6,
+    "mergedRevs": [
+      6,
+      5,
+      4,
+      3,
+      2,
+      1
+    ],
+    "distinctContents": 6
+  },
+  "dom": {
+    "rightstackPresent": true,
+    "rect": {
+      "x": 1041,
+      "y": 70,
+      "w": 399,
+      "h": 800
+    },
+    "rowCount": 6,
+    "rows": [
+      "v6刚刚云端",
+      "v5刚刚云端",
+      "v4刚刚云端",
+      "v3刚刚云端",
+      "v2刚刚云端",
+      "v1刚刚云端"
+    ],
+    "moreBtn": "查看全部版本…",
+    "emptyText": null,
+    "panelText": "版本历史\nv6\n刚刚\n云端\nv5\n刚刚\n云端\nv4\n刚刚\n云端\nv3\n刚刚\n云端\nv2\n刚刚\n云端\nv1\n刚刚\n云端\n查看全部版本…"
+  },
+  "shot1": "C:\\Data\\BAC\\neomd\\neomd-V1\\docs\\shots-121\\re121-right-history-rows.png",
+  "shotEl": "C:\\Data\\BAC\\neomd\\neomd-V1\\docs\\shots-121\\re121-right-history-panel.png",
+  "preview": {
+    "mergedCount": 6,
+    "oldestRev": 1,
+    "newestRev": 6,
+    "oldestHead": "# 版本 0\n\n初始内容 RE121-RIGHT-0\n",
+    "newestHead": "# 版本 5\n\n第 5 次保存的正文，唯一标记 RE121-RIGHT-5。\n正文行 5。\n正文行 5。\n正文行 5。\n",
+    "liveHead": "# 版本 5\n\n第 5 次保存的正文，唯一标记 RE121-RIGHT-5。\n正文行 5。\n正文行 5。\n正文行 5。\n",
+    "oldestDiffersFromNewest": true,
+    "oldestDiffersFromLive": true,
+    "modalOpen": true,
+    "modalRowCount": 6,
+    "modalSelectedRow": "v1刚刚39 B云端",
+    "modalSource": "共 6 个版本（本地 0 · 云端 6），按时间倒序",
+    "modalPreviewHead": "−\n# 版本 5\n+\n# 版本 0\n \n \n−\n第 5 次保存的正文，唯一标记 RE121-RIGHT-5。\n+\n初始内容 RE121-RIGHT-0\n−\n正文行 5。\n−\n正文行 5。\n+\n \n−\n正文行 5。\n−\n正文行 5。\n−\n正文行 5。\n−\n正文行 5。",
+    "modalDiffStat": "+3−8"
+  },
+  "shot2": "C:\\Data\\BAC\\neomd\\neomd-V1\\docs\\shots-121\\re121-right-history-preview.png",
+  "shotModal": "C:\\Data\\BAC\\neomd\\neomd-V1\\docs\\shots-121\\re121-right-history-modal.png"
+}

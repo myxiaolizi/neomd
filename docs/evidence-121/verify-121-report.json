@@ -1,0 +1,91 @@
+{
+  "base": "http://127.0.0.1:5178",
+  "api": "http://127.0.0.1:3200",
+  "startedAt": "2026-10-30T12:53:08.076Z",
+  "durationMs": 21285,
+  "sections": [
+    "D"
+  ],
+  "results": [
+    {
+      "id": "D01",
+      "section": "D",
+      "name": "D1 源码模式写入的 Markdown 原样进入文档模型",
+      "expect": "编辑器内容 === 写入内容（字节级）",
+      "actual": "写入 67B / 实测 67B（一致）",
+      "pass": true,
+      "repro": "切源码模式 -> 全选删除 -> 逐字输入含空行的 Markdown -> 读 activeTab.content",
+      "note": ""
+    },
+    {
+      "id": "D02",
+      "section": "D",
+      "name": "D2 源码 <-> 所见即所得 往返后空行不丢",
+      "expect": "往返后内容仍与写入完全一致（字节级）",
+      "actual": "一致；WYSIWYG 块结构=[{\"tag\":\"P\",\"empty\":false},{\"tag\":\"P\",\"empty\":true},{\"tag\":\"P\",\"empty\":false},{\"tag\":\"PRE\",\"empty\":false},{\"tag\":\"P\",\"empty\":true},{\"tag\":\"P\",\"empty\":true}]",
+      "pass": true,
+      "repro": "源码模式写入 -> 切所见即所得 -> 再切回源码 -> 读 activeTab.content",
+      "note": "空行在 WYSIWYG 里必须表现为空段落（blocks 里 empty=true），否则数据不可逆"
+    },
+    {
+      "id": "D03",
+      "section": "D",
+      "name": "D3 保存后仓库文件内容与写入完全一致（不丢空行、不规范化）",
+      "expect": "vault.read(docId) === 写入内容（字节级）",
+      "actual": "一致",
+      "pass": true,
+      "repro": "写入后 Ctrl+S（store.saveActiveTab）-> 读 vault.read(docId)",
+      "note": ""
+    },
+    {
+      "id": "D04",
+      "section": "D",
+      "name": "D4 空行数量精确保持（段落间 2 / 文末 3 / 代码块内 2）",
+      "expect": "段落间最大连续空行 = 2；文末换行数 = 3（>0 才证明未被 trim 吃掉）；代码块内空行 = 2（>1 才证明未被压缩）",
+      "actual": "段落间=2 文末换行=3 代码块内=2（写入基线：2 / 3 / 2）",
+      "pass": true,
+      "repro": "同 D3，用 blankStats 精确统计各类空行数量",
+      "note": "三类空行分别对应：段落间隙 / 文末换行被 trim / 代码块内空行被压"
+    },
+    {
+      "id": "D05",
+      "section": "D",
+      "name": "D5 重新打开文档后空行仍不丢（重开链路）",
+      "expect": "刷新页面并重开文档后，仓库内容与标签内容都与写入一致",
+      "actual": "vault=一致 / tab=一致",
+      "pass": true,
+      "repro": "保存后 page.reload() -> openDoc(docId) -> 读 vault.read 与 activeTab.content",
+      "note": ""
+    },
+    {
+      "id": "D06",
+      "section": "D",
+      "name": "D6 空行往返过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "P01",
+      "section": "P",
+      "name": "P1 本脚本未向生产库写设置（设置类改动全程走浏览器内假云端）",
+      "expect": "自证口径：本脚本自身对 /api/settings 的 PUT 请求为 0 条（Playwright 拦截的请求不经过 httpJson，不计入）",
+      "actual": "自身写请求 0 条；生产设置版本 跑测前=276 跑测后=276",
+      "pass": true,
+      "repro": "",
+      "note": "版本号变化也可能来自并行任务/其它设备；真正能归因的是「本脚本有没有发过 PUT」"
+    },
+    {
+      "id": "P02",
+      "section": "P",
+      "name": "P2 本脚本未发起任何建仓/改仓请求",
+      "expect": "自证口径：本脚本自身对 /api/vaults 的写请求为 0 条",
+      "actual": "自身写请求 0 条；仓库集合变化 无",
+      "pass": true,
+      "repro": "",
+      "note": "并行修复组会建/删自己的临时仓库，总数变化不可归因于本脚本"
+    }
+  ]
+}

@@ -16,6 +16,7 @@ import {
   generateTitle,
   sha256Hex,
   sharedVaultRegistry,
+  mergeVersionRecords,
   type ProxyTransport,
   type SearchHit,
 } from '@neomd/core';
@@ -1012,8 +1013,25 @@ export const useAppStore = defineStore('app', () => {
       const byChars = asCfg.versionChars > 0 && deltaChars >= asCfg.versionChars;
       shouldVersion = byTime || byChars;
     }
+    /*
+     * ## 1.2.1 缺陷5 修复：`shouldVersion === false` 的自动保存也必须归档
+     *
+     * 旧逻辑把「归档」完全挂在 `shouldVersion` 上（节流：5 分钟 / 300 字才留一版）。
+     * 后果是**自动保存路径（`recordVersion=false`）根本不产生任何历史版本**：
+     *  - 默认设置是自动保存开启 + 节流 5 分钟；
+     *  - 用户连续改十几次、每次间隔几十秒，`shouldVersion` 一直是 false；
+     *  - 等到第 5 分钟那次保存时，`prevContent` 已经是「节流窗口内最后一次内容」，
+     *    中间十几次改动**一次都没被归档** —— 面板里自然只剩一两条。
+     *
+     * 现在把两件事解耦：
+     *  - `shouldVersion` 继续决定**本地留痕**（`vault.save(..., recordVersion)`）
+     *    与 `lastVersionedMap` 节流，避免本地磁盘被高频快照打爆（产品约定不变）；
+     *  - **云端归档每一版都做**：云端按内容寻址 + 按内容身份去重（见
+     *    `listRemoteVersions` / `mergeVersionRecords`），同一内容重复归档不会产生
+     *    重复条目，成本只是多一次 PUT；换来的是「每次保存都能回滚」。
+     */
     const devName = currentDeviceName();
-    // 本地留痕策略关闭时（PC 端默认），先在保存前把「旧内容」取出来，保存后异步推到云端
+    // 本地留痕策略关闭时（PC 端默认），先在保存前把「旧内容」取出来，保存后推到云端
     // versions/<docId>/，保证历史版本不丢，同时本地磁盘只保留最新版本。
     //
     // 1.1.7 修复：这里原先判断 `storageConfigured`（只认自配 S3），未配 S3 的登录用户
@@ -1021,7 +1039,15 @@ export const useAppStore = defineStore('app', () => {
     // 与「同步不触发」是同一个根因，必须一起改用 canSync()。
     const keepLocal = Boolean(settingsStore.settings.localVault?.keepVersions);
     let prevContent = '';
-    if (shouldVersion && !keepLocal && canSync()) {
+    /*
+     * 1.2.1：不再用 `!keepLocal` 限制云端归档。
+     *
+     * 旧条件 `shouldVersion && !keepLocal && canSync()` 意味着「开启了本地留痕的用户
+     * 永远不往云端归档」，于是同一篇文档在 PC 端（本地留痕）与 Web 端（无留痕）看到的
+     * 历史条数完全不同，跨端回滚不可能。现在本地与云端**双写**，
+     * 由 `mergeVersionRecords()` 按内容身份（rev+hash）合并去重，两端看到同一条时间线。
+     */
+    if (canSync()) {
       try {
         prevContent = await vault.value.read(tab.docId);
       } catch {
@@ -1031,9 +1057,17 @@ export const useAppStore = defineStore('app', () => {
     const saved = await vault.value.save(tab.docId, tab.content, 'save', shouldVersion, devName);
     if (shouldVersion) {
       lastVersionedMap.set(tab.docId, { at: Date.now(), len: tab.content.length });
-      if (prevContent && prevContent !== tab.content) {
-        void archiveVersionToCloud(tab.docId, Math.max(1, saved.rev - 1), prevContent);
-      }
+    }
+    /*
+     * 归档「保存前的旧内容」。
+     *
+     * 1.2.1：改为 `await`（原先 `void` 丢弃 Promise）。原因见 `archiveVersionToCloud`
+     * 的注释：fire-and-forget 的 PUT 会在页面刷新/切仓库时被中断，
+     * 表现为「历史版本时有时无」。失败仍不抛错（函数内部已 catch 并记日志），
+     * 因此不会阻断保存流程。
+     */
+    if (prevContent && prevContent !== tab.content) {
+      await archiveVersionToCloud(tab.docId, Math.max(1, saved.rev - 1), prevContent);
     }
     tab.dirty = false;
     tab.title = saved.title;
@@ -1799,8 +1833,17 @@ export const useAppStore = defineStore('app', () => {
     if (!engine || !docId) return [];
     try {
       const remote = await engine.listRemoteVersions(docId);
+      /*
+       * 1.2.1 修复：id 必须包含 createdAt。
+       *
+       * 旧 id 是 `${docId}-${rev}-${hash}`，而云端**同一版可能被归档多次**
+       * （实测线上就有 ts 不同的两个同内容对象），此时列表里出现两条 id 完全相同的项，
+       * Vue 的 `:key="v.id"` 会把它们当成同一个节点复用 → 点击第二条时高亮/预览错位。
+       * 去重已由 `listRemoteVersions()` 在内容身份层面完成，这里再让 id 天然唯一，
+       * 保证「同一 rev 在不同时间被归档」时也不会渲染冲突。
+       */
       return remote.map((r) => ({
-        id: `${docId}-${r.rev}-${r.hash}`,
+        id: `${docId}-${r.rev}-${r.hash}-${r.createdAt}`,
         docId,
         rev: r.rev,
         hash: r.hash,
@@ -1816,6 +1859,54 @@ export const useAppStore = defineStore('app', () => {
     }
   }
 
+  /**
+   * 读取某个历史版本的内容（本地留痕与云端统一入口）。
+   *
+   * ## 1.2.1 修复：必须按 key 的形态路由到正确的读取器
+   *
+   * 旧 `HistoryModal` 按「来源」二选一读：`source === 'cloud' ? readCloudVersion : vault.readVersion`。
+   * 一旦改成「本地 + 云端合并展示」，同一份列表里两种 key 混在一起，
+   * 再用一个全局 source 判断就必然读错：本地 key（`.neomd/versions/...`）被送去
+   * 云端对象存储 → 404「对象不存在」；云端 key（`versions/<docId>/<ts>-...`）
+   * 被送去本地适配器 → 「文件不存在」。
+   *
+   * 实测证据（修复前，浏览器内直接调用）：
+   *   `vault.restoreVersion(docId, 'mdadmin/.../versions/<docId>/<ts>-...')`
+   *   → `文件不存在: mdadmin/neomd/users/admin/vaults/.../versions/...md`
+   * 也就是说**旧面板的「恢复此版本」在本地留痕存在时 100% 失败**。
+   *
+   * 判据：本地留痕的 key 一律以 `.neomd/` 开头（见 `Vault.versionPath`）；
+   * 其余视为云端对象键，交给 `SyncEngine.readRemoteVersion()`。
+   */
+  async function readVersionContent(version: Pick<VersionRecord, 'storageKey'>): Promise<string> {
+    const key = version.storageKey;
+    if (!key) throw new Error('版本缺少 storageKey，无法读取');
+    if (key.startsWith('.neomd/') || key.startsWith('.neomd\\')) {
+      if (!vault.value) throw new Error('仓库尚未打开');
+      return vault.value.readVersion(key);
+    }
+    return readCloudVersion(key);
+  }
+
+  /**
+   * 列出某篇文档的**完整**历史版本：本地留痕 ∪ 云端，按时间倒序、按内容去重。
+   *
+   * 这是「历史版本」面板唯一应该调用的入口（1.2.1 缺陷5 修复）。
+   *
+   * 为什么不能继续二选一：`HistoryModal.load()` 旧逻辑是
+   * `if (local.length) 用 local; else 用 cloud`。只要本地残留 1 条旧快照，
+   * 云端真实存在的 N 条就被整体忽略 → 用户看到「只有一版」。
+   *
+   * 云端读取失败**不能**让整个列表变空：离线/未登录时本地留痕仍然有价值，
+   * 因此这里分别 catch，各自降级。
+   */
+  async function listDocVersions(docId: string, options: { limit?: number } = {}): Promise<VersionRecord[]> {
+    if (!docId) return [];
+    const local = vault.value ? await vault.value.listVersions(docId).catch(() => []) : [];
+    const cloud = await listCloudVersions(docId).catch(() => []);
+    return mergeVersionRecords(local, cloud, { limit: options.limit ?? 200, docId });
+  }
+
   /** 读取云端某个历史版本的内容 */
   async function readCloudVersion(storageKey: string): Promise<string> {
     const engine = buildSyncEngine();
@@ -1824,23 +1915,49 @@ export const useAppStore = defineStore('app', () => {
   }
 
   /**
-   * 把一次保存前的旧内容归档到云端历史版本。
-   * 失败只记日志，不打断保存流程（本地保存已经成功）。
+   * 纯合并（不发起任何 IO）：把已在手上的本地/云端版本合成一条时间线。
+   *
+   * 面板在「云端失败降级」等场景下需要自己拼装列表，因此把 core 的
+   * `mergeVersionRecords()` 暴露成 store 方法，避免各处重复实现去重规则
+   * （去重键 = `rev|hash`，排序 = createdAt 倒序，详见 core 里的注释）。
    */
-  async function archiveVersionToCloud(docId: string, rev: number, markdown: string): Promise<void> {
+  function mergeVersions(local: VersionRecord[], cloud: VersionRecord[], docId: string, limit = 200): VersionRecord[] {
+    return mergeVersionRecords(local, cloud, { limit, docId });
+  }
+
+  /**
+   * 把一次保存前的旧内容归档到云端历史版本。
+   *
+   * ## 1.2.1 修复：`fire-and-forget` 会让版本**静默丢失**
+   *
+   * 旧实现由 `saveActiveTab()` 以 `void archiveVersionToCloud(...)` 调用：
+   *  - Promise 被丢弃，页面跳转/刷新/切仓库时未完成的 PUT 直接中断；
+   *  - 失败只写一条 `syncLogs`，用户在历史面板里看不到任何提示；
+   *  - 更糟的是 `engine.putRemoteVersion()` 的 ts 用 `Date.now()`，
+   *    与紧随其后的 `syncNow()` 推送阶段的归档撞在同一毫秒 → 同 key 覆盖。
+   *
+   * 现在：ts 唯一（`SyncEngine.nextVersionTs`）+ 调用方 `await`（见 saveActiveTab），
+   * 失败仍只记日志（不阻断本地保存，本地已经落盘成功），但**日志会带上 key**，
+   * 便于排查「为什么这一版没上云」。
+   *
+   * @returns 写入的云端对象键；未配置同步时返回 null
+   */
+  async function archiveVersionToCloud(docId: string, rev: number, markdown: string): Promise<string | null> {
     const engine = buildSyncEngine();
-    if (!engine) return;
+    if (!engine) return null;
     try {
       const hash = await sha256Hex(markdown, 16);
-      await engine.putRemoteVersion(docId, rev, hash, markdown);
+      return await engine.putRemoteVersion(docId, rev, hash, markdown);
     } catch (e) {
       const entry: SyncLogEntry = {
         id: uid('log'),
         at: Date.now(),
         level: 'warn',
         message: `云端版本归档失败：${(e as Error).message}`,
+        detail: `docId=${docId} rev=${rev}`,
       };
       syncLogs.value = [entry, ...syncLogs.value].slice(0, 200);
+      return null;
     }
   }
 
@@ -2756,7 +2873,11 @@ export const useAppStore = defineStore('app', () => {
     updateSyncBehavior,
     syncBehavior,
     listCloudVersions,
+    listDocVersions,
+    mergeVersions,
+    readVersionContent,
     readCloudVersion,
+    archiveVersionToCloud,
     resolveConflict,
     setSort,
     setFolderOrder,

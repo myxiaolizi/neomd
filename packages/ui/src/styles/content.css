@@ -2,8 +2,28 @@
 .nm-content {
   font-family: var(--font-content);
   font-size: var(--content-font-size, 16px);
-  line-height: var(--content-line-height, 1.75);
-  color: var(--fg);
+  /*
+   * 行高（1.2.1 缺陷1）。
+   *
+   * 实测结论：这里**没有**「两层 line-height 相乘」——`.nm-content` 与
+   * `.ProseMirror` 都带这个类，但 CSS 里无单位数的 line-height 是直接覆盖、
+   * 不参与相乘，computed 值始终是 16px × 1.75 = 28px。
+   *
+   * 真正让用户觉得「行距过大」的是 1.75 本身偏松（28px 行盒 vs 20px 字形盒，
+   * 每行上下各 4px half-leading）叠加上段落 margin。默认值在
+   * `packages/core/src/settings/settings.ts` 里同步下调为 1.6，
+   * 这里的兜底值必须跟着改，否则「设置读不到时」会比用户选的值更松。
+   */
+  line-height: var(--content-line-height, 1.6);
+  /*
+   * 文字色优先取 `--content-fg`（正文纸张专用文字色）。
+   *
+   * 为什么不能直接写 `var(--fg)`：主题有「应用范围」开关，选「仅正文」时
+   * `applyThemeVars()` 只写 --content-* 系列变量、不写 --fg，此时正文自定义
+   * 字色会失效、回退成界面 chrome 的字色。`--fg` 保留为兜底，
+   * 因为旧主题 / 未走主题系统的场景只定义了 --fg。
+   */
+  color: var(--content-fg, var(--fg));
   word-wrap: break-word;
   overflow-wrap: break-word;
 }
@@ -46,8 +66,73 @@
   color: var(--fg-2);
 }
 
+/*
+ * 段落间距（1.2.1 缺陷1）。
+ *
+ * 改前 0.85em（16px 字号下 13.6px）。它本身不算离谱，问题在于它和 1.75 的行高
+ * **同向放大**：28px 行盒里字形只占 20px，上下各有 4px half-leading，于是相邻两段
+ * 的**字形间净空白** = 13.6（margin）+ 4 + 4（两侧 half-leading）= 21.6px = 1.35em，
+ * 比一个整行还空。用户说的「段落之间更空」就是这个数。
+ *
+ * 收到 0.6em（9.6px）后，配合 1.6 行高（half-leading 2.8px）：
+ * 净空白 = 9.6 + 2.8 + 2.8 = 15.2px ≈ 0.95em，落在「一个行距以内」的合理区间。
+ */
 .nm-content p {
-  margin: 0.85em 0;
+  margin: 0.6em 0;
+}
+
+/*
+ * 空段落 = 用户显式要的「一个空行」（1.2.1 缺陷1 + 缺陷4 的交点）。
+ *
+ * 两件事必须同时成立，缺一不可：
+ * 1. **数据可逆**：空段落是空行在 HTML 里的唯一载体。`markdown-bridge.ts` 把
+ *    「N 个连续空行」渲染成 (N-1) 个空段落，回写时再换算回 N 个空行。
+ *    因此空段落**不能**用 display:none / height:0 藏掉 —— 那样用户在所见即所得里
+ *    就点不到、也看不出自己敲了几个空行，编辑体验与数据都会失真。
+ * 2. **视觉不失控**：空段落自己的 margin 必须清零。否则「空段落 28px 行盒 +
+ *    上下各 13.6px margin」会让两个**非空**段落之间凭空多出 55px（QA 实测值），
+ *    这正是「段落之间更空」最刺眼的一种。
+ *
+ * 清零后一个空段落 = 恰好一个行盒高 = 视觉上正好「一个空行」，语义精确。
+ *
+ * 两个选择器都要写：
+ * - `p.nm-blank` 是阅读视图 / 导出预览里的形态（innerHTML 直出，class 保留）；
+ * - `:has(> br.ProseMirror-trailingBreak)` 是所见即所得的形态 —— TipTap 的
+ *   Paragraph schema 没有 class 属性，`class="nm-blank"` 会被它丢掉，但空段落里
+ *   一定有一个 `ProseMirror-trailingBreak` 的 br 用来放光标，所以按这个特征匹配。
+ * - `:empty` 兜住「完全空、连 br 都没有」的形态。
+ */
+.nm-content p.nm-blank,
+.nm-content p:empty,
+.nm-content p:has(> br.ProseMirror-trailingBreak:only-child) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+/*
+ * 空段落**本身就是分隔符**，紧邻它的普通段落不该再叠一份 margin（1.2.1 缺陷1）。
+ *
+ * 为什么必须补这一条：空段落 margin 清零只解决了「空段落自己不撑高」，
+ * 但 p1 的 margin-bottom 与 p2 的 margin-top 之间夹了一个空段落，
+ * 两者**不再相邻、不能折叠**，于是「一个空行」的实际留白 = 28（行盒）
+ * + 9.6 + 9.6 = 47.2px，实测字形间空白 55.2px ≈ 3.45em ——
+ * 用户明明只敲了一个空行，看到的却接近两个半空行。
+ *
+ * 清零后：一个空行 = 恰好两个行距（28×2 = 56px 基线间距，字形间 36px），
+ * 与「所见即所得里敲一个空行」的直觉完全一致。
+ *
+ * 三种空段落形态（class / :empty / TipTap 的 trailingBreak）都要各写一遍，
+ * 因为 CSS 没有「把复合选择器提取成变量」的语法，只能重复。
+ */
+.nm-content p.nm-blank + p,
+.nm-content p:empty + p,
+.nm-content p:has(> br.ProseMirror-trailingBreak:only-child) + p {
+  margin-top: 0;
+}
+.nm-content p:has(+ p.nm-blank),
+.nm-content p:has(+ p:empty),
+.nm-content p:has(+ p > br.ProseMirror-trailingBreak:only-child) {
+  margin-bottom: 0;
 }
 
 .nm-content a {

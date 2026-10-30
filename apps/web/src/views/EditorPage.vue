@@ -2291,12 +2291,14 @@ async function loadRightHistoryVersions(): Promise<void> {
     return;
   }
   try {
-    const local = await app.vault.listVersions(docId);
-    if (local.length) {
-      cloudVersions.value = local;
-      return;
-    }
-    cloudVersions.value = await app.listCloudVersions(docId);
+    /*
+     * 1.2.1 缺陷5（同源修复）：这里原先与 HistoryModal 的旧 load() 完全同构 ——
+     * `if (local.length) { 用 local; return }`，只要本地留痕残留 1 条，
+     * 云端真实存在的 N 条历史就被整体忽略，右侧栏「历史版本」区块也只显示 1 条。
+     * 统一改走 store 的合并入口：本地 ∪ 云端 → 按内容身份（rev+hash）去重 → 时间倒序。
+     * 云端不可用时该方法内部已把云端一侧降级为空数组，本地留痕仍然可见。
+     */
+    cloudVersions.value = await app.listDocVersions(docId);
   } catch {
     cloudVersions.value = [];
   }
@@ -3632,7 +3634,19 @@ const tabBarTabs = computed(() =>
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--border);
-  background: var(--bg);
+  /*
+   * 分屏第二栏必须用**正文纸张色**，不能是界面外壳色（1.2.1 缺陷3）。
+   *
+   * 改前写的是 `background: var(--bg)`，而 `--bg` 是 `--chrome-bg`（侧栏/工具栏那一层
+   * 的界面底色）。左侧主栏没有自己的背景，透出的是祖先 `.shell__main` 的
+   * `background: var(--bg-elevated)`，也就是正文纸张色。两者在浅色主题下恰好都接近白
+   * （#ffffff vs #f2f4f7）不容易被发现，但深色主题下就是左 #14171c / 右 #1b1f26、
+   * 护眼绿下是左 #e8f5e9 / 右 #d9efdb —— 用户看到的「右侧颜色不对」正是这个。
+   *
+   * 取 `--content-bg` 并与主栏用同一个兜底，保证两栏**永远同源同色**；
+   * 不用 `--bg-paper`：全仓没有这个变量（计算值是空串），写了也不生效。
+   */
+  background: var(--content-bg, var(--bg-elevated));
 }
 .shell__panes--h .shell__splitpane {
   border-left: none;

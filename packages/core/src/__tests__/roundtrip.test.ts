@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { htmlToMarkdown, markdownToHtml, splitFrontmatter, joinFrontmatter } from '../vault/markdown-bridge';
+import { htmlToMarkdown, htmlToSource, markdownToHtml, splitFrontmatter, joinFrontmatter } from '../vault/markdown-bridge';
 import {
   buildDatetimeName,
   buildDocName,
@@ -11,6 +11,7 @@ import {
   uniquePath,
 } from '@neomd/shared';
 import { parseDoc, resolveTitle, parseYaml, stringifyYaml } from '../vault/markdown-parse';
+import { buildExportHtml } from '../export/exporters';
 
 const roundtrip = (s: string): string => htmlToMarkdown(markdownToHtml(s));
 
@@ -63,6 +64,110 @@ describe('markdown 往返保真', () => {
   it('wikilink data attrs', () => {
     const html = markdownToHtml('[[笔记名]]');
     expect(html).toContain('data-wikilink="笔记名"');
+  });
+});
+
+/**
+ * 1.2.1 缺陷4：文件保存后空换行丢失。
+ *
+ * 三条链路各自都曾经丢数据，必须逐条钉住：
+ * ① markdownToHtml 把连续空行当块分隔符丢掉（markdown-it 默认行为）；
+ * ② htmlToMarkdown 用 `if (s) parts.push(s)` 丢空段落、用 `.trim()` 吃文末换行；
+ * ③ htmlToMarkdown 对整串 markdown 跑全局 `\n{3,}` 折叠，把代码块内空行一起吃了。
+ *
+ * 断言口径统一为**逐字节相等**（含文末换行），因为这是用户打开文件再保存后
+ * 期望看到的结果；用 `.replace(/\n+$/,'')` 之类放宽会让缺陷①③重新溜过去。
+ */
+describe('空行保真（1.2.1 缺陷4）', () => {
+  /** 源文本 → HTML → 源文本，必须逐字节相等 */
+  const roundtripSource = (s: string): string => htmlToSource(markdownToHtml(s), s);
+
+  const cases: Array<[string, string]> = [
+    ['单空行（标准段落分隔，不得增删）', '第一段\n\n第二段\n'],
+    ['段间 2 个空行', '第一段\n\n\n第二段\n'],
+    ['段间 3 个空行', '第一段\n\n\n\n第二段\n'],
+    ['段间 5 个空行', '第一段\n\n\n\n\n\n第二段\n'],
+    ['文末 1 个空行（文件以换行结尾）', '正文\n\n'],
+    ['文末 3 个空行', '正文\n\n\n\n'],
+    ['文末无换行（手写单行文件）', '正文'],
+    ['代码块内 3 个空行（逐字保留）', '```js\nconst a = 1;\n\n\n\nconst b = 2;\n```\n'],
+    ['代码块内空行 + 段间空行', '上文\n\n\n```\nx\n\n\ny\n```\n\n\n下文\n'],
+    ['硬换行（行尾两空格）', '第一行  \n第二行\n'],
+    ['frontmatter + 段间空行', '---\ntitle: T\n---\n\n正文\n\n\n后文\n'],
+    ['标题 + 列表 + 空行', '# 标题\n\n- a\n- b\n\n\n段落\n'],
+    ['空行紧邻代码块围栏', '正文\n\n\n```\ncode\n```\n'],
+  ];
+
+  for (const [name, src] of cases) {
+    it(name, () => {
+      expect(roundtripSource(src)).toBe(src);
+    });
+  }
+
+  it('连续 N 个空行渲染成 N-1 个空段落（可逆载体）', () => {
+    // N=1 是标准段落分隔，不产生空段落；N≥2 才需要额外载体
+    expect((markdownToHtml('A\n\nB\n').match(/<p class="nm-blank"><\/p>/g) ?? []).length).toBe(0);
+    expect((markdownToHtml('A\n\n\nB\n').match(/<p class="nm-blank"><\/p>/g) ?? []).length).toBe(1);
+    expect((markdownToHtml('A\n\n\n\nB\n').match(/<p class="nm-blank"><\/p>/g) ?? []).length).toBe(2);
+    expect((markdownToHtml('A\n\n\n\n\n\nB\n').match(/<p class="nm-blank"><\/p>/g) ?? []).length).toBe(4);
+  });
+
+  it('代码块内部不生成空段落（否则会往代码里插节点）', () => {
+    expect(markdownToHtml('```\na\n\n\nb\n```\n')).not.toContain('nm-blank');
+  });
+
+  it('所见即所得里按回车产生的空段落回写成空行', () => {
+    // TipTap 的 Paragraph schema 没有 class 属性，空段落可能带 class 也可能不带，
+    // 两种形态都必须被认成「一个空行」
+    expect(htmlToMarkdown('<p>A</p><p class="nm-blank"></p><p>B</p>')).toBe('A\n\n\nB\n');
+    expect(htmlToMarkdown('<p>A</p><p></p><p>B</p>')).toBe('A\n\n\nB\n');
+    expect(htmlToMarkdown('<p>A</p><p class="nm-blank"></p><p class="nm-blank"></p><p>B</p>')).toBe('A\n\n\n\nB\n');
+  });
+
+  it('代码块内容逐字保留，不做任何空白规整', () => {
+    const src = '```\na\n\n\nb\n```\n';
+    expect(htmlToMarkdown(markdownToHtml(src))).toBe(src);
+    // 行尾空格在代码块里是内容，不能被剪
+    expect(htmlToMarkdown(markdownToHtml('```\nx  \ny\n```\n'))).toBe('```\nx  \ny\n```\n');
+  });
+
+  it('硬换行不会因 <br> 后的字面换行被升级成段落分隔', () => {
+    // markdown-it 渲染 `<br>\n`，那个 \n 是源码缩进不是内容
+    expect(markdownToHtml('A  \nB')).toContain('<br>');
+    expect(htmlToMarkdown(markdownToHtml('A  \nB\n'))).toBe('A  \nB\n');
+  });
+
+  it('图片段落不会被误判成空行', () => {
+    const src = '![alt](https://example.com/a.png)\n';
+    expect(htmlToMarkdown(markdownToHtml(src))).toBe(src);
+  });
+});
+
+/**
+ * 导出链路与编辑器正文必须同排版（1.2.1 缺陷4 配套）。
+ *
+ * 为什么这条必须测：`markdownToHtml` 现在会为连续空行产出 `<p class="nm-blank">`，
+ * 而导出（HTML/PDF）用的是自己的一份 BASE_CSS，不是 `content.css`。
+ * 若 BASE_CSS 里没有对应规则，导出的空行就会按普通段落渲染（margin .6em + 一个行盒），
+ * 比编辑器里松一截 —— 典型的「修了编辑器、坏了导出」。
+ */
+describe('导出排版与编辑器一致（1.2.1）', () => {
+  it('BASE_CSS 含空段落规则，且用默认行高 1.6em 而非旧值 1.75em', () => {
+    const html = buildExportHtml('A\n\n\nB\n', { title: 'T' });
+    // 空段落规则必须存在，且 margin 归零 + min-height 与默认行高一致
+    expect(html).toMatch(/\.neomd-export p\.nm-blank\{margin:0;min-height:1\.6em\}/);
+    // 段落间距与正文一致（0.6em），不能残留旧值 .85em
+    expect(html).toMatch(/\.neomd-export p\{margin:\.6em 0\}/);
+    expect(html).not.toMatch(/\.neomd-export p\{margin:\.85em 0\}/);
+    // 正文行高与编辑器默认值一致
+    expect(html).toMatch(/font-size:16px;line-height:1\.6/);
+  });
+
+  it('导出的 HTML 保留空行载体（空段落节点不被丢掉）', () => {
+    const html = buildExportHtml('A\n\n\nB\n', { title: 'T' });
+    expect(html).toContain('class="nm-blank"');
+    // 2 个连续空行 → 1 个空段落，与编辑器侧数量关系一致
+    expect((html.match(/<p class="nm-blank"><\/p>/g) ?? []).length).toBe(1);
   });
 });
 

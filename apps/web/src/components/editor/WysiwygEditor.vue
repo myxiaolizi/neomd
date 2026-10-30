@@ -329,7 +329,7 @@ defineExpose({ focus, scrollToRatio, runCommand, getHTML, getSelectionText, repl
   <div
     class="wysiwyg"
     :class="{ 'wysiwyg--hide-leading-h1': hasDuplicateLeadingH1 }"
-    :style="{ '--content-font-size': `${fontSize ?? 16}px`, '--content-line-height': String(lineHeight ?? 1.75) }"
+    :style="{ '--content-font-size': `${fontSize ?? 16}px`, '--content-line-height': String(lineHeight ?? 1.6) }"
   >
     <!--
       标题行插槽：放在滚动容器 `.wysiwyg` 内部（不是外层），因此会随正文一起滚走，

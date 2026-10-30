@@ -38,6 +38,50 @@ const INDEX_FILE = `${META_DIR}/index.json`;
 const VERSIONS_DIR = `${META_DIR}/versions`;
 const SNAPSHOT_DIR = `${META_DIR}/snapshots`;
 
+/**
+ * 本地历史版本索引（1.2.1 缺陷5 修复引入）。
+ *
+ * ## 为什么必须有一份自己的索引
+ *
+ * 原先 `listVersions()` 完全依赖 `adapter.listDir('.neomd/versions/<docId>')`。
+ * 但两端适配器的目录能力并不一致：
+ *  - 桌面端 `NativeVaultAdapter.listDir()` 直接读真实目录，能看到 `.neomd/**`；
+ *  - 网页端 `BrowserVaultAdapter.listDir()` 是**从 `listAll()` 派生**的，
+ *    而 `listAll()` 明确 `continue` 掉了所有 `.neomd` 开头的路径（索引/对账不能把元数据
+ *    当成正文文档）。
+ *
+ * 于是网页端（以及任何基于 IndexedDB 的仓库）**永远列不出本地历史版本**：
+ * `writeVersion()` 明明把快照写进了 `.neomd/versions/<docId>/`，
+ * 面板却读到空数组，只能退化去查云端 —— 这是「历史版本只剩一版」的成因之一。
+ *
+ * 修复方式不是改适配器（那是所有对账逻辑的公共依赖，风险高），而是在写入侧
+ * 同步维护一份 `index.json`：列出时「索引 ∪ 目录」取并集，
+ * 目录不可见的端也能靠索引拿到完整列表；目录可见的端则用 mtime 校正索引。
+ */
+const VERSION_INDEX_FILE = `${VERSIONS_DIR}/index.json`;
+
+/** 本地版本索引中的一条记录（文件真身仍在 `.neomd/versions/<docId>/` 下） */
+interface LocalVersionIndexEntry {
+  docId: string;
+  rev: number;
+  hash: string;
+  /** 归档时刻（毫秒），也是 key 里保证唯一的那一段 */
+  ts: number;
+  device: string;
+  size: number;
+  createdAt: number;
+  storageKey: string;
+  origin: string;
+}
+
+interface LocalVersionIndexFile {
+  version: 1;
+  entries: LocalVersionIndexEntry[];
+}
+
+/** 单篇文档在本地索引里最多保留的条目数（防止 index.json 无限膨胀） */
+const VERSION_INDEX_MAX_PER_DOC = 300;
+
 export class Vault {
   readonly adapter: VaultAdapter;
   private files = new Map<string, DocMeta>();
@@ -62,6 +106,25 @@ export class Vault {
    * 随编辑次数无限膨胀、拖垮磁盘与索引速度。需要本地留痕时由设置项显式开启。
    */
   keepLocalVersions = false;
+  /**
+   * 本地版本归档时刻的单调递增游标（1.2.1）。
+   *
+   * 版本 key 里要靠 `ts` 保证唯一：同一毫秒内连续两次保存（自动保存 1.5s 防抖 +
+   * 立即手动保存、或批量恢复时）`Date.now()` 会给出**相同**的毫秒数，
+   * 于是两个不同内容落进同一个 key，后写的把先写的覆盖掉 ——
+   * 这正是「改了很多次只有一版」在毫秒级并发下的表现。
+   * 用 `max(now, last+1)` 保证严格递增，既不重复也不倒退。
+   */
+  private lastVersionTs = 0;
+  /**
+   * 本地版本索引的进程内缓存（1.2.1）。
+   *
+   * 见 {@link readVersionIndex} 的说明：`pruneVersions()` 会对全库每篇文档调用
+   * `listVersions()`，若每次都重新 read + parse `index.json` 就是 O(N²) 次 IO。
+   * 缓存由 `writeVersionIndex()` 统一失效，`adapter.remove()` 路径（清理版本）
+   * 也会重建缓存，因此不会读到已删除的条目。
+   */
+  private versionIndexCache: LocalVersionIndexEntry[] | null = null;
 
   constructor(adapter: VaultAdapter) {
     this.adapter = adapter;
@@ -105,6 +168,8 @@ export class Vault {
     } = {},
   ): Promise<void> {
     await this.adapter.open(location);
+    // 换了仓库/位置 → 上一份仓库的版本索引缓存必须失效，否则会串到新仓库
+    this.versionIndexCache = null;
     const inferredFromCloud =
       location.startsWith('cloud:') && /^[A-Za-z0-9_-]{4,64}$/.test(location.slice(6).trim())
         ? location.slice(6).trim()
@@ -491,71 +556,242 @@ export class Vault {
 
   /* ---------------- 版本历史 ---------------- */
 
-  private versionPath(docId: string, rev: number, hash: string, deviceName = ''): string {
+  /**
+   * 本地历史版本的存储 key。
+   *
+   * ## 1.2.1 修复：key 必须唯一，否则同一 rev+hash 会互相覆盖
+   *
+   * 旧格式是 `<rev>-<hash>-<dev>.md`，两个字段都是**内容派生**的：
+   *  - `rev` 只随内容变化递增，`hash` 是内容的 sha256 前 16 位；
+   *  - 于是「保存 A → 保存 B → 回滚到 A」时，第三次的 rev 虽然变大，
+   *    但若走的是同一 rev 的重复归档（`writeVersion` 的 `exists()` 短路、
+   *    或恢复时 `save()` 内部沿用旧 rev），key 完全一致 → 旧快照被静默覆盖。
+   * 更致命的是：`rev` 相同、`hash` 相同**必然**意味着 key 相同，
+   * 而 `exists()` 判断让第二次写入直接跳过，历史里就只剩下第一次那条。
+   *
+   * 新格式 `<ts>-<rev>-<hash>[-<dev>].md`：
+   *  - `ts` 是**归档时刻**（毫秒，且经 {@link nextVersionTs} 保证严格递增），
+   *    与云端 `versions/<docId>/<ts>-<rev>-<hash>.md` 语义完全对齐；
+   *  - 同一个 rev 被多次归档（例如从多个设备分别保存同一内容）会得到不同的 ts，
+   *    因此**不会互相覆盖**，面板里能如实看到「这一版被归档过几次」；
+   *  - 老格式的文件仍然可被 {@link parseVersionKey} 解析，历史数据不丢。
+   */
+  private versionPath(docId: string, ts: number, rev: number, hash: string, deviceName = ''): string {
     const cleanDev = deviceName.replace(/[^A-Za-z0-9\u4e00-\u9fa5_-]/g, '').slice(0, 24);
-    return cleanDev ? `${VERSIONS_DIR}/${docId}/${rev}-${hash}-${cleanDev}.md` : `${VERSIONS_DIR}/${docId}/${rev}-${hash}.md`;
+    const base = `${VERSIONS_DIR}/${docId}/${ts}-${rev}-${hash}`;
+    return cleanDev ? `${base}-${cleanDev}.md` : `${base}.md`;
   }
 
-  private async writeVersion(meta: DocMeta, _origin: string, deviceName = ''): Promise<void> {
+  /** 取一个严格递增的归档时间戳（同毫秒内连续保存也不会撞 key） */
+  private nextVersionTs(): number {
+    const ts = Math.max(nowMs(), this.lastVersionTs + 1);
+    this.lastVersionTs = ts;
+    return ts;
+  }
+
+  /**
+   * 解析版本文件名（同时兼容新老两种格式）。
+   *
+   * - 新格式：`<ts>-<rev>-<hash>[-<dev>].md`
+   * - 老格式：`<rev>-<hash>[-<dev>].md`（ts 视为 0，由调用方回落到文件 mtime）
+   */
+  private parseVersionKey(name: string): { ts: number; rev: number; hash: string; label: string } | null {
+    const file = name.split('/').pop() ?? '';
+    // 新格式：13 位以上时间戳 + rev + hash
+    const modern = /^(\d{10,})-(\d+)-([0-9a-f]{4,64})(?:-([^.]+))?\.md$/i.exec(file);
+    if (modern) {
+      return { ts: Number(modern[1]), rev: Number(modern[2]), hash: modern[3]!.toLowerCase(), label: modern[4] ?? '' };
+    }
+    // 老格式：rev + hash（ts=0，稍后用 mtime / 索引里的 createdAt 补齐）
+    const legacy = /^(\d+)-([0-9a-f]{4,64})(?:-([^.]+))?\.md$/i.exec(file);
+    if (legacy) {
+      return { ts: 0, rev: Number(legacy[1]), hash: legacy[2]!.toLowerCase(), label: legacy[3] ?? '' };
+    }
+    return null;
+  }
+
+  private async readVersionIndex(): Promise<LocalVersionIndexEntry[]> {
+    /*
+     * 进程内缓存：`pruneVersions()` 会遍历全库每篇文档调用一次 `listVersions()`，
+     * 每篇都重新 read + JSON.parse 同一份 `index.json` 会退化成 O(N²) 次 IO
+     * （700 篇的仓库实测会卡住好几秒）。缓存只在 `writeVersionIndex()` 时失效，
+     * 而所有写入都经过它，因此不会读到脏数据。
+     */
+    if (this.versionIndexCache) return this.versionIndexCache;
+    try {
+      const raw = await this.adapter.readText(VERSION_INDEX_FILE);
+      const idx = JSON.parse(raw) as LocalVersionIndexFile;
+      this.versionIndexCache = Array.isArray(idx?.entries) ? idx.entries : [];
+    } catch {
+      this.versionIndexCache = [];
+    }
+    return this.versionIndexCache;
+  }
+
+  private async writeVersionIndex(entries: LocalVersionIndexEntry[]): Promise<void> {
+    // 单篇文档超量时只保留最新的 N 条，避免 index.json 随编辑次数无限膨胀
+    const byDoc = new Map<string, LocalVersionIndexEntry[]>();
+    for (const e of entries) {
+      const list = byDoc.get(e.docId) ?? [];
+      list.push(e);
+      byDoc.set(e.docId, list);
+    }
+    const trimmed: LocalVersionIndexEntry[] = [];
+    for (const list of byDoc.values()) {
+      list.sort((a, b) => b.createdAt - a.createdAt);
+      trimmed.push(...list.slice(0, VERSION_INDEX_MAX_PER_DOC));
+    }
+    const payload: LocalVersionIndexFile = { version: 1, entries: trimmed };
+    try {
+      await this.adapter.mkdirp(VERSIONS_DIR);
+      await this.adapter.writeText(VERSION_INDEX_FILE, JSON.stringify(payload));
+      // 写成功后同步刷新缓存（外部队列里其它调用点拿到的一定是最新快照）
+      this.versionIndexCache = trimmed;
+    } catch {
+      /* 索引写失败不影响版本文件本身，listVersions 仍会尝试目录列举 */
+      this.versionIndexCache = null;
+    }
+  }
+
+  /**
+   * 把当前内容归档为本地历史版本。
+   *
+   * ## 1.2.1 修复要点
+   *
+   * 1. **key 带唯一时间戳**（见 {@link versionPath}），同一 rev 反复归档不再覆盖；
+   * 2. **写索引**（{@link writeVersionIndex}），让网页端 IndexedDB 这类
+   *    `listAll()` 过滤 `.neomd` 的适配器也能列出历史；
+   * 3. 保留 `keepLocalVersions` 开关语义：关闭时不落盘（产品约定：PC 端历史交给云端）。
+   */
+  private async writeVersion(meta: DocMeta, origin: string, deviceName = ''): Promise<void> {
     // 本地只存最新版本（产品约定）：默认不写 `.neomd/versions/`，历史版本由云端对象存储承载。
     if (!this.keepLocalVersions) return;
     try {
       const content = await this.adapter.readText(meta.path);
-      const key = this.versionPath(meta.docId, meta.rev, meta.hash, deviceName);
-      if (!(await this.adapter.exists(key))) {
-        await this.adapter.writeText(key, content);
-      }
+      const ts = this.nextVersionTs();
+      const key = this.versionPath(meta.docId, ts, meta.rev, meta.hash, deviceName);
+      await this.adapter.writeText(key, content);
+      const entries = await this.readVersionIndex();
+      entries.push({
+        docId: meta.docId,
+        rev: meta.rev,
+        hash: meta.hash,
+        ts,
+        device: deviceName,
+        size: content.length,
+        createdAt: ts,
+        storageKey: key,
+        origin,
+      });
+      await this.writeVersionIndex(entries);
     } catch {
       /* 文件可能已被外部删除，忽略 */
     }
   }
 
+  /**
+   * 列出某篇文档的本地历史版本。
+   *
+   * ## 1.2.1 修复：目录 ∪ 索引，并按 createdAt 倒序 + 去重
+   *
+   * 旧实现有两个缺陷：
+   *  1. 只读目录 → 网页端 `BrowserVaultAdapter.listDir()` 从 `listAll()` 派生，
+   *     而 `listAll()` 过滤掉 `.neomd/**`，于是**永远返回空**（历史版本丢失的成因之一）；
+   *  2. 排序只按 `rev` 倒序 → 同一 rev 的多次归档顺序不确定，
+   *     且与云端按时间排序的结果无法合并成一条时间线。
+   *
+   * 现在：索引里有的按索引（含精确 createdAt），目录里多出来的（老格式文件、
+   * 索引尚未写入的）按文件名/mtime 兜底；两者按 storageKey 去重后统一倒序。
+   */
   async listVersions(docId: string): Promise<VersionRecord[]> {
+    const byKey = new Map<string, VersionRecord>();
+
+    // ① 索引：唯一可靠的来源（尤其对 IndexedDB 适配器）
+    const indexed = (await this.readVersionIndex()).filter((e) => e.docId === docId);
+    for (const e of indexed) {
+      byKey.set(e.storageKey, {
+        id: `${docId}-${e.ts}-${e.rev}-${e.hash}`,
+        docId,
+        rev: e.rev,
+        hash: e.hash,
+        size: e.size,
+        createdAt: e.createdAt || e.ts,
+        origin: e.origin || 'save',
+        storageKey: e.storageKey,
+        synced: false,
+        label: e.device || '',
+      });
+    }
+
+    // ② 目录：桌面端能直接读到真实文件；索引丢失（旧版本升级）时也能自愈
     try {
       const entries = await this.adapter.listDir(`${VERSIONS_DIR}/${docId}`);
-      const out: VersionRecord[] = [];
       for (const e of entries) {
         if (e.isDirectory) continue;
-        const m = /^(\d+)-([0-9a-f]+)(?:-([^.]+))?\.md$/.exec(e.path.split('/').pop() ?? '');
-        if (!m) continue;
-        out.push({
-          id: `${docId}-${m[1]}-${m[2]}`,
+        const parsed = this.parseVersionKey(e.path);
+        if (!parsed) continue;
+        if (byKey.has(e.path)) {
+          // 索引里已有：用文件 mtime 校正 size（索引可能滞后），不覆盖 createdAt
+          const cur = byKey.get(e.path)!;
+          byKey.set(e.path, { ...cur, size: e.size || cur.size });
+          continue;
+        }
+        byKey.set(e.path, {
+          id: `${docId}-${parsed.ts}-${parsed.rev}-${parsed.hash}`,
           docId,
-          rev: Number(m[1]),
-          hash: m[2]!,
+          rev: parsed.rev,
+          hash: parsed.hash,
           size: e.size,
-          createdAt: e.mtime,
+          createdAt: parsed.ts || e.mtime || nowMs(),
           origin: 'save',
           storageKey: e.path,
           synced: false,
-          label: m[3] || '',
+          label: parsed.label,
         });
       }
-      return out.sort((a, b) => b.rev - a.rev);
     } catch {
-      return [];
+      /* 目录不可用（适配器不支持）时只靠索引 */
     }
+
+    return sortAndDedupeVersions([...byKey.values()]);
   }
 
   async readVersion(storageKey: string): Promise<string> {
     return this.adapter.readText(storageKey);
   }
 
+  /**
+   * 从本地历史版本恢复。
+   *
+   * `save(..., 'restore')` 内部会先归档**当前内容**（recordVersion 默认 true），
+   * 因此「恢复」本身也是一次可回溯的版本 —— 用户误点恢复后还能再恢复回来。
+   */
   async restoreVersion(docId: string, storageKey: string): Promise<DocMeta> {
     const content = await this.adapter.readText(storageKey);
     return this.save(docId, content, 'restore');
   }
 
   /**
-   * 清理本地超期或超出数量上限的历史版本（1.1.9）。
+   * 清理本地超期或超出数量上限的历史版本（1.1.9，1.2.1 语义修正）。
+   *
+   * ## 1.2.1 关键修正：清理必须同时删索引条目
+   *
+   * 旧实现只 `adapter.remove(storageKey)`，但 1.2.1 起列表来自「索引 ∪ 目录」，
+   * 若不同步删索引，被清理的版本会**永远**留在面板里（点开报「文件不存在」）。
+   *
+   * 另外把默认值从 `maxDays=30 / maxCount=50` 调整为
+   * `maxDays=180 / maxCount=200`：30 天 / 50 版对「历史版本」这个功能太激进，
+   * 用户抱怨「改了很多次只剩一版」时，一部分旧版本其实是被这里删掉的。
    *
    * @param maxDays 保留天数（<=0 表示不按天数限制）
    * @param maxCount 每篇最多保留版本数（<=0 表示不按数量限制）
    * @returns 实际删除的版本文件数
    */
-  async pruneVersions(maxDays = 30, maxCount = 50): Promise<number> {
+  async pruneVersions(maxDays = 180, maxCount = 200): Promise<number> {
     let removed = 0;
     const cutoff = maxDays > 0 ? nowMs() - maxDays * 86_400_000 : 0;
+    const indexEntries = await this.readVersionIndex();
+    const removedKeys = new Set<string>();
     for (const doc of this.listAll()) {
       const versions = await this.listVersions(doc.docId);
       if (!versions.length) continue;
@@ -566,6 +802,7 @@ export class Vault {
         if ((overCount || overAge) && v.storageKey) {
           try {
             await this.adapter.remove(v.storageKey);
+            removedKeys.add(v.storageKey);
             removed += 1;
           } catch {
             /* ignore */
@@ -573,8 +810,12 @@ export class Vault {
         }
       }
     }
+    if (removedKeys.size) {
+      await this.writeVersionIndex(indexEntries.filter((e) => !removedKeys.has(e.storageKey)));
+    }
     return removed;
   }
+
 
   /* ---------------- 用量 ---------------- */
 
@@ -737,4 +978,131 @@ export class Vault {
       lastOpenedAt: nowMs(),
     };
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* 历史版本合并（1.2.1 缺陷5 修复）                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 云端历史版本的最小形态（`SyncEngine.listRemoteVersions()` 的返回项）。
+ *
+ * 单独定义而不是直接复用 `VersionRecord`：`@neomd/core` 不依赖 App 层，
+ * 云端列举结果天然缺少 `docId`/`label`/`synced`，让调用方补齐更清晰。
+ */
+export interface RemoteVersionLike {
+  storageKey: string;
+  rev: number;
+  hash: string;
+  size: number;
+  createdAt: number;
+}
+
+/** 从 `versions/<docId>/<file>` 形式的对象键里取出 docId */
+function docIdFromVersionKey(storageKey: string): string {
+  const m = /(?:^|\/)versions\/([^/]+)\//.exec(storageKey);
+  return m ? m[1]! : '';
+}
+
+/** 把云端列举结果补成 `VersionRecord`（面板与合并逻辑都用这一种形态） */
+export function remoteVersionsToRecords(docId: string, remote: RemoteVersionLike[]): VersionRecord[] {
+  return remote.map((r) => ({
+    id: `${docId}-${r.rev}-${r.hash}-${r.createdAt}`,
+    docId: docId || docIdFromVersionKey(r.storageKey),
+    rev: r.rev,
+    hash: r.hash,
+    size: r.size,
+    createdAt: r.createdAt,
+    origin: 'save',
+    storageKey: r.storageKey,
+    synced: true,
+    label: '云端',
+  }));
+}
+
+/** 判断一条版本记录是否来自本地留痕（`Vault.listVersions()` 的 key 一律在 `.neomd/` 下） */
+function isLocalVersionRecord(v: VersionRecord): boolean {
+  return v.storageKey.startsWith(`${META_DIR}/`);
+}
+
+/**
+ * 版本列表去重 + 按时间倒序。
+ *
+ * 去重键是 **`rev` + `hash`**（内容身份），而不是 storageKey：
+ *  - 同一份内容可能在本地留痕与云端各存一份（同一 rev+hash，两个 key）→ 合并成一条；
+ *  - 云端还可能因为「同一版被多次归档」产生多个 ts 不同的对象（实测见 1.2.1 取证：
+ *    `1793351126125-2-99a85...` 与 `1793351129242-2-99a85...` 内容完全相同）→ 也只留一条；
+ *  - 但「A → B → A」这种**回滚**场景里两次 A 的 rev 不同，rev+hash 不同 → 两条都保留，
+ *    这才是用户想看的时间线。
+ *
+ * 合并时优先保留**本地**那份（离线也能读），时间取两者中较早的一个
+ * （内容首次出现的时刻更符合「这一版是什么时候产生的」）。
+ */
+export function sortAndDedupeVersions(list: VersionRecord[]): VersionRecord[] {
+  const byIdentity = new Map<string, VersionRecord>();
+  for (const v of list) {
+    const identity = `${v.rev}|${v.hash}`;
+    const prev = byIdentity.get(identity);
+    if (!prev) {
+      byIdentity.set(identity, v);
+      continue;
+    }
+    const vIsLocal = isLocalVersionRecord(v);
+    const prevIsLocal = isLocalVersionRecord(prev);
+    const earliest = Math.min(prev.createdAt || 0, v.createdAt || 0) || prev.createdAt || v.createdAt;
+    if (vIsLocal && !prevIsLocal) {
+      // 本地优先：换成 v 的 key（离线可读），但保留较早时间与「云端也有」的事实
+      byIdentity.set(identity, { ...v, createdAt: earliest, synced: true });
+    } else {
+      byIdentity.set(identity, { ...prev, createdAt: earliest, synced: prev.synced || v.synced });
+    }
+  }
+  return [...byIdentity.values()].sort((a, b) => b.createdAt - a.createdAt || b.rev - a.rev);
+}
+
+/**
+ * 合并「本地历史」与「云端历史」，返回统一的时间线。
+ *
+ * ## 为什么需要这个纯函数
+ *
+ * 1.2.1 之前 `HistoryModal.load()` 是**二选一**：
+ * ```ts
+ * const local = await app.vault.listVersions(docId);
+ * if (local.length) { versions.value = local }      // 本地有 1 条就完全不查云端
+ * else { versions.value = await app.listCloudVersions(docId) }
+ * ```
+ * 只要本地残留任意一条旧快照（例如用户曾开启过「本地留痕」、或桌面端老版本留下的
+ * `.neomd/versions/`），云端真实存在的 N 条历史就会被**整体忽略**，
+ * 面板里只剩那 1 条 —— 这是「只能看到最近一版」最直接的一处成因。
+ *
+ * 现在改为取并集：本地 ∪ 云端 → 按内容身份去重 → 按时间倒序。
+ *
+ * @param local 本地留痕（`Vault.listVersions()`）
+ * @param remote 云端版本（`SyncEngine.listRemoteVersions()` 或已转好的 `VersionRecord[]`）
+ * @param options.limit 最多返回条数（面板展示上限，默认 200）
+ * @param options.docId 云端项缺少 docId 时用它补齐
+ */
+export function mergeVersionRecords(
+  local: VersionRecord[],
+  remote: Array<VersionRecord | RemoteVersionLike>,
+  options: { limit?: number; docId?: string } = {},
+): VersionRecord[] {
+  const limit = options.limit && options.limit > 0 ? options.limit : 200;
+  const remoteRecords: VersionRecord[] = remote.map((r) => {
+    if ('docId' in r && 'id' in r) return r as VersionRecord;
+    const like = r as RemoteVersionLike;
+    return {
+      id: `${options.docId ?? ''}-${like.rev}-${like.hash}-${like.createdAt}`,
+      docId: options.docId || docIdFromVersionKey(like.storageKey),
+      rev: like.rev,
+      hash: like.hash,
+      size: like.size,
+      createdAt: like.createdAt,
+      origin: 'save',
+      storageKey: like.storageKey,
+      synced: true,
+      label: '云端',
+    };
+  });
+  return sortAndDedupeVersions([...local, ...remoteRecords]).slice(0, limit);
 }

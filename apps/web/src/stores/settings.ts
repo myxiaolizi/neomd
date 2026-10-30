@@ -7,9 +7,12 @@ import { api, getAccessToken } from '@/api/client';
 import { DEFAULT_SERVER_SETTINGS, normalizeServerBase } from '@/lib/server-endpoint';
 
 /**
- * 缁?settings 琛ラ綈鏈嶅姟绔厤缃粯璁ゅ€笺€? *
- * `@neomd/core` 鐨?`defaultSettings()` / `mergeSettings()` 涓嶈璇?`server` 瀛楁锛? * 鑰屽畠鏄?1.0.2 鏂板鐨?*绾湰鍦?*閰嶇疆锛堟案涓嶄笂浜戯級锛屽洜姝ゅ彧鑳藉湪 store 灞傚厹搴曪紝
- * 閬垮厤鍚勫璇?`settings.server.xxx` 鏃舵嬁鍒?undefined 鑰岀櫧灞忋€? */
+ * 给 settings 补齐服务端配置默认值。
+ *
+ * `@neomd/core` 的 `defaultSettings()` / `mergeSettings()` 不认 `server` 字段，
+ * 而它是 1.0.2 新增的**纯本地**配置（永不上云），因此只能在 store 层兜底，
+ * 避免各处读 `settings.server.xxx` 时拿到 undefined 而白屏。
+ */
 function withServerDefaults(source: Settings): Settings {
   const server = source.server;
   return {
@@ -27,10 +30,10 @@ function loadLocal(): Settings {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return withServerDefaults(defaultSettings());
     const parsed = JSON.parse(raw) as Partial<Settings>;
-    // （原注释编码损坏，已清理）
-    // （注释原文编码损坏，已清理）
+    // 先做旧主题方案迁移，再合并默认值：顺序反了会把用户的旧配色判成「没配过」。
+    // 详见 migrateLegacyAppearance() 的注释（必须在 mergeSettings 之前）。
     const merged = mergeSettings(defaultSettings(), migrateSettingsTheme(parsed));
-    // （注释原文编码损坏，已清理）
+    // server 是严格本地配置，云端不下发也不覆盖；用本地已存的值优先。
     return withServerDefaults({ ...merged, server: parsed.server ?? merged.server });
   } catch {
     return withServerDefaults(defaultSettings());
@@ -38,14 +41,14 @@ function loadLocal(): Settings {
 }
 
 /* ------------------------------------------------------------------ */
-/* 澶氱鍒嗗尯鍚屾                                                        */
+/* 多端分区同步                                                        */
 /*                                                                     */
-/* global 鍖猴紙鍏ㄥ钩鍙板己涓€鑷达級锛歴torage / ai / sync / naming / shortcuts  */
-/* platform 鍖猴紙鍏佽鎸夌宸紓鍖栵級锛歛ppearance / layout / enabledPlugins  */
-/* 姘镐笉涓婁簯锛堜弗鏍兼湰鍦帮級锛歴erver / localVault / cloudVersion / updatedAt  */
+/* global 区（全平台强一致）：storage / ai / sync / naming / shortcuts  */
+/* platform 区（允许按端差异化）：appearance / layout / enabledPlugins  */
+/* 永不上云（严格本地）：server / localVault / cloudVersion / updatedAt  */
 /* ------------------------------------------------------------------ */
 
-/** 浜戠璁剧疆鍝嶅簲锛歷2 鏈嶅姟绔繑鍥炴媿骞宠鍥撅紱鏃ф湇鍔＄鐩存帴杩斿洖骞抽摵 Settings */
+/** 云端设置响应：v2 服务端返回拍平视图；旧服务端直接返回平铺 Settings */
 interface CloudSettingsResponse {
   payload: Record<string, unknown> | null;
   sensitive: Record<string, unknown> | null;
@@ -60,22 +63,22 @@ interface CloudSensitive {
   ai?: { apiKey?: string };
 }
 
-/** 鍏佽鎸夊钩鍙板樊寮傚寲鐨勫垎鍖猴紝鍏朵綑鍒嗗尯榛樿杩?global */
+/** 允许按平台差异化的分区，其余分区默认进 global */
 const PLATFORM_SCOPED_KEYS = new Set(['appearance', 'layout', 'enabledPlugins']);
-/** 涓ユ牸鏈湴銆佹案涓嶄笂浜戠殑鍒嗗尯锛堣嚜瀹氫箟鏈嶅姟鍣?绉佹湁鍖栥€佹湰鍦颁粨搴撴牴鐩綍銆佺増鏈按浣嶏級 */
+/** 严格本地、永不上云的分区（自定义服务器 / 私有化、本地仓库根目录、版本水位） */
 const LOCAL_ONLY_KEYS = new Set(['server', 'localVault', 'cloudVersion', 'updatedAt', 'version']);
 
 /**
- * `appearance` 閲?*搴斿綋璺ㄧ寮轰竴鑷?*鐨勫瓧娈碉紙杩?global 鍖猴級銆? *
- * 鍒嗗眰鍘熷垯锛?.1.1 寤虹珛锛?.1.8 琛ュ叆瀛椾綋锛夛細
- * - **瑙傛劅閫夋嫨**锛堢敤鎴峰浜у搧澶栬鐨勫亸濂斤紝鎹㈣澶囧簲褰撲竴鑷达級鈫?global锛? * - **闃呰浣撻獙**锛堜笌灞忓箷灏哄/瑙傜湅璺濈鐩稿叧锛屾寜璁惧鍙互涓嶅悓锛夆啋 platform銆? *
- * 涓轰粈涔堣鎷嗚€屼笉鏄妸鏁翠釜 `appearance` 鎸埌 global锛? * `fontSize` / `lineHeight` / `zoom` / `pageWidth` / `showLineNumbers` 灞炰簬闃呰浣撻獙锛? * PC 澶у睆涓庢墜鏈哄皬灞忔湰鏉ュ氨璇ヤ笉鍚岋紝蹇呴』鐣欏湪 platform 鍖烘寜绔樊寮傚寲锛? * 鑰屼笅闈㈣繖浜涙槸瑙傛劅閫夋嫨锛屾崲璁惧蹇呴』涓€鑷?鈥斺€?鍚﹀垯灏变細鍑虹幇
- * 銆學eb 绔崲浜嗕富棰?瀛椾綋锛孭C 绔病鍙樸€嶃€? *
- * 1.1.8 琛ュ叆 `fontFamily`锛氱敤鎴锋崲瀛椾綋鏄€屾垜瑕佺敤杩欎釜瀛椾綋鐪嬪緟姝ｆ枃銆嶇殑鍋忓ソ锛? * 涓庤澶囨棤鍏筹紱鍘熷厛瀹冪暀鍦?platform 鍖猴紝瀵艰嚧 PC 璁句簡瀛椾綋缃戦〉绔笉璺熼殢銆? * 锛堝瓧鍙蜂笉璺熺潃璧版槸鍒绘剰鐨勶細24px 鍦ㄦ墜鏈轰笂浼氭槑鏄惧亸澶с€傦級
+ * `appearance` 里**应当跨端强一致**的字段（进 global 区）。
+ * 分层原则（1.1.1 建立，1.1.8 补入字体）：
+ * - **观感选择**（用户对产品外观的偏好，换设备应当一致）→ global；
+ * - **阅读体验**（与屏幕尺寸/观看距离相关，按设备可以不同）→ platform。
+ * 为什么要拆而不是把整个 `appearance` 挪到 global：
+ * `fontSize` / `lineHeight` / `zoom` / `pageWidth` / `showLineNumbers` 属于阅读体验，PC 大屏与手机小屏本来就该不同，必须留在 platform 区按端差异化；
  *
- * 鏃х増鐨?`editorColorScheme` / `customEditorBg` / `customEditorFg` 涔熷綊鍒拌繖閲岋細
- * 瀹冧滑宸蹭笉鍐嶆毚闇茬粰鐢ㄦ埛锛堟鏂囬厤鑹插苟鍏ヤ富棰橈級锛屼絾浠嶈璺熼殢涓婚涓€璧疯法绔紝
- * 鍚﹀垯鑰佹暟鎹湪鍙︿竴鍙颁笂浼氶噸鏂拌Е鍙?`resolveTheme()` 鐨勬棫鍊煎洖閫€锛屾妸涓婚瑕嗙洊鎺夈€? */
+ * 而下面这些是观感选择，换设备必须一致 —— 否则就会出现「Web 端换了主题/字体，PC 端没变」。
+ * 1.1.8 补入 `fontFamily`：用户换字体是「我要用这个字体看正文」的偏好，与设备无关；
+ * 原先它留在 platform 区，导致 PC 设了字体网页端不跟随。（字号不跟着走是刻意的：24px 在手机上会明显偏大。） */
 const GLOBAL_APPEARANCE_FIELDS = [
   'theme',
   'themePresetId',
@@ -90,8 +93,8 @@ const GLOBAL_APPEARANCE_FIELDS = [
 const GLOBAL_APPEARANCE_FIELD_SET = new Set<string>(GLOBAL_APPEARANCE_FIELDS);
 
 /**
- * 鎶?`appearance` 鎷嗘垚銆岃法绔竴鑷村瓧娈点€嶄笌銆屾湰鏈洪槄璇讳綋楠屽瓧娈点€嶄袱缁勩€? *
- * 瀹归敊锛氶潪瀵硅薄杈撳叆杩斿洖涓や釜绌哄璞★紝鐢辫皟鐢ㄦ柟鍐冲畾鏄惁钀界洏锛? * 閬垮厤鏃х増鏈妸 `appearance` 鍐欏潖鎴愬瓧绗︿覆鏃舵暣鏉″悓姝ラ摼璺姏閿欍€? */
+ * 把 `appearance` 拆成「跨端一致字段」与「本机阅读体验字段」两组。
+ * 容错：非对象输入返回两个空对象，由调用方决定是否落盘；避免旧版本把 `appearance` 写坏成字符串时整条同步链路抛错。 */
 function splitAppearanceFields(appearance: unknown): {
   themePart: Record<string, unknown>;
   readingPart: Record<string, unknown>;
@@ -108,7 +111,7 @@ function splitAppearanceFields(appearance: unknown): {
   return { themePart, readingPart };
 }
 
-/** `appearance` 閲屾槸鍚﹀惈鑷冲皯涓€涓富棰樺瓧娈碉紙鐢ㄤ簬鍒ゆ柇鏃?payload 鏄惁闇€瑕佽縼绉伙級 */
+/** `appearance` 里是否含至少一个主题字段（用于判断旧 payload 是否需要迁移） */
 export function appearanceHasThemeFields(appearance: unknown): boolean {
   if (!appearance || typeof appearance !== 'object') return false;
   return GLOBAL_APPEARANCE_FIELDS.some(
@@ -117,16 +120,21 @@ export function appearanceHasThemeFields(appearance: unknown): boolean {
 }
 
 /**
- * 鑰佺敤鎴锋暟鎹殑涓€娆℃€ц縼绉伙細鎶婃棫鐗堛€屾鏂囬厤鑹叉柟妗堛€嶈縼鍒般€屼富棰橀璁俱€嶃€? *
- * 涓轰粈涔堝繀椤诲仛銆佷笖蹇呴』**鍦ㄥ悎骞堕粯璁ゅ€间箣鍓?*鍋氾細
- * - `defaultSettings()` 鐜板湪鑷甫 `themePresetId: 'daylight'`锛? * - 鑰佺敤鎴风殑 localStorage / 浜戠 payload 閲?*娌℃湁** `themePresetId`锛屽彧鏈?`editorColorScheme`锛? * - 涓€鏃﹀厛 `mergeSettings(defaultSettings(), raw)`锛宍themePresetId` 灏辫琛ユ垚 `'daylight'`锛? *   `resolveTheme()` 浼氱洿鎺ュ懡涓唴缃富棰橈紝**姘歌繙璧颁笉鍒?* `editorColorScheme` 鐨勬槧灏勫垎鏀紝
- *   缁撴灉灏辨槸銆岃€佺敤鎴风殑缁胯壊鎶ょ溂鍗囩骇鍚庡彉鎴愭棩鍏夌櫧銆嶃€? *
- * 鍒ゅ畾渚濇嵁涓ユ牸锛氬彧鏈?*瀹屽叏娌℃湁** `themePresetId` 瀛楁鏃舵墠杩佺Щ锛岀粷涓嶈鐩栫敤鎴峰凡閫夌殑涓婚銆? */
+ * 老用户数据的一次性迁移：把旧版「正文配色方案」迁到「主题预设」。
+ * 为什么必须做、且必须**在合并默认值之前**做：
+ * - `defaultSettings()` 现在自带 `themePresetId: 'daylight'`；
+ * - 老用户的 localStorage / 云端 payload 里**没有** `themePresetId`，只有 `editorColorScheme`；
+ * - 一旦先 `mergeSettings(defaultSettings(), raw)`，`themePresetId` 就被补成 `'daylight'`，
+ *   `resolveTheme()` 会直接命中内置主题，**永远走不到** `editorColorScheme` 的映射分支，
+ *   结果就是「老用户的绿色护眼升级后变成日光白」。
+ *
+ * 判定依据严格：只有**完全没有** `themePresetId` 字段时才迁移，绝不覆盖用户已选的主题。
+ */
 export function migrateLegacyAppearance(appearance: unknown): Record<string, unknown> | null {
   if (!appearance || typeof appearance !== 'object' || Array.isArray(appearance)) return null;
   const ap = { ...(appearance as Record<string, unknown>) };
   const preset = ap.themePresetId;
-  // （注释原文编码损坏，已清理）
+  // 只有完全没有 themePresetId 时才迁移：用户已经选过主题就一律不动，避免覆盖新数据
   if (typeof preset === 'string' && preset.trim()) return null;
 
   const scheme = ap.editorColorScheme;
@@ -151,14 +159,16 @@ export function migrateLegacyAppearance(appearance: unknown): Record<string, unk
 }
 
 /**
- * 瀵逛换鎰忔潵婧愮殑璁剧疆瀵硅薄鍋氳€佹暟鎹富棰樿縼绉伙紙涓嶆敼鍘熷璞★級銆? *
- * 杩斿洖鍊兼柇瑷€璇存槑锛歚migrateLegacyAppearance` 鍙槸瀵?appearance 鍋氭祬鎷疯礉 + 琛? * `themePresetId` / `customThemes`锛屼笉鍒犻櫎浠讳綍瀛楁锛屽洜姝よ縼绉诲悗鐨勫璞′粛婊¤冻
- * `AppearanceSettings` 鐨勫畬鏁寸粨鏋勶紱鏂█鏄负浜嗙粫寮€銆孭artial<Settings> 閲?appearance
- * 浠嶆槸瀹屾暣绫诲瀷銆嶄笌杩佺Щ鍑芥暟杩斿洖 `Record<string, unknown>` 涔嬮棿鐨勫舰寮忓樊寮傘€? */
+ * 对任意来源的设置对象做老数据主题迁移（不改原对象）。
+ * 返回值断言说明：`migrateLegacyAppearance` 只是对 appearance 做浅拷贝 + 补
+ * `themePresetId` / `customThemes`，不删除任何字段，因此迁移后的对象仍满足
+ * `AppearanceSettings` 的完整结构；断言是为了绕开「Partial<Settings> 里 appearance
+ * 仍是完整类型」与迁移函数返回 `Record<string, unknown>` 之间的形式差异。
+ */
 function migrateSettingsTheme(input: Partial<Settings>): Partial<Settings> {
   const migrated = migrateLegacyAppearance(input.appearance);
   if (!migrated) return input;
-  // （原注释编码损坏，已清理）
+  // 这里的 appearance 来自旧数据，migrateLegacyAppearance 可能补出 themePresetId；
   // 先把迁移结果收窄成 AppearanceSettings，再放回 Settings。
   // 这里必须分两步断言：`Record<string, unknown>` → `AppearanceSettings` 是「收窄」，
   // 一步写 `as Partial<Settings>` 会因 appearance 字段类型不兼容而报 TS2322。
@@ -168,16 +178,16 @@ function migrateSettingsTheme(input: Partial<Settings>): Partial<Settings> {
 
 
 /* ------------------------------------------------------------------ */
-/* 涓婚銆屽簲鐢ㄨ寖鍥淬€嶏紙1.1.1锛?                                           */
+/* 主题「应用范围」（1.1.1）                                            */
 /* ------------------------------------------------------------------ */
 
-/** 搴旂敤鑼冨洿锛氭暣浣?/ 浠呮鏂?/ 浠呯晫闈紙鏈満鍋忓ソ锛屽瓨 localStorage锛屼笉杩?settings锛?*/
+/** 应用范围：整体 / 仅正文 / 仅界面（本机偏好，存 localStorage，不进 settings） */
 export type ThemeScope = 'all' | 'content' | 'chrome';
 
-/** localStorage key锛孲ettingsPage 涓庢湰 store 鍏辩敤 */
+/** localStorage key，SettingsPage 与本 store 共用 */
 export const THEME_SCOPE_STORAGE_KEY = 'neomd.themeScope';
 
-/** 姝ｆ枃涓撳睘鍙橀噺锛氱敤浜庢妸 themeVars() 鐨勮緭鍑哄垎鎴愩€屾鏂囥€嶃€岀晫闈€嶄袱缁?*/
+/** 正文专属变量：用于把 themeVars() 的输出分成「正文」「界面」两组 */
 export const CONTENT_THEME_VARS = new Set<string>([
   '--content-bg',
   '--content-fg',
@@ -187,8 +197,13 @@ export const CONTENT_THEME_VARS = new Set<string>([
 ]);
 
 /**
- * themeVars() 浼氫骇鍑虹殑鍏ㄩ儴鍙橀噺鍚嶃€? *
- * 涓轰粈涔堥渶瑕佸畠锛氬垏鎹€屽簲鐢ㄨ寖鍥淬€嶆椂蹇呴』**鍏堟竻绌轰笂涓€杞啓鍏ョ殑鍐呰仈鍙橀噺**锛? * 鍚﹀垯浠庛€屾暣浣撱€嶅垏鍒般€屼粎姝ｆ枃銆嶅悗锛岀晫闈㈢被鍙橀噺浼氫互鏃у€兼畫鐣欙紝鐪嬭捣鏉ヨ寖鍥存病鐢熸晥銆? * 鐩存帴鍒楀瓧闈㈤噺鑰屼笉鏄?`Object.keys(themeVars(someTheme))`锛? * 鏄负浜嗚杩欎唤娓呭崟鍦ㄦā鍧楀姞杞芥湡灏卞浐瀹氾紝涓嶅彈浠讳綍涓婚瀵硅薄褰卞搷銆? */
+ * themeVars() 会产出的全部变量名。
+ *
+ * 为什么需要它：切换「应用范围」时必须**先清空上一轮写入的内联变量**，
+ * 否则从「整体」切到「仅正文」后，界面类变量会以旧值残留，看起来范围没生效。
+ * 直接列字面量而不是 `Object.keys(themeVars(someTheme))`，
+ * 是为了让这份清单在模块加载期就固定，不受任何主题对象影响。
+ */
 export const ALL_THEME_VARS: string[] = [
   '--content-bg',
   '--content-fg',
@@ -218,7 +233,7 @@ export const ALL_THEME_VARS: string[] = [
   '--shadow-3',
 ];
 
-/** 璇诲彇鏈満淇濆瓨鐨勫簲鐢ㄨ寖鍥?*/
+/** 读取本机保存的应用范围 */
 export function readThemeScope(): ThemeScope {
   try {
     const v = localStorage.getItem(THEME_SCOPE_STORAGE_KEY);
@@ -229,19 +244,19 @@ export function readThemeScope(): ThemeScope {
   return 'all';
 }
 
-/** 璇ュ彉閲忓湪褰撳墠鑼冨洿涓嬫槸鍚﹀厑璁歌鐩?*/
+/** 该变量在当前范围下是否允许覆盖 */
 export function themeVarAllowed(key: string, scope: ThemeScope): boolean {
   if (scope === 'all') return true;
   const isContent = CONTENT_THEME_VARS.has(key);
   return scope === 'content' ? isContent : !isContent;
 }
 
-/** 鑷姩 pull 鑺傛祦绐楀彛锛氬彲瑙佹€?鑱氱劍浜嬩欢鍦?30s 鍐呭彧瑙﹀彂涓€娆?*/
+/** 自动 pull 节流窗口：可见性/聚焦事件在 30s 内只触发一次 */
 const AUTO_PULL_THROTTLE_MS = 30_000;
-/** 杞婚噺鐗堟湰杞闂撮殧锛氬彧姣旂増鏈彿锛屼簯绔湁鍙樺寲鎵嶆媺鍏ㄩ噺璁剧疆 */
+/** 轻量版本轮询间隔：只比版本号，云端有变化才拉全量设置 */
 const CLOUD_VERSION_POLL_MS = 60_000;
 
-/** 褰撳墠杩愯骞冲彴锛汼SR/寮傚父鐜鍥為€€ web */
+/** 当前运行平台；SSR/异常环境回退 web */
 function detectPlatform(): string {
   try {
     return detectRuntime().platform;
@@ -251,10 +266,16 @@ function detectPlatform(): string {
 }
 
 /**
- * 浠?Settings 鎷嗗嚭 global锛堝己涓€鑷达級涓?platform锛堟寜绔樊寮傚寲锛変袱涓垎鍖恒€? *
- * 銆屽巻鍙茬増鏈?/ AI / S3 璺ㄧ涓€鑷淬€嶇殑瀹屾暣閾捐矾锛堟帓鏌ユ椂鎸夋椤哄簭鐪嬶級锛? *   1. storage锛坋ndpoint/region/bucket/AK/SK/basePrefix锛変笌 sync锛坮ootPrefix锛夊睘浜?global
- *      鈫?鐧诲綍鍚庝换浣曞钩鍙?pull 鍒扮殑閮芥槸鍚屼竴浠斤紝涓ょ鎷煎嚭鐨勫璞″瓨鍌ㄥ墠缂€澶╃劧鐩稿悓锛? *   2. SyncEngine 鍦ㄧ櫥褰曟€佹妸 rootPrefix 鍐嶆帴涓?`users/<username>/`锛堣 stores/app.ts
- *      buildSyncEngine锛夛紝鎸夌敤鎴峰悕闅旂锛岄伩鍏嶅鐢ㄦ埛浜掔浉瑕嗙洊锛? *   3. 浜庢槸 A 绔繚瀛樺啓鍏?`鈥?users/<name>/versions/<docId>/<ts>-<rev>-<hash>.md`锛? *      涓?B 绔€岀増鏈巻鍙层€嶉潰鏉?listRemoteVersions 璇诲彇鐨勫墠缂€瀹屽叏涓€鑷?鈫?鍘嗗彶鐗堟湰璺ㄧ鍙銆? * 鍙 storage / sync 鐣欏湪 global锛堟湰鍑芥暟淇濊瘉杩欎竴鐐癸級锛岃繖鏉￠摼璺氨涓嶄細琚钩鍙板樊寮傚寲鎵撴柇銆? */
+ * 从 Settings 拆出 global（强一致）与 platform（按端差异化）两个分区。
+ * 「历史版本 / AI / S3 跨端一致」的完整链路（排查时按此顺序看）：
+ *   1. storage（endpoint/region/bucket/AK/SK/basePrefix）与 sync（rootPrefix）属 global
+ *      → 登录后任何平台 pull 到的都是同一份，两端拼出的对象存储前缀天然相同；
+ *   2. SyncEngine 在登录态把 rootPrefix 再接上 `users/<username>/`（见 stores/app.ts 的
+ *      buildSyncEngine），按用户名隔离，避免多用户互相覆盖；
+ *   3. 于是 A 端保存写入 `…/users/<name>/versions/<docId>/<ts>-<rev>-<hash>.md`，
+ *      与 B 端「版本历史」面板 listRemoteVersions 读取的前缀完全一致 → 历史版本跨端可见。
+ * 只要 storage / sync 留在 global（本函数保证这一点），这条链路就不会被平台差异化打断。
+ */
 function splitSettingsPartitions(source: Settings): {
   global: Record<string, unknown>;
   platform: Record<string, unknown>;
@@ -263,7 +284,7 @@ function splitSettingsPartitions(source: Settings): {
   const globalPart: Record<string, unknown> = {};
   const platformPart: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(plain)) {
-    // （注释原文编码损坏，已清理）
+    // appearance 需要拆成两个分区，其余键按 PLATFORM_SCOPED_KEYS 归属
     if (key === 'appearance') {
       // 主题字段 → global（跨端强一致）；阅读体验字段 → platform（按端差异化）
       const { themePart, readingPart } = splitAppearanceFields(value);
@@ -277,7 +298,7 @@ function splitSettingsPartitions(source: Settings): {
   return { global: globalPart, platform: platformPart };
 }
 
-/** 鍘绘帀鍙睘浜庢湰鏈虹殑瀛楁锛岄槻姝㈡棫浜戠鏁版嵁鎶婃湰鍦拌矾寰?鏈嶅姟鍣ㄩ厤缃甫鍥炴湰绔?*/
+/** 去掉只属于本机的字段，防止旧云端数据把本地路径/服务器配置带回本端 */
 function stripLocalOnly(source: Record<string, unknown>): Partial<Settings> {
   const clone = JSON.parse(JSON.stringify(source)) as Record<string, unknown>;
   for (const key of LOCAL_ONLY_KEYS) delete clone[key];
@@ -285,11 +306,70 @@ function stripLocalOnly(source: Record<string, unknown>): Partial<Settings> {
 }
 
 /**
- * 褰掍竴鍖栦簯绔?payload锛? * - v2锛歚{ global, platform: { desktop: {...} } }` 鈫?鍒嗗埆鍙栧嚭 global 涓庢湰骞冲彴鍒嗙粍锛? * - 鏃ф湇鍔＄/鏃ф暟鎹紙鏃?global/platform 瀛楁锛夛細鏁翠綋瑙嗕负 global銆? *
- * **1.1.1 涓婚璺ㄧ淇鐨勪袱涓姩浣滐紙閮藉湪杩欓噷鍋氾紝鎷夊彇渚у敮涓€鍏ュ彛锛?*锛? * 1. **闅旂**锛氭妸銆屾湰骞冲彴 appearance銆嶉噷鐨勪富棰樺瓧娈靛墧闄わ紝鍙繚鐣欓槄璇讳綋楠屽瓧娈点€? *    鍚﹀垯鏃?payload锛坅ppearance 鏁翠綋瀛樺湪 platform 閲岋級浼氬湪鍚堝苟鏃舵妸 global 鍒氬悓姝ヨ繃鏉ョ殑
- *    涓婚鍙堣鐩栧洖鏈鏃у€?鈥斺€?杩欐鏄€學eb 鏀逛簡涓婚 PC 涓嶇敓鏁堛€嶇殑鏈€鍚庝竴鐜€? * 2. **杩佺Щ**锛氳嫢 global 鍖哄畬鍏ㄦ病鏈変富棰樺瓧娈碉紙鑰佺敤鎴峰崌绾у悗绗竴娆℃媺锛夛紝
- *    鍒欐妸涓婇潰鍓旈櫎涓嬫潵鐨勪富棰樺瓧娈佃ˉ杩?global锛屽疄鐜颁竴娆℃€у钩婊戣縼绉伙紝
- *    涓嶉渶瑕佺敤鎴烽噸鏂伴€変竴娆′富棰樸€? */
+ * 读取「纯 global 分区」时使用的哨兵平台名（1.2.1，缺陷2）。
+ *
+ * ## 为什么需要它（这是「字体设完一会儿自己恢复」的真正根因）
+ *
+ * 服务端 `GET /api/settings?platform=<p>` 返回的是**拍平视图**：
+ *   `flattenSettings()` 用 `Object.assign(view, platform[p])` 把平台分组盖到 global 上。
+ * `appearance` 是一个整体对象键，所以 `platform[p].appearance` 会**整块替换**
+ * `global.appearance` —— 不是逐字段覆盖。
+ *
+ * 1.1.7 及更早版本把 `fontFamily` 存在平台分区里，这些旧值至今仍留在
+ * `platform.desktop.appearance` / `platform.web.appearance`（生产库实测确认）。
+ * 于是 1.1.8+ 改成写 global 之后，客户端拉到的拍平视图里 fontFamily 依旧是平台分区的旧值，
+ * 被当成「云端权威值」覆盖回本地 —— 用户看到的就是「字体设了一下又自己恢复」。
+ *
+ * 而拍平响应里**没有** global / platform 键，客户端无法反推字段来源，
+ * 所以这里再取一次「纯 global 视图」：服务端对未登记的平台名只返回 global
+ * （该平台分组不存在 → 不覆盖），从而拿到真正的跨端权威值。
+ *
+ * 根治点在服务端 `flattenSettings` 的合并语义，但那不在本次改动范围内；
+ * 客户端按「global 优先」取值，行为上等价于修好了。
+ */
+const GLOBAL_ONLY_PLATFORM = '__global_only__';
+
+/**
+ * 把「纯 global 视图」里的跨端字段覆盖到拍平结果上（只动 GLOBAL_APPEARANCE_FIELDS）。
+ *
+ * 只覆盖这些字段的原因：它们本来就声明为「跨端强一致」，
+ * 平台分区里出现它们只可能是历史残留，必须以 global 为准。
+ * 阅读体验字段（字号/行高/页宽/缩放/行号/拼写检查）**继续用平台分区的值**，
+ * 这是「按端差异化」设计的底线，不能被这次修复顺手破坏。
+ */
+function applyGlobalAppearanceAuthority(
+  flat: Record<string, unknown> | null,
+  globalOnly: Record<string, unknown> | null,
+): Record<string, unknown> | null {
+  if (!flat) return flat;
+  if (!globalOnly || typeof globalOnly !== 'object') return flat;
+  const globalAppearance = globalOnly.appearance;
+  if (!globalAppearance || typeof globalAppearance !== 'object') return flat;
+  const flatAppearance =
+    flat.appearance && typeof flat.appearance === 'object'
+      ? { ...(flat.appearance as Record<string, unknown>) }
+      : {};
+  const authoritative: Record<string, unknown> = {};
+  for (const field of GLOBAL_APPEARANCE_FIELDS) {
+    const value = (globalAppearance as Record<string, unknown>)[field];
+    if (value !== undefined) authoritative[field] = value;
+  }
+  if (!Object.keys(authoritative).length) return flat;
+  return { ...flat, appearance: { ...flatAppearance, ...authoritative } };
+}
+
+/**
+ * 归一化云端 payload：
+ * - v2：`{ global, platform: { desktop: {...} } }` → 分别取出 global 与本平台分组；
+ * - 旧服务端/旧数据（无 global/platform 字段）：整体视为 global。
+ * **1.1.1 主题跨端修复的两个动作（都在这里做，拉取侧唯一入口）**：
+ * 1. **隔离**：把「本平台 appearance」里的主题字段剔除，只保留阅读体验字段。
+ *    否则旧 payload（appearance 整体存在 platform 里）会在合并时把 global 刚同步过来的
+ *    主题又覆盖回本端旧值 —— 这正是「Web 改了主题 PC 不生效」的最后一环。
+ * 2. **迁移**：若 global 区完全没有主题字段（老用户升级后第一次拉），
+ *    则把上面剔除下来的主题字段补进 global，实现一次性平滑迁移，
+ *    不需要用户重新选一次主题。
+ */
 function splitRemotePayload(raw: Record<string, unknown> | null): {
   global: Record<string, unknown> | null;
   platform: Record<string, unknown> | null;
@@ -312,7 +392,7 @@ function splitRemotePayload(raw: Record<string, unknown> | null): {
   if (rawPlatform.appearance && typeof rawPlatform.appearance === 'object') {
     const { themePart, readingPart } = splitAppearanceFields(rawPlatform.appearance);
     platformPart.appearance = readingPart;
-    // （注释原文编码损坏，已清理）
+    // 平台分组里若残留主题字段（旧 payload 结构），补进 global 只做「缺失填充」，不覆盖已有值
     if (Object.keys(themePart).length) {
       const mergedGlobalAppearance = {
         ...((globalPart?.appearance && typeof globalPart.appearance === 'object'
@@ -330,7 +410,7 @@ function splitRemotePayload(raw: Record<string, unknown> | null): {
   return { global: globalPart, platform: platformPart };
 }
 
-/** 褰掍竴鍖栨晱鎰熷瓧娈碉細v2 鍒嗙粍锛坓lobal + 鏈钩鍙帮級涓庢棫鐗堝钩閾洪兘鏀寔 */
+/** 归一化敏感字段：v2 分组（global + 本平台）与旧版平铺都支持 */
 function splitRemoteSensitive(raw: Record<string, unknown> | null): CloudSensitive {
   if (!raw || typeof raw !== 'object') return {};
   const pick = (src: unknown): CloudSensitive =>
@@ -355,7 +435,7 @@ export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Settings>(loadLocal());
   const ready = ref(false);
 
-  /** 鏁忔劅瀛楁鍗曠嫭瀛樻斁锛堟闈㈢浜ょ粰瀹夊叏瀛樺偍锛岀綉椤电浠呭唴瀛橈級 */
+  /** 敏感字段单独存放（桌面端交给安全存储，网页端仅内存） */
   const secrets = ref<{ storageSecret: string; storageKeyId: string; aiKey: string }>({
     storageSecret: settings.value.storage.accessKeySecret ?? '',
     storageKeyId: settings.value.storage.accessKeyId ?? '',
@@ -365,26 +445,26 @@ export const useSettingsStore = defineStore('settings', () => {
   function persist(): void {
     try {
       const snapshot = JSON.parse(JSON.stringify(settings.value)) as Settings;
-      // （注释原文编码损坏，已清理）
+      // 敏感字段不进 localStorage：网页端只留在内存，桌面端交给安全存储
       snapshot.storage.accessKeySecret = '';
       snapshot.ai.apiKey = '';
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(snapshot));
     } catch {
-      /* 瀛樺偍宸叉弧鎴栬绂佺敤鏃跺拷鐣?*/
+      /* 存储已满或被禁用时忽略 */
     }
   }
 
-  /* ------------------------ 涓婚棰勮锛?.0.2锛宼ask-3锛?------------------------ */
+  /* ------------------------ 主题预设（1.0.2，task-3）------------------------ */
 
   /**
-   * 銆屾湰鍦颁富棰樻敼鍔ㄥ皻鏈‘璁ゆ帹閫佸埌浜戠銆嶆爣璁帮紙1.1.7 淇涓婚琚簯绔棫鍊煎洖婊氾級銆?   *
-   * ## 涓轰粈涔堝繀椤绘湁瀹冿紙瀹炴祴澶嶇幇鐨勭湡瀹炵己闄凤級
+   * 「本地主题改动尚未确认推送到云端」标记（1.1.7 修复主题被云端旧值回滚）。
    *
-   * 鐢ㄦ埛鎿嶄綔搴忓垪锛氶€変富棰?鈫?鍏抽棴璁剧疆 鈫?閲嶅紑璁剧疆銆?   * 閫変富棰樻椂 `applyThemePreset()` 浼?`scheduleCloudPush()`锛? 绉掗槻鎶栵級銆?   * 鑻ヨ繖娈垫椂闂村唴鎺ㄩ€佽繕娌″畬鎴愶紙鎴栨帹閫佸け璐ャ€佹柇缃戙€佽绉佹湁鍖栨ā寮忔嫤鎴級锛?   * 浜戠浠嶆槸**鏃т富棰?*锛涜€岄噸寮€璁剧疆椤垫椂 `SettingsPage` 浼?`pullCloudSettings()`锛?   * 浜庢槸 `mergeSettings` 鐢ㄤ簯绔棫鍊兼妸鏈湴鍒氶€夌殑涓婚瑕嗙洊鎺?鈥斺€?鐢ㄦ埛鐪嬪埌鐨勫氨鏄?   * 銆岃缃富棰樺悗鍐嶆鐐瑰嚮璁剧疆椤典富棰樺張浼氭仮澶嶄负榛樿涓婚銆嶃€?   *
-   * ## 鏂规锛氭湰鍦版敼鍔ㄤ紭鍏堬紝鐩村埌鎺ㄩ€佹垚鍔?   *
-   * - 鏈湴鏀逛富棰?鈫?缃?`themeDirtySince = Date.now()`锛?*鎸佷箙鍖?*锛屽埛鏂板悗浠嶇敓鏁堬級锛?   * - 鎺ㄩ€佹垚鍔?鈫?娓呯┖鏍囪锛堟鏃朵簯绔凡鍚湰鍦板€硷紝鍐嶆媺鍙栦篃鏄悓涓€浠斤級锛?   * - 鎷夊彇鏃惰嫢鏍囪浠嶅湪 鈫?**涓嶄粠浜戠瑕嗙洊涓婚瀛楁**锛屽苟閲嶆柊瀹夋帓涓€娆℃帹閫併€?   *
-   * 杩欐牱鏃慨鎺夊洖婊氾紝鍙堜繚鐣欒法绔悓姝ワ細鍙︿竴鍙拌澶囨敼鐨勪富棰橈紙鏈満鏃犳湭鎺ㄩ€佹敼鍔級
-   * 渚濈劧鑳藉湪鏈満鎷夊彇鐢熸晥銆?   */
+   * 用户操作序列：选主题 → 关闭设置 → 重开设置。
+   * 选主题时 `applyThemePreset()` 会 `scheduleCloudPush()`（1 秒防抖）。
+   * 若这段时间内推送还没完成（或推送失败、断网、被私有化模式拦截），云端仍是**旧主题**；
+   * 而重开设置页时 `SettingsPage` 会 `pullCloudSettings()`，于是 `mergeSettings` 用云端旧值
+   * 把本地刚选的主题覆盖掉 —— 用户看到的就是「设置主题后再次点击设置页主题又会恢复为默认主题」。
+   */
   const THEME_DIRTY_KEY = 'neomd.themeDirtySince';
 
   function loadThemeDirty(): number | null {
@@ -405,7 +485,7 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       localStorage.setItem(THEME_DIRTY_KEY, String(now));
     } catch {
-      /* 瀛樺偍琚鐢ㄦ椂浠呭唴瀛樼敓鏁?*/
+      /* 存储被禁用时仅内存生效 */
     }
   }
 
@@ -414,7 +494,7 @@ export const useSettingsStore = defineStore('settings', () => {
     try {
       localStorage.removeItem(THEME_DIRTY_KEY);
     } catch {
-      /* 蹇界暐 */
+      /* 忽略 */
     }
   }
 
@@ -496,15 +576,181 @@ export const useSettingsStore = defineStore('settings', () => {
     };
   }
 
-  /** 姝ｆ枃缂╂斁姣斾緥澶圭揣鍒?50-300锛堜笌 stores/app.ts 鐨?zoom 閫昏緫淇濇寔鍚屼竴鍙ｅ緞锛?*/
+  /* ------------------------------------------------------------------ */
+  /* global 外观字段的「字段级基线」（1.2.1，缺陷2）                        */
+  /*                                                                     */
+  /* ## 为什么 1.1.9 的 themeDirtySince 兜不住 fontFamily                */
+  /*                                                                     */
+  /* 1.1.7 引入的 `themeDirtySince` 是**整块**脏标记，且拉取后的还原是     */
+  /* 硬编码字段清单（theme / themePresetId / accent / customThemes /     */
+  /* editorColorScheme / customEditorBg / customEditorFg）—— 里面**没有** */
+  /* fontFamily。于是「改了字体 → PUT 还没落地 → 拉取」这条链路上，       */
+  /* fontFamily 没有任何保护，直接被云端旧值覆盖回去 —— 用户看到的         */
+  /* 就是「字体设了一下又自己恢复」。                                     */
+  /*                                                                     */
+  /* ## 为什么不能简单地把 fontFamily 补进那张清单                        */
+  /*                                                                     */
+  /* 那是「整块还原」：只要脏标记在，连别的设备刚改的主题也一起拒绝，       */
+  /* 而脏标记又只在推送成功时清除，弱网下会长时间僵住（1.1.9 踩过的坑）。   */
+  /* 这里改用与 layout 同构的**字段级基线**：                              */
+  /* - `appearanceBaseline` 记录上一次与云端达成一致时的 global 外观字段； */
+  /* - 拉取时逐字段比对：本地值 !== 基线值 → 本地有未推送改动 → 保留本地； */
+  /* - 本地值 === 基线值 → 本地没动过 → 接受云端值（跨端同步仍然有效）。   */
+  /* 粒度到字段：只改字体时，另一台设备改的主题照样能同步下来。            */
+  /*                                                                     */
+  /* 基线只在「该字段确实与云端一致」时推进：拉取时被本地还原过的字段       */
+  /* **不更新基线**（见 snapshotAppearanceBaseline 的 skip 参数），否则     */
+  /* 会把「本地未推送值」误标成已同步，下一次拉取又会把它冲掉。            */
+  /* ------------------------------------------------------------------ */
+  const APPEARANCE_BASELINE_KEY = 'neomd.appearanceBaseline.v1';
+
+  function loadAppearanceBaseline(): Record<string, unknown> | null {
+    try {
+      const raw = localStorage.getItem(APPEARANCE_BASELINE_KEY);
+      if (!raw) return null;
+      const parsed: unknown = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** 上一次与云端一致时的 global 外观字段快照（null = 还没有基线，此时完全接受云端） */
+  const appearanceBaseline = ref<Record<string, unknown> | null>(loadAppearanceBaseline());
+
+  /**
+   * 把当前 global 外观字段记为「已同步基线」。
+   *
+   * @param skip 这些字段**不**推进基线（它们在本次拉取中被本地值还原，云端还没有）。
+   *   省略即「全部字段都与云端一致」（推送成功时调用）。
+   */
+  function snapshotAppearanceBaseline(skip: readonly string[] = []): void {
+    try {
+      const current = settings.value.appearance as unknown as Record<string, unknown>;
+      const prev = appearanceBaseline.value ?? {};
+      const snap: Record<string, unknown> = {};
+      for (const field of GLOBAL_APPEARANCE_FIELDS) {
+        if (skip.includes(field) && prev[field] !== undefined) {
+          // 保留旧基线：该字段仍属「本地未同步」，下次拉取要继续保护
+          snap[field] = prev[field];
+          continue;
+        }
+        if (current[field] !== undefined) snap[field] = JSON.parse(JSON.stringify(current[field]));
+      }
+      appearanceBaseline.value = snap;
+      localStorage.setItem(APPEARANCE_BASELINE_KEY, JSON.stringify(snap));
+    } catch {
+      /* 序列化/存储失败时退化为「无基线」，下次拉取会完全接受云端 */
+    }
+  }
+
+  /**
+   * 「本地已改、还没成功推到云端」的 global 外观字段集合（1.2.1，缺陷2）。
+   *
+   * ## 为什么光有基线还不够
+   *
+   * 基线只在「曾经与云端对齐过一次」之后才存在。新装/清缓存/换设备的**第一次**
+   * 打开时 `appearanceBaseline` 是 null，此时按设计要全盘接受云端 —— 但用户紧接着
+   * 改字体、这次 PUT 又因为弱网/429 失败了，下一次拉取就会把这个改动冲掉。
+   * 这正是用户描述的「改了一下又自己恢复」最容易命中的路径。
+   *
+   * ## 为什么不是又一个布尔脏标记
+   *
+   * 1.1.9 的教训是 `themeDirtySince` 这类**整块**布尔量会永久僵住。这里是
+   * **字段级集合**且**只在推送成功时清空对应字段**：
+   * - 只有真正被用户改过的字段才进集合，别的字段照常同步；
+   * - 推送一旦成功（哪怕只成功一次）就清空，不会永久拒绝云端。
+   *
+   * 持久化到 localStorage：刷新页面后仍能保护住还没推上去的改动。
+   */
+  const APPEARANCE_PENDING_KEY = 'neomd.appearancePending.v1';
+
+  function loadAppearancePending(): Set<string> {
+    try {
+      const raw = localStorage.getItem(APPEARANCE_PENDING_KEY);
+      if (!raw) return new Set();
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return new Set();
+      // 只保留仍在 GLOBAL_APPEARANCE_FIELDS 名单里的字段，防止旧版本残留的键无限堆积
+      return new Set(parsed.filter((f): f is string => typeof f === 'string' && GLOBAL_APPEARANCE_FIELD_SET.has(f)));
+    } catch {
+      return new Set();
+    }
+  }
+
+  const appearancePending = ref<Set<string>>(loadAppearancePending());
+
+  function persistAppearancePending(): void {
+    try {
+      localStorage.setItem(APPEARANCE_PENDING_KEY, JSON.stringify([...appearancePending.value]));
+    } catch {
+      /* 存储被禁用时仅内存生效 */
+    }
+  }
+
+  /** 标记若干 global 外观字段「本地已改、待推送」 */
+  function markAppearancePending(fields: readonly string[]): void {
+    if (!fields.length) return;
+    const next = new Set(appearancePending.value);
+    for (const f of fields) if (GLOBAL_APPEARANCE_FIELD_SET.has(f)) next.add(f);
+    appearancePending.value = next;
+    persistAppearancePending();
+  }
+
+  /** 推送成功后清空待推送集合（云端已收下这些值，不再需要保护） */
+  function clearAppearancePending(): void {
+    if (!appearancePending.value.size) return;
+    appearancePending.value = new Set();
+    persistAppearancePending();
+  }
+
+  /**
+   * 拉取前快照本地 global 外观字段，用于 merge 之后把「本地未同步字段」还原回来。
+   *
+   * 返回还原函数：执行后返回**被还原的字段名**（调用方据此决定基线怎么推进）。
+   */
+  function captureLocalAppearanceOverrides(): () => string[] {
+    const local = JSON.parse(JSON.stringify(settings.value.appearance ?? {})) as Record<string, unknown>;
+    const base = appearanceBaseline.value;
+    const pending = new Set(appearancePending.value);
+    return () => {
+      const restored: string[] = [];
+      const merged = { ...(settings.value.appearance ?? {}) } as Record<string, unknown>;
+      for (const field of GLOBAL_APPEARANCE_FIELDS) {
+        const localValue = local[field];
+        if (localValue === undefined) continue;
+        /*
+         * 保护条件（任一成立即保留本地值）：
+         *  a) 该字段在「待推送」集合里 —— 用户刚改过、推送还没成功（无基线时也能兜住）；
+         *  b) 有基线且本地值 !== 基线值 —— 本地改过而云端不知道。
+         * 两条都不成立 = 本地没动过 → 接受云端值，跨端同步照常生效。
+         */
+        const isPending = pending.has(field);
+        const differsFromBaseline = Boolean(base) && JSON.stringify(localValue) !== JSON.stringify(base?.[field]);
+        if (!isPending && !differsFromBaseline) continue;
+        merged[field] = localValue;
+        restored.push(field);
+      }
+      if (restored.length) {
+        // merged = 云端合并结果 + 本地未同步字段，键集合与 AppearanceSettings 一致；
+        // 中间的 Record 只是逐字段比对的载体，故经 unknown 转回正式类型
+        settings.value.appearance = merged as unknown as Settings['appearance'];
+        // 让云端尽快收敛到本地值
+        scheduleCloudPush();
+      }
+      return restored;
+    };
+  }
+
+  /** 正文缩放比例夹紧到 50-300（与 stores/app.ts 的 zoom 逻辑保持同一口径） */
   function clampZoomPercent(v: number): number {
     if (!Number.isFinite(v)) return 100;
     return Math.min(300, Math.max(50, Math.round(v)));
   }
-  /* 涓?task-2锛坰erver锛夈€乼ask-4锛坈loud sync锛夊叡鐢ㄦ湰鏂囦欢锛氭湰娈靛彧鏀句富棰樼浉鍏充唬鐮侊紝
-     璇峰嬁鍦ㄦ鏂囦欢鍏跺畠浣嶇疆鍋氭棤鍏虫暣鐞嗭紝浠ュ厤涓庡苟琛屾敼鍔ㄥ啿绐併€?*/
+  /* 与 task-2（server）、task-4（cloud sync）共用本文件：本段只放主题相关代码，
+     请勿在此文件其它位置做无关整理，以免与并行改动冲突。 */
 
-  /** 鎶婁富棰樼殑鏁村 CSS 鍙橀噺鍐欏埌 <html>锛堟鏂囦笌鐣岄潰鍏辩敤鍚屼竴濂楀彉閲忥級 */
+  /** 把主题的整套 CSS 变量写到 <html>（正文与界面共用同一套变量） */
   function applyThemeVars(theme: ThemePreset): void {
     const root = document.documentElement;
     // 主题强调色为基准；用户在「通用」页签手动改过主色调时以用户值为准
@@ -528,7 +774,7 @@ export const useSettingsStore = defineStore('settings', () => {
       typeof window !== 'undefined'
         ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false)
         : false;
-    // （注释原文编码损坏，已清理）
+    // 未显式选主题时的明暗回退依据 prefers-color-scheme
     // 主题决定整体明暗：未显式选主题的旧数据由 resolveTheme 按 appearance.theme
     // 回退到对应明暗的内置主题（dark → 午夜黑，其余 → 日光白），老用户外观不突变。
     const theme = resolveTheme(appearance, { prefersDark });
@@ -542,27 +788,27 @@ export const useSettingsStore = defineStore('settings', () => {
     root.style.setProperty('--content-font-size', `${scaledFont}px`);
     root.style.setProperty('--content-line-height', String(appearance.lineHeight));
     /**
-     * 姝ｆ枃瀛椾綋锛?.1.8 淇銆岃缃瓧浣撲笉鐢熸晥銆嶏級銆?     *
-     * 鏍瑰洜锛歚content.css` 閲?`.nm-content` 鍐欑殑鏄?`font-family: var(--font-content)`锛?     * 鑰?`--font-content` 姝ゅ墠鍙湪 `index.css` 閲岃闈欐€佸畾涔変负 `var(--font-ui)`锛?     * **浠庢潵娌℃湁璇诲彇杩囩敤鎴风殑 `appearance.fontFamily`** 鈥斺€?浜庢槸璁剧疆閲屾崲瀛椾綋
-     * 鍦ㄧ晫闈笂姣棤鍙樺寲銆?     *
-     * 杩欓噷鎶婄敤鎴烽€夋嫨鐨勫瓧浣撳啓鍒?`--font-content` 涓婏紙`!important` 涓嶉渶瑕侊紝
-     * 鍥犱负鍐呰仈 style 鐨勪紭鍏堢骇楂樹簬鏍峰紡琛級銆傛湭璁剧疆鏃跺洖钀藉埌 `--font-ui`锛?     * 淇濇寔涓庣晫闈竴鑷寸殑榛樿瑙傛劅銆?     */
+     * 正文字体（1.1.8 修复「设置字体不生效」）。
+     *
+     * 根因：`content.css` 里 `.nm-content` 写的是 `font-family: var(--font-content)`，
+     * 而 `--font-content` 此前只在 `index.css` 里被静态定义为 `var(--font-ui)`，
+     * **从来没有读取过用户的 `appearance.fontFamily`** —— 于是设置里换字体在界面上毫无变化。 */
     const family = String(appearance.fontFamily ?? '').trim();
     if (family) {
       root.style.setProperty('--font-content', family);
     } else {
-      // （注释原文编码损坏，已清理）
+      // 未设置字体时回落到界面字体，保持与界面一致的默认观感
       root.style.setProperty('--font-content', 'var(--font-ui)');
     }
-    // （原注释编码损坏，已清理）
+      // 页面级缩放单独存一份，供需要的样式读取（不影响界面组件）
     root.style.setProperty('--content-zoom', String(zoom / 100));
     root.dataset.contentZoom = String(zoom);
   }
 
   /**
-   * 鏃х増銆屾鏂囬厤鑹叉柟妗堛€嶁啋 涓婚 id 鐨勫弽鍚戝悓姝ヨ〃銆?   *
-   * `EditorPage.vue` 浠嶈 `editorColorScheme` 鐢熸垚姝ｆ枃鍐呰仈鏍峰紡锛堣鏂囦欢鐢?Lead 鎸傝浇锛?   * 鏈换鍔′笉鏀癸級锛屽洜姝ゅ簲鐢ㄤ富棰樻椂蹇呴』鎶婅€佸瓧娈靛啓鎴愮瓑浠锋柟妗堬紝鍚﹀垯鏃у唴鑱旇壊浼氱洊浣?   * 鏂扮殑涓婚鍙橀噺銆傛槧灏勪笉鍒扮殑涓婚缁熶竴鐢?`custom` + `customEditorBg/Fg`
-   * 锛堝€煎嵆涓婚鐨?contentBg/contentFg锛夛紝瑙嗚涓庝富棰樺畬鍏ㄤ竴鑷淬€?   */
+   * 旧版「正文配色方案」→ 主题 id 的反向同步表。
+   * `EditorPage.vue` 仍读 `editorColorScheme` 生成正文内联样式（该文件由 Lead 挂载，
+   * 本任务不改），因此应用主题时必须把老字段写成等价方案，否则旧内联色会盖住新的主题变量。 */
   const PRESET_TO_LEGACY_SCHEME: Record<string, EditorColorScheme> = {
     daylight: 'white',
     graphite: 'gray',
@@ -586,12 +832,22 @@ export const useSettingsStore = defineStore('settings', () => {
       customEditorFg: theme.contentFg,
     };
     markThemeDirty();
+    // 主题预设会一次性改掉多个 global 外观字段，同样要进「待推送」集合，
+    // 否则推送失败时这些字段在下一次拉取会被云端旧值覆盖（缺陷2 的同一条链路）
+    markAppearancePending([
+      'theme',
+      'themePresetId',
+      'accent',
+      'editorColorScheme',
+      'customEditorBg',
+      'customEditorFg',
+    ]);
     persist();
     applyTheme();
     scheduleCloudPush();
   }
 
-  /** 褰撳墠鐢熸晥涓婚锛堝搷搴斿紡锛涙湭閫変富棰樻椂鎸夋棫瀛楁鍥為€€锛?*/
+  /** 当前生效主题（响应式；未选主题时按旧字段回退） */
   const activeTheme = computed<ThemePreset>(() => {
     const prefersDark =
       typeof window !== 'undefined'
@@ -600,7 +856,7 @@ export const useSettingsStore = defineStore('settings', () => {
     return resolveTheme(settings.value.appearance, { prefersDark });
   });
 
-  /** 涓婚搴擄細鍐呯疆涓婚 + 鐢ㄦ埛鑷畾涔変富棰?*/
+  /** 主题库：内置主题 + 用户自定义主题 */
   const themeList = computed<ThemePreset[]>(() => allThemes(settings.value.appearance.customThemes));
 
   let cloudPushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -609,9 +865,25 @@ export const useSettingsStore = defineStore('settings', () => {
   let lastAutoPullAt = 0;
   let autoPullInstalled = false;
   let pullingCloud = false;
+  /**
+   * 拉取过程中发现有本地未同步改动、需要补一次推送（1.2.1）。
+   *
+   * 为什么必须单独记这个标记：`scheduleCloudPush()` 在 `pullingCloud` 为 true 时
+   * **直接 return**（避免拉取中途又发推送导致互相打架）。而「还原本地未同步字段」
+   * 恰恰发生在拉取过程中，那里调用的 `scheduleCloudPush()` 永远不会生效。
+   *
+   * 结果是：本地改动被基线保护住了（不会丢），但**永远也推不上去** ——
+   * 正是 1.1.9「脏标记永久僵住」的另一种形态。所以这里在拉取结束时补发一次。
+   */
+  let pushAfterPull = false;
 
   function scheduleCloudPush(): void {
-    if (pullingCloud || !getAccessToken()) return;
+    if (pullingCloud) {
+      // 拉取中：记下来，等拉取结束后补发（见 finally 里的 pushAfterPull）
+      pushAfterPull = true;
+      return;
+    }
+    if (!getAccessToken()) return;
     if (cloudPushTimer) clearTimeout(cloudPushTimer);
     cloudPushTimer = setTimeout(() => {
       cloudPushTimer = null;
@@ -620,7 +892,7 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * 鑺傛祦鍚庣殑鑷姩鎷夊彇锛?0s 绐楀彛锛夈€?   * 瑙﹀彂鐐癸細搴旂敤鍚姩銆佺獥鍙ｉ噸鏂板彲瑙侊紙visibilitychange锛夈€佺獥鍙ｈ仛鐒︼紙focus锛夈€佹墦寮€璁剧疆椤点€?   */
+   * 节流后的自动拉取（30s 窗口）。 */
   function requestCloudPull(): void {
     if (!getAccessToken()) return;
     const wait = AUTO_PULL_THROTTLE_MS - (Date.now() - lastAutoPullAt);
@@ -647,10 +919,35 @@ export const useSettingsStore = defineStore('settings', () => {
         { auth: true },
       );
       const remoteVer = Number(res.version ?? 0);
-      const { global: remoteGlobal, platform: remotePlatform } = splitRemotePayload(res.payload);
-      // 本地主题改动尚未推送成功 → 记下本地主题字段，合并后原样还原，避免被云端旧值回滚
-      // （这正是「设置主题后重开设置页又恢复默认」的直接原因）
-      const pendingTheme = themeDirtySince.value ? { ...settings.value.appearance } : null;
+      /*
+       * 再取一次「纯 global 视图」，用它纠正拍平视图里被平台分区遮蔽的跨端外观字段。
+       *
+       * 这一步是缺陷2 的关键修复：拍平视图的 `appearance` 会被
+       * `platform.<p>.appearance` **整块替换**，而 1.1.7 遗留在平台分区里的
+       * fontFamily 旧值正是「字体设完自己恢复」的来源。取不到时（老服务端 /
+       * 私有化模式）静默退化为原行为，只信任拍平视图。
+       */
+      let globalOnlyPayload: Record<string, unknown> | null = null;
+      try {
+        const globalRes = await api<CloudSettingsResponse>(
+          `/api/settings?platform=${encodeURIComponent(GLOBAL_ONLY_PLATFORM)}`,
+          { auth: true },
+        );
+        globalOnlyPayload = globalRes.payload ?? null;
+      } catch {
+        /* 忽略：退化为仅用拍平视图 */
+      }
+      const correctedPayload = applyGlobalAppearanceAuthority(res.payload, globalOnlyPayload);
+      const { global: remoteGlobal, platform: remotePlatform } = splitRemotePayload(correctedPayload);
+      /*
+       * 本地 global 外观字段（主题 / 字体 / 强调色 / 自定义主题……）的未推送改动保护。
+       *
+       * 1.2.1 起改为**字段级基线**，不再用 1.1.7 那张硬编码清单：
+       * 老清单漏了 fontFamily，导致「改字体 → 推送没落地 → 拉取」时字体被云端旧值
+       * 直接冲掉（缺陷2）。逐字段比对既能保护刚改的字段，又不会像整块脏标记那样
+       * 永久拒绝云端（1.1.9 的教训）。
+       */
+      const restoreLocalAppearance = captureLocalAppearanceOverrides();
       // 布局同理：本地有未同步改动时，merge 后要把本地 layout 原样还原（1.1.9）
       const restoreLocalLayout = captureLocalLayoutOverrides();
 
@@ -659,36 +956,26 @@ export const useSettingsStore = defineStore('settings', () => {
       if (remoteGlobal) {
         settings.value = mergeSettings(settings.value, migrateSettingsTheme(stripLocalOnly(remoteGlobal)));
       }
-      // （原注释编码损坏，已清理）
+      // global 区已合并完毕，下面处理本平台分组的阅读体验字段
       // 注意：这里的 appearance 已被 splitRemotePayload 剔除主题字段，只含阅读体验字段，
       // 因此不会把 global 刚同步过来的主题覆盖回本端旧值（这正是跨端不生效的最后一环）。
       if (remotePlatform) {
         settings.value = mergeSettings(settings.value, stripLocalOnly(remotePlatform));
       }
 
-      if (pendingTheme) {
-        // 只还原「主题字段」，阅读体验字段（字号/行高/页宽等）仍接受云端值
-        settings.value.appearance = {
-          ...settings.value.appearance,
-          theme: pendingTheme.theme,
-          themePresetId: pendingTheme.themePresetId,
-          accent: pendingTheme.accent,
-          customThemes: pendingTheme.customThemes,
-          editorColorScheme: pendingTheme.editorColorScheme,
-          customEditorBg: pendingTheme.customEditorBg,
-          customEditorFg: pendingTheme.customEditorFg,
-        };
-        // 云端还没拿到本地主题 → 合并后再推一次，让两端收敛
-        scheduleCloudPush();
-      }
+      /*
+       * 还原本地未推送的 global 外观字段（含 fontFamily）。
+       * 必须在两次 merge 之后执行 —— 否则会被云端值重新盖掉。
+       */
+      const restoredAppearanceFields = restoreLocalAppearance();
 
       /*
        * 还原本地未同步的布局字段（逐字段比对基线，见 captureLocalLayoutOverrides）。
        *
        * 只还原「本地改过而云端不知道」的字段：工具栏顺序 / 功能区 / 面板宽度都是
-       * 用户刚拖出来的显式意图，被云端旧值覆盖会让人觉得「拖拽无效」；
+       * 还原本地未同步的布局字段（逐字段比对基线，见 captureLocalLayoutOverrides）。
        * 而本地没动过的字段仍接受云端值，保证另一台设备的改动能同步下来。
-       * 放在 pendingTheme 之后、cloudVersion 赋值之前，二者作用对象不重叠（appearance vs layout）。
+       * 放在外观字段还原之后、cloudVersion 赋值之前，二者作用对象不重叠（layout vs appearance）。
        */
       restoreLocalLayout();
 
@@ -712,12 +999,31 @@ export const useSettingsStore = defineStore('settings', () => {
        * 推送成功时会把基线更新为含本地改动的版本。
        */
       snapshotLayoutBaseline();
+      /*
+       * global 外观字段的基线同理，但必须**跳过本次被还原的字段**：
+       * 它们的本地值云端还没有，若也写进基线，下一次拉取就会误判为「本地没动过」
+       * 而被云端旧值覆盖 —— 这正是缺陷2「等一会儿自己变回去」的复发路径。
+       * 同时这些字段仍留在 pending 集合里，由下一次成功推送清空。
+       */
+      snapshotAppearanceBaseline(restoredAppearanceFields);
       persist();
       applyTheme();
     } catch {
-      /* 绂荤嚎 / 鏈櫥褰?/ 绉佹湁鍖栨ā寮忥紙PrivacyModeError锛夋椂闈欓粯蹇界暐 */
+      /* 离线 / 未登录 / 私有化模式（PrivacyModeError）时静默忽略 */
     } finally {
       pullingCloud = false;
+      /*
+       * 拉取期间如果有本地未同步改动被还原（scheduleCloudPush 当时只能置标记），
+       * 此刻立刻补发一次推送，让云端收敛到本地值。
+       *
+       * 没有这一步，本地改动会**永远停在本地**：基线 / pending 一直保护它，
+       * 但再没有任何推送把它送上去 —— 用户看到的就是「改了设置，另一端永远不同步」，
+       * 即 1.1.9 脏标记僵住的翻版。这是本次修复最容易踩空的一环。
+       */
+      if (pushAfterPull) {
+        pushAfterPull = false;
+        scheduleCloudPush();
+      }
     }
   }
 
@@ -726,7 +1032,46 @@ export const useSettingsStore = defineStore('settings', () => {
     const platform = detectPlatform();
     try {
       const { global: globalPart, platform: platformPart } = splitSettingsPartitions(settings.value);
-      // （注释原文编码损坏，已清理）
+      /*
+       * 把「跨端强一致」的外观字段**同时镜像进平台分组**（1.2.1，缺陷2 的真正根因）。
+       *
+       * ## 为什么必须镜像（这是「字体设完一会儿自己恢复」的最后一环）
+       *
+       * 服务端 `GET /api/settings?platform=xxx` 返回的是**拍平视图**：
+       *   flattenSettings() 用 `Object.assign(view, group)` 把平台分组盖到 global 上，
+       * 而 `appearance` 是一个整体对象键 —— 于是 `platform.<p>.appearance`
+       * **整块替换** `global.appearance`，而不是逐字段覆盖。
+       *
+       * 1.1.7 及更早版本把 `fontFamily` 写在 platform 分区里，这些旧值至今仍留在
+       * `platform.desktop.appearance` / `platform.web.appearance` 里（生产库实测确实存在）。
+       * 于是即使 1.1.8+ 把 fontFamily 改成写 global，客户端拉到的拍平视图里
+       * fontFamily 仍是平台分区里的**旧值**，被当成「云端的权威值」覆盖回本地。
+       *
+       * 客户端没法从拍平视图反推哪个字段来自哪个分区（响应里没有 global/platform 键），
+       * 所以只能**在写侧自愈**：推送时把 global 里的主题类字段同步写进平台分组，
+       * 让 `platform.<p>.appearance` 不再残留旧值。这样无论服务端拍平顺序如何，
+       * 两个分区的值都一致，拉取结果必然正确。
+       *
+       * 注意：这里只镜像 `GLOBAL_APPEARANCE_FIELDS`（跨端强一致字段），
+       * 阅读体验字段（字号 / 行高 / 页宽 / 缩放 / 行号 / 拼写检查）**仍然各端独立**，
+       * 不会被另一台设备覆盖 —— 这是「按端差异化」设计的底线。
+       */
+      const mirroredAppearance: Record<string, unknown> = {};
+      const globalAppearance = (globalPart.appearance ?? {}) as Record<string, unknown>;
+      for (const field of GLOBAL_APPEARANCE_FIELDS) {
+        if (globalAppearance[field] !== undefined) {
+          mirroredAppearance[field] = globalAppearance[field];
+        }
+      }
+      if (Object.keys(mirroredAppearance).length) {
+        // 服务端对 appearance 做浅合并（`{...current, ...incoming}`），
+        // 因此这里只带主题类字段，平台自己的阅读体验字段不会被动到。
+        platformPart.appearance = {
+          ...((platformPart.appearance as Record<string, unknown> | undefined) ?? {}),
+          ...mirroredAppearance,
+        };
+      }
+      // payload 结构为 v2：global 与「本平台」分组分开提交，服务端按分组浅合并
       const payload = { global: globalPart, platform: { [platform]: platformPart } };
       const sensitive = {
         global: {
@@ -752,19 +1097,27 @@ export const useSettingsStore = defineStore('settings', () => {
         },
       });
       settings.value.cloudVersion = Number(saved.version ?? settings.value.cloudVersion ?? 0);
-      // （注释原文编码损坏，已清理）
+      // 云端已收下本地主题 → 清除脏标记，后续拉取可以正常接受云端值
       clearThemeDirty();
       // 推送成功 → 当前 layout 即「与云端一致」的基线（1.1.9）
       snapshotLayoutBaseline();
+      /*
+       * 推送成功 = 云端已经收下当前 global 外观字段（含 fontFamily），
+       * 因此整份 global 外观都可以推进为基线，本地不再有「未推送改动」。
+       * 这一步是让「保护」不会永久生效的关键：没有它，基线永远停在旧值上，
+       * 本地每次拉取都会把旧本地值当成未推送改动还原，跨端同步就废了。
+       */
+      snapshotAppearanceBaseline();
+      clearAppearancePending();
       persist();
     } catch {
       if (attempt >= 1) return;
-      // （注释原文编码损坏，已清理）
+      // 只重试一次：网络抖动时需要一次机会，但连续失败说明是服务端/鉴权问题，继续重试只会放大压力
       await pushCloudSettings(attempt + 1);
     }
   }
 
-  /** 杞婚噺鐗堟湰杞锛氬彧姣旇緝鐗堟湰鍙凤紝浜戠鏈夊彉鍖栨墠鎷夊叏閲忚缃?*/
+  /** 轻量版本轮询：只比较版本号，云端有变化才拉全量设置 */
   async function pollCloudVersion(): Promise<void> {
     if (!getAccessToken() || pullingCloud) return;
     if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
@@ -773,11 +1126,11 @@ export const useSettingsStore = defineStore('settings', () => {
       const remote = Number(res.version ?? 0);
       if (remote > Number(settings.value.cloudVersion ?? 0)) await pullCloudSettings();
     } catch {
-      /* 蹇界暐缃戠粶鎶栧姩涓庣鏈夊寲妯″紡鎷︽埅 */
+      /* 忽略网络抖动与私有化模式拦截 */
     }
   }
 
-  /** 瀹夎鑷姩鍚屾瑙﹀彂鍣細绐楀彛鑱氱劍 / 閲嶆柊鍙 / 60s 鐗堟湰杞 + 鍚姩鍗虫媺涓€娆?*/
+  /** 安装自动同步触发器：窗口聚焦 / 重新可见 / 60s 版本轮询 + 启动即拉一次 */
   function installCloudAutoPull(): void {
     if (autoPullInstalled || typeof window === 'undefined') return;
     autoPullInstalled = true;
@@ -791,7 +1144,7 @@ export const useSettingsStore = defineStore('settings', () => {
     requestCloudPull();
   }
 
-  /** 鍗歌浇鑷姩鍚屾瑙﹀彂鍣紙娴嬭瘯/HMR 鏃堕伩鍏嶉噸澶嶆敞鍐岋級 */
+  /** 卸载自动同步触发器（测试/HMR 时避免重复注册） */
   function disposeCloudAutoPull(): void {
     if (autoPullTimer) {
       clearTimeout(autoPullTimer);
@@ -816,7 +1169,7 @@ export const useSettingsStore = defineStore('settings', () => {
     scheduleCloudPush();
   }
 
-  /** 鍒ゆ嵁锛氳繖娆?appearance 鏀瑰姩鏄惁纰板埌浜嗐€岃法绔己涓€鑷淬€嶇殑涓婚瀛楁 */
+  /** 判据：这次 appearance 改动是否碰到了「跨端强一致」的主题字段 */
   function touchesThemeFields(patch: Partial<Settings['appearance']>): boolean {
     return GLOBAL_APPEARANCE_FIELDS.some((f) => (patch as Record<string, unknown>)[f] !== undefined);
   }
@@ -845,6 +1198,17 @@ export const useSettingsStore = defineStore('settings', () => {
     }
     settings.value.appearance = next;
     if (touchesThemeFields(patch)) markThemeDirty();
+    /*
+     * 标记「这些 global 外观字段本地已改、还没推上去」（1.2.1，缺陷2）。
+     *
+   * 与 `markThemeDirty()` 并存而不是替换它：`themeDirtySince` 还被
+     * `splitRemotePayload` 之外的旧逻辑与测试引用，贸然删掉风险大；
+     * 而真正决定「拉取时保不保这个字段」的是下面的字段级 pending 集合，
+     * 粒度更细，也不会像布尔量那样永久僵住。
+     */
+    markAppearancePending(
+      GLOBAL_APPEARANCE_FIELDS.filter((f) => (patch as Record<string, unknown>)[f] !== undefined),
+    );
     persist();
     applyTheme();
     scheduleCloudPush();
@@ -855,7 +1219,7 @@ export const useSettingsStore = defineStore('settings', () => {
     /*
      * 这里**不**置「脏标记」。布局是否与云端一致由 `captureLocalLayoutOverrides()`
      * 逐字段比对基线决定（见该函数的注释）——因为 `updateLayout()` 除了用户拖拽，
-     * 还被面板开合、功能区切换等程序化路径大量调用，用布尔标记会永久置位，
+   * 还被面板开合、功能区切换等程序化路径大量调用，用布尔标记会永久置位，
      * 反而让跨端布局同步彻底失效。
      */
     persist();
@@ -863,9 +1227,9 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * 鏇存柊鏈嶅姟绔繛鎺ラ厤缃紙浠呮闈㈢浣跨敤锛夈€?   *
-   * 涓変釜瀛楁鍏ㄩ儴鏄?*涓ユ牸鏈湴**閰嶇疆锛坄server` 鍦?`LOCAL_ONLY_KEYS` 涓紝姘镐笉杩涗簯绔?payload锛夛紝
-   * 鍥犳杩欓噷鐩存帴鏀瑰唴瀛?+ 钀界洏锛屼笉璧?`update()`锛堝悗鑰呬細瑙﹀彂浜戠鎺ㄩ€侊級銆?   * `customBaseUrl` 浼氬厛鍋氳鑼冨寲锛氬幓灏炬枩鏉犮€佸幓鎺夎濉殑 `/api` 鍚庣紑銆佹牎楠?http(s)銆?   */
+   * 更新服务器连接配置（仅桌面端使用）。
+   * 三个字段全部是**严格本地**配置（`server` 在 `LOCAL_ONLY_KEYS` 中，永不进云端 payload），
+   * 因此这里直接改内存 + 落盘，不走 `update()`（后者会触发云端推送）。 */
   function updateServer(patch: Partial<ServerSettings>): void {
     const cur = settings.value.server ?? DEFAULT_SERVER_SETTINGS;
     const next: ServerSettings = {
@@ -913,11 +1277,11 @@ export const useSettingsStore = defineStore('settings', () => {
     () => Boolean(settings.value.storage.bucket && (settings.value.storage.accessKeyId || settings.value.storage.accessKeySecret)),
   );
 
-  /** 鏁版嵁绉佹湁鍖栨槸鍚﹀紑鍚細寮€鍚悗缂栬緫鍣ㄩ櫎搴旂敤鍟嗗簵澶栧畬鍏ㄤ笉鍐嶈姹傛湇鍔＄ */
+  /** 数据私有化是否开启：开启后编辑器除应用商店外完全不再请求服务端 */
   const privacyMode = computed(() => settings.value.server?.privacyMode === true);
 
   /**
-   * 鏈嶅姟绔槸鍚﹀凡"鏄庣‘閰嶇疆"锛?   * - 瀹樻柟妯″紡瑙嗕负宸查厤缃紙寮€绠卞嵆鐢級锛?   * - 鑷缓妯″紡瑕佹眰濉簡鍚堟硶鐨?http(s) 鍦板潃銆?   */
+   * 服务端是否已"明确配置"： */
   const serverConfigured = computed(() => {
     const server = settings.value.server;
     if (!server) return true;
@@ -925,7 +1289,7 @@ export const useSettingsStore = defineStore('settings', () => {
     return Boolean(normalizeServerBase(server.customBaseUrl));
   });
 
-  /** AI 鍙敤妯″瀷锛氫紭鍏堢敤鎴峰嬀閫夛紝鍏舵鏈嶅姟鍟嗛璁?*/
+  /** AI 可用模型：优先用户勾选，其次服务商预设 */
   const aiModels = computed(() => {
     const ai = settings.value.ai;
     if (ai.models && ai.models.length) return ai.models;
@@ -938,12 +1302,12 @@ export const useSettingsStore = defineStore('settings', () => {
     if (typeof window !== 'undefined') {
       window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
     }
-    // （注释原文编码损坏，已清理）
+    // 监听系统明暗变化，让「跟随系统」的用户无需手动切换
   }
 
   watch(() => settings.value.appearance.theme, applyTheme);
 
-  // （注释原文编码损坏，已清理）
+    // 主题预设或自定义主题列表变化时也要重算 CSS 变量（切主题会同时改这两者）
   watch(
     () => [settings.value.appearance.themePresetId, settings.value.appearance.customThemes] as const,
     applyTheme,
@@ -966,7 +1330,7 @@ export const useSettingsStore = defineStore('settings', () => {
     persist,
     pullCloudSettings,
     pushCloudSettings,
-    /** 鑺傛祦鐗堟媺鍙栵細鎵撳紑璁剧疆椤点€佺獥鍙ｉ噸鏂板彲瑙佺瓑鍦烘櫙璋冪敤 */
+  /** 节流版拉取：打开设置页、窗口重新可见等场景调用 */
     requestCloudPull,
     pollCloudVersion,
     disposeCloudAutoPull,
@@ -975,11 +1339,11 @@ export const useSettingsStore = defineStore('settings', () => {
     aiModels,
     privacyMode,
     serverConfigured,
-    /* 涓婚棰勮锛坱ask-3锛?*/
+  /* 主题预设（task-3） */
     activeTheme,
     themeList,
     applyThemePreset,
-    /** 閲嶆柊濂楃敤褰撳墠涓婚锛堝垏鎹€屽簲鐢ㄨ寖鍥淬€嶇瓑鏈満鍋忓ソ鍚庤皟鐢紝璁╁彉閲忕珛鍗抽噸绠楋級 */
+  /** 重新套用当前主题（切换「应用范围」等本机偏好后调用，让变量立即重算） */
     reapplyTheme: applyTheme,
   };
 });

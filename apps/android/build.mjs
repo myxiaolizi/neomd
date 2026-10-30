@@ -15,6 +15,16 @@ const outDir = path.join(repo, 'dist-artifacts');
 const jdk = path.join(repo, 'tools', 'jdk21');
 const sdk = path.join(repo, 'tools', 'android-sdk');
 
+/**
+ * 产物名里的版本号**必须从 package.json 读**，不能硬编码。
+ *
+ * 这里曾长期写死 `NeoMD-1.2.0.apk`，后果是每次升版本都要有人记得手改这一行，
+ * 漏改就会产出「叫 1.2.0、内容却是 1.3.1」的安装包 —— 而 `release-119.mjs check`
+ * 会因此直接拦发布（1.2.1 收口时就真的拦到了）。桌面端 `apps/desktop/build.mjs`
+ * 在 1.2.0 已经改成动态推导，Android 端这次补齐，两端行为一致。
+ */
+const APP_VERSION = JSON.parse(readFileSync(path.join(repo, 'package.json'), 'utf8')).version;
+
 if (!existsSync(path.join(webDist, 'index.html'))) {
   console.error('[android] 缺少 Web 产物，请先执行 pnpm --filter @neomd/web build');
   process.exit(1);
@@ -156,6 +166,6 @@ if (!existsSync(apkPath)) {
   process.exit(1);
 }
 mkdirSync(outDir, { recursive: true });
-const target = path.join(outDir, 'NeoMD-1.2.0.apk');
+const target = path.join(outDir, `NeoMD-${APP_VERSION}.apk`);
 copyFileSync(apkPath, target);
 console.log('[android] APK 已生成:', target);
