@@ -207,10 +207,75 @@ chown -R www:www public server
 
 ## 九、遗留事项与环境风险
 
-1. **生产服务曾多次非预期停机**（`SIGTERM` + 「开始优雅停机」，非崩溃非 OOM，内存充足）。
-   - 可能来源：同机另有一个**不属于本仓库**的 node 进程监听 `0.0.0.0:8781` 且连**同一个生产 MySQL**。若它属于某个「按进程名批量 kill node」的运维脚本，就能解释为什么是优雅停机而非崩溃。
-   - **这是待查的运维问题，不是代码缺陷**。建议给 3200 加进程守护（pm2 或 systemd），避免单点静默退出。
+1. **🔴 生产服务反复非预期停机 —— 已定位到高度可疑的外部脚本（本次最重要的运维发现）**
+
+   **现象**：1.4.0 部署完成、验证全绿后，约 7 分钟服务再次消失，公网 502。日志只有 `已停止`（优雅停机），没有崩溃堆栈、没有 OOM（服务器内存 31.5G / 空闲充足）。
+
+   **排查过程与证据**：
+   - 服务器上存在一个**每分钟执行的宝塔计划任务**：
+     ```
+     */1 * * * * /www/server/cron/0739fa5f5c7249b8e742e6fa02717fae
+       → bash /www/wwwroot/jdy-push/watchdog.sh
+     ```
+   - `watchdog.sh` 是**另一个项目（jdy-push）**的进程守护脚本，第 2 步「清理残留进程」做两件事：
+     ```bash
+     OLD_PID=$(cat /www/server/nodejs/vhost/pids/jdy-push.pid)
+     kill -TERM "$OLD_PID"; sleep 3; kill -9 "$OLD_PID"   # ← 危险点 1
+     pkill -f "/www/wwwroot/jdy-push/src/server.js"        # ← 危险点 2
+     ```
+   - **危险点 1（PID 复用）**：它按 pid 文件里的数字直接 `kill -TERM`。如果那个 PID 在进程退出后**被系统复用**给 neomd，就会把 neomd 优雅停掉 —— **完美解释「SIGTERM + 优雅停机」而非崩溃**。实测当前 `jdy-push.pid` 内容为 `968207`，而 neomd 的 pid 是 `995723`，两者都是「宝塔 Node 项目」共用同一个 `pids/` 目录，写文件时机一旦交错就可能张冠李戴。
+   - **危险点 2（模式过宽）**：`pgrep -af 'src/server.js'` 实测**同时命中 jdy-push 与 neomd 两个进程**。虽然当前脚本带完整路径前缀、暂时不会误杀 neomd，但只要有人把它简化成 `pkill -f "src/server.js"`（这是很自然的修改），就会**立刻杀掉所有同类 Node 项目**。
+
+   **这是运维问题，不是代码缺陷**。建议（需在宝塔面板操作，属另一个项目的运维范围）：
+   1. `watchdog.sh` 的 `kill` 前加**进程身份校验**（`/proc/$PID/cmdline` 是否含本项目路径），不匹配则跳过；
+   2. `pkill -f` 改成 `pgrep -f` + 校验 cwd/端口后再 kill；
+   3. 给 neomd 也配独立守护（或改 systemd），避免依赖「没人碰它」的脆弱状态。
+
 2. **`PROJECT_CONTEXT.md` 的 OSS AK/SK 已过期**（`LTAI5tA5eb88...` → 实测 `InvalidAccessKeyId`）。当前有效值见 `services/api/.env`（`LTAI5t6DX1...`）。该文件已在 `.gitignore` 中，不进公开仓库。
+
 3. **生产管理员密码 `6655` 出现在公开仓库的测试脚本里**（多个 `tools/*.mjs`，属既有惯例）。若仓库公开，这是真实凭据泄露 —— 建议改强密码 + 测试凭据改环境变量 + 为门禁单独建测试账号。
+
 4. **`server/releases/` 已累积 12 个 APK（约 47 MB）**，可考虑只保留最近 3 个版本的本地缓存（历史版本由 OSS 承载），但需同步调整 `download.js` 的历史放行逻辑。
+
 5. **Android APK 未做真机安装验证**：只验证了构建成功（`BUILD SUCCESSFUL`）与产物字节数/SHA256，未在真机或模拟器上安装启动。
+
+---
+
+## 十、发布后补修（如实记录）
+
+部署完成、门禁全绿之后，仍发现并修掉两个问题：
+
+### 10.1 根 `package.json` 被误覆盖（门禁直接瘫痪）
+
+**现象**：跑最终门禁时 `vue-tsc` / `tsc` 双双报 `error TS2688: Cannot find type definition file for 'node'`。
+
+**根因**：工作区的**根 `package.json` 被 `apps/desktop/package.json` 的内容覆盖**，只剩
+```json
+{ "name": "@neomd/desktop", "version": "1.4.0", "private": true, "type": "module", "main": "main.cjs" }
+```
+丢掉了 `name`/`description`/`engines`/`scripts`/`repository` **以及 `devDependencies`（含 `@types/node`）**。而 `apps/web/tsconfig.json` 的 `types: ["vite/client","node"]` 依赖它 → 类型解析失败。
+
+**为什么会被提交**：`git add -A` 在跑完构建/打包之后执行，`electron-builder` 一类工具链会动 `package.json`，`-A` 把脏文件静默一起提交了。
+
+**影响面**：**不影响已发布产物** —— 三个包在 8:19 构建完成，污染发生在 9:52 之后；GitHub Release 上的资产 SHA256 与构建产物一致。只影响本地门禁。
+
+**修复**：从正确的 1.4.0 提交取回原内容写回 + `pnpm install` 恢复依赖。实测恢复后 `@types/node 22.19.1` 就位、`vue-tsc` 与 `tsc` 均 `EXIT=0`、五个 `package.json` 版本与 name 全部正确。
+
+**教训**：`git add -A` 在构建之后是危险的。发布前必须 `git diff --cached --stat` 并**逐个核对关键配置文件**（`package.json` / `pnpm-lock.yaml` / `.gitignore`），不要盲提。
+
+> 附带发现：用 `git show > file` 恢复时，PowerShell 的 `>` 重定向把 UTF-8 写成了 **UTF-16**（文件出现 `ÿþ` BOM，Node 报 `ERR_INVALID_PACKAGE_CONFIG`）。最终改用 Node 的 `execSync(encoding:'utf8')` + `fs.writeFileSync(..., 'utf8')`。**本仓库「禁止用 shell 重定向写含中文的文件」这条红线，对恢复配置文件同样适用。**
+
+### 10.2 `verify-119-github.mjs` 仓库标识解析 bug（验收假失败）
+
+**现象**：发布验收报「仓库 API 不可读 HTTP 404 / main 分支不存在 / tag v1.4.0 未找到 / Release 404」—— 看起来像发布完全失败。
+
+**根因**：
+```js
+const repoParts = args.repo ? /^([\w.-]+)\/([\w.-]+)$/.exec(args.repo) : parseRepoField(pkg.repository);
+const { owner, repo } = repoParts;   // ← 对象解构
+```
+两个分支返回的**类型不同**：`exec()` 返回**数组** `[全串, owner, repo]`，`parseRepoField()` 返回**字符串** `'owner/repo'`。对象解构对两者都取不到 `.owner`/`.repo` → 双双 `undefined` → 所有请求变成 `/repos/undefined/undefined/...` → 404。
+
+**修复**：统一规范成 `owner/repo` 字符串再按字符串切分。实测 20/20 通过（tag 指向 main 最新提交、Release body 含全部小标题与关键字、三资产大小一致且均可下载）。
+
+**教训**：**「验收脚本报失败」不等于「发布失败」** —— 先看脚本自己拼出的 URL / 打印的中间变量，再判断产品状态。
