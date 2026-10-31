@@ -3,4 +3,7 @@ export * from './themes';
 export * from './storage-presets';
 export * from './ai-presets';
 export * from './plugins';
+export * from './plugin-source';
+export * from './community-plugins';
+export * from './builtin-plugin-runtime';
 export * from './naming';

@@ -1,0 +1,405 @@
+{
+  "results": [
+    {
+      "id": "whiteboard",
+      "name": "白板",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'whiteboard'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：whiteboard.create",
+        "whiteboard.create → 打开白板面板",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "note-reorganize",
+      "name": "笔记重组",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'reorganize'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：reorganize.batch",
+        "reorganize.batch → 打开笔记重组面板",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "tag-list",
+      "name": "标签列表",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'tag-list'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：tags.panel",
+        "tags.panel → 左侧栏按 # 搜索",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "outgoing-links",
+      "name": "出链",
+      "status": "full",
+      "kinds": "panel",
+      "checks": [
+        "清单一致：0 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'outgoing-links'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "面板数据：出链：解析 1 个 wikilink + 1 个嵌入 + 1 个外链"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "outline",
+      "name": "大纲",
+      "status": "full",
+      "kinds": "panel",
+      "checks": [
+        "清单一致：0 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'outline'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "publish",
+      "name": "发布",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'publish'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：publish.current",
+        "publish.current → 打开分享/发布弹窗",
+        "面板数据：发布面板已渲染（可打开分享弹窗）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "backlinks",
+      "name": "反向链接",
+      "status": "full",
+      "kinds": "panel",
+      "checks": [
+        "清单一致：0 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'backlinks'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "workspace",
+      "name": "工作区",
+      "status": "full",
+      "kinds": "command",
+      "checks": [
+        "清单一致：2 个声明命令",
+        "命令在派发表中：workspace.save",
+        "命令在派发表中：workspace.restore",
+        "workspace.save → 保存工作区布局",
+        "workspace.restore → 恢复工作区布局"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "graph",
+      "name": "关系图谱",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'graph'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：graph.open",
+        "graph.open → 打开关系图谱面板",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "slides",
+      "name": "幻灯片",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'slides'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：slides.present",
+        "slides.present → 打开幻灯片面板",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "footnote-view",
+      "name": "脚注视图",
+      "status": "full",
+      "kinds": "panel",
+      "checks": [
+        "清单一致：0 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'footnote-view'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "面板数据：脚注：解析出 2 条定义 + 引用次数"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "quick-switcher",
+      "name": "快速切换",
+      "status": "full",
+      "kinds": "command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "命令在派发表中：quick.open",
+        "quick.open → 打开命令面板"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "recorder",
+      "name": "录音机",
+      "status": "partial",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'recorder'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：recorder.toggle",
+        "recorder.toggle → 打开录音机面板",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": "录音与本地回放可用；上传到对象存储需要先在「设置 → 存储」配置 S3 并可访问网络，未配置时只能本地试听。浏览器需授予麦克风权限。"
+    },
+    {
+      "id": "random-note",
+      "name": "漫游笔记",
+      "status": "full",
+      "kinds": "command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "命令在派发表中：random.open",
+        "random.open → 打开随机笔记"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "daily-notes",
+      "name": "日记",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：2 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'daily'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：daily.open",
+        "命令在派发表中：daily.today",
+        "daily.open → 打开今日日记",
+        "daily.today → 打开今日日记",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "bookmarks",
+      "name": "书签",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'bookmarks'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：bookmark.toggle",
+        "bookmark.toggle → 写入书签存储",
+        "面板数据：书签：收藏 / 取消收藏 / 持久化解析均正确"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "properties",
+      "name": "属性列表",
+      "status": "full",
+      "kinds": "panel",
+      "checks": [
+        "清单一致：0 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'properties'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "面板数据：属性：聚合 2 个键，状态出现于 2 篇"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "database",
+      "name": "数据库",
+      "status": "partial",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'database'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：database.create",
+        "database.create → 打开数据库视图面板",
+        "面板数据：数据库：可把 frontmatter 聚合成表格列"
+      ],
+      "problems": [],
+      "limitation": "可按 frontmatter 属性聚合成表格视图并跳转；把视图保存为 `.base` 文件的功能尚未实现（宿主没有 .base 文件的读写能力）。"
+    },
+    {
+      "id": "web-browser",
+      "name": "网页浏览器",
+      "status": "partial",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'browser'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：browser.open",
+        "browser.open → 打开内嵌浏览器面板",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": "内嵌浏览与「提取正文为 Markdown」可用；但目标网站若设置了 X-Frame-Options / CSP frame-ancestors 会拒绝内嵌，这是站点侧限制，宿主无法绕过。"
+    },
+    {
+      "id": "file-recovery",
+      "name": "文件恢复",
+      "status": "full",
+      "kinds": "panel+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'recovery'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "命令在派发表中：recovery.open",
+        "recovery.open → 打开文件恢复面板",
+        "面板数据：（该面板为既有组件，未定义额外样本）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "file-list",
+      "name": "文件列表",
+      "status": "full",
+      "kinds": "panel",
+      "checks": [
+        "清单一致：0 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'file-list'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "面板数据：文件列表面板已渲染（提供左侧栏直达）"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "slash-commands",
+      "name": "斜杠命令",
+      "status": "partial",
+      "kinds": "extension+command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "命令在派发表中：slash.insertMenu",
+        "slash.insertMenu → 插入标题标记（文档已变）"
+      ],
+      "problems": [],
+      "limitation": "命令面板 / 功能区可唤出「插入菜单」并插入标题、表格、代码块等；在正文里直接键入 `/` 就地弹出菜单的编辑器内触发尚未接入（需要在编辑器扩展层做，属后续版本）。"
+    },
+    {
+      "id": "page-preview",
+      "name": "页面预览",
+      "status": "partial",
+      "kinds": "panel+extension",
+      "checks": [
+        "清单一致：0 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'page-preview'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "面板数据：页面预览：能取到目标首段摘要，并标出目标不存在"
+      ],
+      "problems": [],
+      "limitation": "面板内可预览当前文档全部 Wikilink 目标的首段内容；正文里悬停链接直接浮出的就地预览尚未接入编辑器扩展层。"
+    },
+    {
+      "id": "word-count",
+      "name": "字数统计",
+      "status": "full",
+      "kinds": "panel",
+      "checks": [
+        "清单一致：0 个声明命令",
+        "面板渲染分支存在（PluginPanel: panel === 'word-count'）",
+        "EditorPage 已接线（功能区 / 面板 / 命令入口）",
+        "面板数据：字数统计：16 字符 / 9 词 / 7 中日韩字符"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "diagram-flowchart",
+      "name": "流程图",
+      "status": "full",
+      "kinds": "command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "命令在派发表中：diagram.createFlowchart",
+        "diagram.createFlowchart → 新建流程图文档"
+      ],
+      "problems": [],
+      "limitation": ""
+    },
+    {
+      "id": "diagram-mindmap",
+      "name": "思维导图",
+      "status": "full",
+      "kinds": "command",
+      "checks": [
+        "清单一致：1 个声明命令",
+        "命令在派发表中：diagram.createMindmap",
+        "diagram.createMindmap → 新建思维导图文档"
+      ],
+      "problems": [],
+      "limitation": ""
+    }
+  ],
+  "communityFlow": {
+    "steps": [
+      "安装成功（声明 id=heading-auto-number）",
+      "功能区已出现入口 community:heading-auto-number",
+      "执行后文档已变：\"## 第一章\\n### 第一节\\n\\n正文\\n\" → \"## 1. 第一章\\n### 1.1 第一节\\n\\n正文\\n\"",
+      "坏插件在安装阶段被拒，且错误可读：插件源码括号或字符串未闭合，无法执行。常见原因是使用 `//` 行注释后，其后的代码（含 `…",
+      "功能区入口可移除 / 重新加入"
+    ],
+    "problems": []
+  },
+  "counts": {
+    "full": 21,
+    "partial": 5
+  },
+  "failures": 0
+}

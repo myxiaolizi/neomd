@@ -20,6 +20,22 @@
  *   @update="(v: number) => update({ leftWidth: v })"
  * />
  * ```
+ *
+ * ## 单位模型（1.4.0 修「分屏拖动不跟手」）
+ *
+ * 默认 `unit="px"`：`value` 是像素值，鼠标位移 1px 就是 1px，直接相加（左右侧栏、
+ * 右侧区块高度都用这个模型，一直是对的）。
+ *
+ * `unit="percent"`：调用方的 `value` 是**某个容器的百分比**（0..100）。这时
+ * 鼠标位移（px）必须先除以容器在该轴上的像素尺寸，再换算成百分比增量：
+ *
+ * ```text
+ * 比例增量(%) = 鼠标位移(px) / 容器尺寸(px) × 100
+ * ```
+ *
+ * 改前这里**没有单位概念**：分屏把 0..100 的百分比直接传进来，1px 位移被当成 1%
+ * 加进去，等于把灵敏度放大了「容器尺寸/100」倍（1300px 宽的分屏就是 13 倍）——
+ * 鼠标才动 5px，比例就跳了 5%，分隔条飞出去几十像素。这是「不跟手」的第一层原因。
  */
 import { computed, onBeforeUnmount, ref } from 'vue';
 
@@ -38,12 +54,33 @@ const props = withDefaults(
     /** 反向：向右（或向下）拖动时「减小」而不是「增大」。
      *  右侧栏的分隔条在栏的左侧，需要反向往外拖才变宽，所以传 true。 */
     invert?: boolean;
+    /**
+     * 值的单位（1.4.0）：
+     * - `px`（默认）：value 就是像素，鼠标位移直接相加；
+     * - `percent`：value 是宿主容器的百分比（0..100），鼠标位移需按容器尺寸换算。
+     */
+    unit?: 'px' | 'percent';
+    /**
+     * 保留的小数位数（默认 0 = 取整）。
+     *
+     * 百分比模式下**必须放开精度**：0..100 的整数只有 100 档，1300px 的分屏上
+     * 1% = 13px，取整会让分隔条只能落在 13px 的格子上，拖动看起来一格一格地跳。
+     */
+    precision?: number;
     /** 无障碍名称 */
     label?: string;
     /** 禁用拖拽 */
     disabled?: boolean;
   }>(),
-  { direction: 'vertical', defaultValue: undefined, invert: false, label: '调整大小', disabled: false },
+  {
+    direction: 'vertical',
+    defaultValue: undefined,
+    invert: false,
+    unit: 'px',
+    precision: 0,
+    label: '调整大小',
+    disabled: false,
+  },
 );
 
 const emit = defineEmits<{
@@ -62,8 +99,39 @@ const resetValue = computed(() =>
   props.defaultValue ?? Math.round((props.min + props.max) / 2),
 );
 
+/** 按 `precision` 取整（默认 0 = 整数，与原行为一致） */
+function roundValue(raw: number): number {
+  const p = Math.max(0, Math.min(4, Math.trunc(props.precision || 0)));
+  if (p === 0) return Math.round(raw);
+  const factor = 10 ** p;
+  return Math.round(raw * factor) / factor;
+}
+
 function clampValue(raw: number): number {
-  return Math.min(props.max, Math.max(props.min, Math.round(raw)));
+  return roundValue(Math.min(props.max, Math.max(props.min, raw)));
+}
+
+/* ---------------- 百分比模式的容器尺寸 ---------------- */
+
+/** 手柄自身的根元素，用来向上找宿主容器 */
+const rootEl = ref<HTMLElement | null>(null);
+
+/**
+ * 读取宿主容器在拖拽轴上的像素尺寸。
+ *
+ * 为什么要向上找 `parentElement` 而不是让调用方传尺寸：
+ * 手柄用负边距「骑」在两侧容器的交界线上（`width: 6px; margin: 0 -3px`），
+ * 净占位是 0，所以它的父元素就是**真正被分割的那个容器**，它的
+ * `clientWidth/clientHeight` 正好等于两侧 pane 之和 —— 不需要调用方维护一份
+ * 容易过期的尺寸状态，窗口缩放 / 右侧栏开合后也自动是最新值。
+ *
+ * 读不到（未挂载、display:none、父元素为 null）时返回 0，调用方据此**放弃本次位移**
+ * 而不是退回「1px 当 1%」的旧行为 —— 宁可这一帧拖不动，也不能让分隔条反向飞出去。
+ */
+function measureTrackSize(): number {
+  const parent = rootEl.value?.parentElement;
+  if (!parent) return 0;
+  return isVertical.value ? parent.clientWidth : parent.clientHeight;
 }
 
 /* ---------------- 鼠标拖拽 ---------------- */
@@ -74,6 +142,13 @@ const dragging = ref(false);
 let startPos = 0;
 /** 按下时的值，避免用历史中间值累积误差 */
 let startValue = 0;
+/**
+ * 按下瞬间的容器像素尺寸（仅百分比模式使用）。
+ *
+ * 在 mousedown 时量一次、整段拖拽复用：mousemove 里每次读 `clientWidth` 都会强制
+ * 同步 layout（一次拖拽上百个事件 → 上百次 reflow），手感会变滞。
+ */
+let startTrackSize = 0;
 
 function onMouseDown(e: MouseEvent): void {
   if (props.disabled || e.button !== 0) return;
@@ -83,6 +158,7 @@ function onMouseDown(e: MouseEvent): void {
   dragging.value = true;
   startPos = isVertical.value ? e.clientX : e.clientY;
   startValue = props.value;
+  startTrackSize = props.unit === 'percent' ? measureTrackSize() : 0;
   document.body.classList.add('nm-resizing');
   document.body.classList.add(isVertical.value ? 'nm-resizing--v' : 'nm-resizing--h');
   window.addEventListener('mousemove', onMouseMove);
@@ -95,6 +171,16 @@ function onMouseMove(e: MouseEvent): void {
   const current = isVertical.value ? e.clientX : e.clientY;
   let delta = current - startPos;
   if (props.invert) delta = -delta;
+  /*
+   * 百分比模式：px → % 的换算就在这里。
+   *
+   * 量不到容器尺寸时直接返回（本帧不更新），绝不退化成「1px = 1%」——
+   * 那正是 1.4.0 之前「拖动不跟手、甚至反向飞出去」的根因。
+   */
+  if (props.unit === 'percent') {
+    if (!(startTrackSize > 0)) return;
+    delta = (delta / startTrackSize) * 100;
+  }
   const next = clampValue(startValue + delta);
   if (next !== props.value) emit('update', next);
 }
@@ -136,6 +222,11 @@ function onKeyDown(e: KeyboardEvent): void {
     return;
   }
   const step = e.shiftKey ? 40 : 10;
+  /*
+   * 百分比模式的键盘步长必须换成「比例档位」，不能沿用像素步长：
+   * 40px / 10px 当成 40% / 10% 会一按就到底或直接越过 clamp 边界。
+   */
+  const stepPercent = e.shiftKey ? 5 : 1;
   let delta = 0;
   if (isVertical.value) {
     if (e.key === 'ArrowLeft') delta = -step;
@@ -147,6 +238,7 @@ function onKeyDown(e: KeyboardEvent): void {
   if (!delta) return;
   e.preventDefault();
   if (props.invert) delta = -delta;
+  if (props.unit === 'percent') delta = Math.sign(delta) * stepPercent;
   emit('update', clampValue(props.value + delta));
 }
 
@@ -155,6 +247,7 @@ onBeforeUnmount(stopTracking);
 
 <template>
   <div
+    ref="rootEl"
     class="resizer"
     :class="[
       isVertical ? 'resizer--vertical' : 'resizer--horizontal',
@@ -166,7 +259,7 @@ onBeforeUnmount(stopTracking);
     :aria-label="label"
     :aria-valuemin="min"
     :aria-valuemax="max"
-    :aria-valuenow="Math.round(value)"
+    :aria-valuenow="roundValue(value)"
     :title="`${label}（拖动调整，双击恢复默认）`"
     @mousedown="onMouseDown"
     @dblclick="onDoubleClick"

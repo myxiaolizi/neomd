@@ -9,6 +9,7 @@
  * 存储键：`neomd.localLayout`，值是 JSON。
  */
 import { ref, watch, type Ref } from 'vue';
+import type { RightPanelSection } from '@neomd/shared';
 
 /** localStorage 键名 */
 export const LOCAL_LAYOUT_KEY = 'neomd.localLayout';
@@ -99,9 +100,69 @@ export const LOCAL_LAYOUT_BOUNDS: Record<
   outlineHeight: { min: 150, max: 800, defaultValue: DEFAULT_LOCAL_LAYOUT.outlineHeight },
 };
 
-/** 分屏比例的可拖拽范围：留出 20% 下限，避免某一栏被拖到 0 宽后抓不回来 */
-export const SPLIT_RATIO_MIN = 0.2;
-export const SPLIT_RATIO_MAX = 0.8;
+/**
+ * 分屏比例的可拖拽范围（1.4.0 从 0.2–0.8 放宽到 0.15–0.85）。
+ *
+ * 为什么放宽：用户经常想要「主栏写、副栏只留一条窄条看大纲」，20% 下限在
+ * 1300px 宽的分屏上还占着 260px，仍然太宽；15% ≈ 195px 更贴近实际需求。
+ * 上下限仍然保留，因为拖到 0 会让某一栏彻底不可见、也再抓不回手柄。
+ */
+export const SPLIT_RATIO_MIN = 0.15;
+export const SPLIT_RATIO_MAX = 0.85;
+
+/**
+ * 右侧栏**最多同时显示**的区块数（1.4.0 需求：上限 3）。
+ *
+ * 为什么要有上限：改前是无上限多选，实测能开满 8 个，`.rightstack` 溢出 1010px，
+ * 末位区块被压死在 80px（扣掉 28px 标题栏只剩 52px 可见），等于开了也用不了。
+ *
+ * **淘汰规则**：开启第 4 个时，自动关闭「最上方一个」（即当前顺序里的第 0 项），
+ * 新块追加到列表末尾。语义集中在 `toggleRightSectionWithLimit()` 一处，
+ * EditorPage 的右侧栏开关条与 SettingsPage 的区块开关都应当调用它，
+ * 避免用户从设置页绕过限制。
+ */
+export const RIGHT_SECTION_LIMIT = 3;
+
+/** `toggleRightSectionWithLimit()` 的返回结果 */
+export interface RightSectionToggleResult {
+  /** 新的区块列表（顺序 = 上下堆叠顺序） */
+  list: RightPanelSection[];
+  /** 本次因超出上限而被自动关闭的最上方区块；没有关闭则 null */
+  evicted: RightPanelSection | null;
+}
+
+/**
+ * 切换右侧栏某个区块的开启状态，并强制「最多 `limit` 个、超出时挤掉最上方一个」。
+ *
+ * 纯函数，不碰 store / 不改入参，便于单测与复用：
+ * - 目标已开启 → 关闭它（保持其余元素相对顺序），`evicted` 为 null；
+ * - 目标未开启 → **追加到末尾**（新开的总在最下面，与改前 `list.push()` 的观感一致），
+ *   若此时长度超过 `limit`，从**头部**（最上方）移除一个，并把它作为 `evicted` 返回，
+ *   供调用方弹提示「已关闭 XXX 以腾出位置」。
+ *
+ * 之所以从头部淘汰而不是从尾部：用户刚点的那个区块必须真的出现，
+ * 而「最上方」是视觉上最先被顶出视野、也最容易被误认为最不重要的那个。
+ */
+export function toggleRightSectionWithLimit(
+  current: readonly RightPanelSection[] | undefined,
+  id: RightPanelSection,
+  limit: number = RIGHT_SECTION_LIMIT,
+): RightSectionToggleResult {
+  const list = [...(current ?? [])];
+  const idx = list.indexOf(id);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    return { list, evicted: null };
+  }
+  list.push(id);
+  let evicted: RightPanelSection | null = null;
+  // 用 while 而不是 if：容错老数据里本来就超限（例如改前存了 6–8 个）的情况，
+  // 用户下一次开新块时应当一次收敛到上限内，而不是只挤出 1 个仍然溢出。
+  while (list.length > Math.max(1, limit)) {
+    evicted = list.shift() ?? null;
+  }
+  return { list, evicted };
+}
 
 /** 把任意输入夹到 [min, max] 区间的整数；非法值回落到默认值 */
 function clampNumber(value: unknown, min: number, max: number, fallback: number): number {

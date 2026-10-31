@@ -104,6 +104,42 @@ const TAB_GROUPS = computed(() => {
 const tab = ref<Tab>('dashboard');
 
 /**
+ * 页签 ↔ URL query 同步（1.4.0）。
+ *
+ * ## 为什么必须做
+ *
+ * 1.4.0 给插件市场加了「每页 20 条 + 页码进 URL」，但如果页签本身不进 URL，
+ * 刷新后会被 `tab = 'dashboard'` 重置回数据看板 —— 用户看到的是「我明明在第 2 页，
+ * 刷新后却跳走了」，`?pluginPage=2` 也就成了死参数。
+ *
+ * 因此把当前页签写进 `?tab=<id>`，刷新/收藏/转发都能回到同一个模块；
+ * 各模块自己的 query（如 `pluginPage`）因此才有意义。
+ *
+ * 只在非默认页签时写，保持默认入口的 URL 干净（`/admin`）。
+ */
+function syncTabToUrl(id: Tab): void {
+  try {
+    const url = new URL(window.location.href);
+    if (id !== 'dashboard') url.searchParams.set('tab', id);
+    else url.searchParams.delete('tab');
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch {
+    /* 非浏览器环境忽略 */
+  }
+}
+
+/** 从 URL query 读取初始页签（非法值回落到 dashboard） */
+function readTabFromUrl(): Tab {
+  try {
+    const raw = new URL(window.location.href).searchParams.get('tab');
+    if (raw && TABS.some((t) => t.id === raw)) return raw as Tab;
+    return 'dashboard';
+  } catch {
+    return 'dashboard';
+  }
+}
+
+/**
  * 页签 → 组件映射。
  *
  * 只在这里维护一份映射，模板用一个 `<component :is>` 渲染，
@@ -175,6 +211,7 @@ async function onDashboardRange(days: number): Promise<void> {
 function switchTab(id: Tab): void {
   if (tab.value === id) return;
   tab.value = id;
+  syncTabToUrl(id);
   // 清掉上一页残留的提示，避免「保存成功的绿条」跑到另一个模块上
   notice.value = '';
   errorText.value = '';
@@ -194,6 +231,12 @@ onMounted(async () => {
   if (!auth.isAdmin) {
     void router.push('/login?redirect=/admin');
     return;
+  }
+  // 从 URL 恢复页签（刷新/转发不丢），并同步组件映射
+  const initial = readTabFromUrl();
+  if (initial !== 'dashboard') {
+    tab.value = initial;
+    currentComponent.value = COMPONENTS[initial];
   }
   await loadDashboard();
 });

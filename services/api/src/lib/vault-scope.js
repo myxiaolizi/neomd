@@ -126,6 +126,23 @@ export function evaluateVaultAccess(row) {
 }
 
 /**
+ * 每用户 active 仓库数量上限（1.4.0 需求10 防复发）。
+ *
+ * ## 为什么需要上限
+ *
+ * `assertVaultUsable()` 会对未登记的 `(user_id, vault_id)` 自动 INSERT 一条记录。
+ * 这条逻辑本身是必要的（否则客户端首次带新 vaultId 访问存储会 403 死锁），
+ * 但它**没有任何约束**：客户端每落一个随机 vaultId 就多一行。
+ * 配合客户端 `openVault()` 在「云端没有仓库」时落 `uid('vault')` 随机 id 的分支，
+ * 每次新 profile / 每次测试脚本运行都会造一条 0 文档空壳。
+ * 生产库实测：admin 名下 10 条，其中 6 条是 `vaultmv…` + `name='Neo MD'` + 0 文档的空壳。
+ *
+ * 20 是很宽松的上限（正常用户 2-5 个仓库），目的是**兜住无界增长**而不是限制正常使用。
+ * 达到上限后不再自动登记，返回可读错误告诉用户去仓库管理里创建/清理。
+ */
+export const MAX_ACTIVE_VAULTS_PER_USER = 20;
+
+/**
  * 校验「该仓库属于当前用户且处于 active」。
  *
  * 1.1.9 增强：若 `user_vaults` 中尚无该 `(user_id, vault_id)` 记录
@@ -134,16 +151,82 @@ export function evaluateVaultAccess(row) {
  * 从服务端根除 `403 VAULT_NOT_REGISTERED` 死锁；若已存在且 `status === 'disabled'`，
  * 依然由 `evaluateVaultAccess` 抛 `403 VAULT_DISABLED`。
  *
+ * ## 1.4.0 需求10：自动登记必须收敛（这是仓库泛滥的根因所在）
+ *
+ * 旧实现是无条件 INSERT，三处缺陷（逐条对应实测到的 6 条空壳）：
+ *  1. **无 name 去重**：同一台设备每次拿到新随机 vaultId 就新增一行，
+ *     即便生成的显示名完全相同（实测 6 条空壳全部叫 `Neo MD`）；
+ *  2. **无痕迹**：插入的行与用户主动创建的完全相同，事后无法区分、不敢清理；
+ *  3. **无上限**：可以无限增长。
+ *
+ * 现在的收敛策略（三层，任何一层命中都不新增行）：
+ *  a) **同 name 复用**：仓库名不是随机串（即调用方给了有意义的 `defaultName`）时，
+ *     若该用户已有同名 active 仓库，**直接返回那条**，不插入新行。
+ *     这挡住了「每次新 profile 都造一条 Neo MD」这个最主要来源。
+ *  b) **标记来源**：真正需要新建时写 `auto_registered=1` + `auto_registered_at=NOW()`，
+ *     使清理脚本能准确识别（`auto_registered=1 且 doc_count=0 且云端前缀无对象`）。
+ *  c) **上限兜底**：active 仓库已达 {@link MAX_ACTIVE_VAULTS_PER_USER} 时拒绝，
+ *     返回 `VAULT_LIMIT_REACHED`（409），提示用户去仓库管理里清理。
+ *
+ * 注意 (a) 的复用是**保守**的：只在 `defaultName` 非空且不等于 vaultId 本身时生效。
+ * 若调用方传的是 `defaultName=''`（存储接口多数如此），退回 `id` 作为名字，
+ * 此时不做同名复用 —— 否则所有随机 id 的仓库会被塞进同一条记录，反而丢数据。
+ *
  * @returns {Promise<object>} 仓库记录
  */
 export async function assertVaultUsable(userId, vaultId, defaultName = '') {
   const id = assertVaultIdShape(vaultId);
   let row = await getVaultRow(userId, id);
   if (!row) {
-    const name = String(defaultName || id).trim().slice(0, 120) || id;
+    const rawName = String(defaultName ?? '').trim().slice(0, 120);
+    const name = rawName || id;
+    /*
+     * (a) 同 name 复用：仅在「调用方给了有意义的名字」时启用。
+     *
+     * 为什么必须排除 `rawName === ''`：storage 侧调用大多不传名字，
+     * 此时 name 会退化成随机 vaultId；若允许同名复用，所有随机仓库会撞进
+     * 第一个随机 id 的记录里 → 不同仓库的数据互相覆盖（比泛滥严重得多）。
+     */
+    const canReuseByName = Boolean(rawName) && rawName !== id;
+    if (canReuseByName) {
+      const existing = await queryOne(
+        `SELECT * FROM user_vaults
+         WHERE user_id = ? AND name = ? AND status = 'active'
+         ORDER BY updated_at DESC LIMIT 1`,
+        [userId, name],
+      );
+      if (existing) {
+        // 复用：只推进 updated_at，不新增行。这是「空壳泛滥」的主要堵点。
+        await execute('UPDATE user_vaults SET updated_at = NOW() WHERE user_id = ? AND vault_id = ?', [
+          userId,
+          existing.vault_id,
+        ]);
+        return existing;
+      }
+    }
+
+    /*
+     * (c) 上限兜底：数一次 active 数量。
+     * 只在「确实需要新建」时才查，复用路径不付这个查询成本。
+     */
+    const countRow = await queryOne(
+      `SELECT COUNT(*) AS total FROM user_vaults WHERE user_id = ? AND status = 'active'`,
+      [userId],
+    );
+    const activeCount = Number(countRow?.total ?? 0);
+    if (activeCount >= MAX_ACTIVE_VAULTS_PER_USER) {
+      throw new HttpError(
+        409,
+        'VAULT_LIMIT_REACHED',
+        `仓库数量已达上限（${MAX_ACTIVE_VAULTS_PER_USER} 个），请先在「仓库管理」中清理不用的仓库`,
+      );
+    }
+
+    // (b) 自动登记并打标记，便于事后识别与清理
     await execute(
-      `INSERT INTO user_vaults (user_id, vault_id, name, doc_count, bytes, status, last_synced_at, updated_at)
-       VALUES (?, ?, ?, 0, 0, 'active', NULL, NOW())
+      `INSERT INTO user_vaults
+         (user_id, vault_id, name, doc_count, bytes, status, last_synced_at, auto_registered, auto_registered_at, updated_at)
+       VALUES (?, ?, ?, 0, 0, 'active', NULL, 1, NOW(), NOW())
        ON DUPLICATE KEY UPDATE updated_at = NOW()`,
       [userId, id, name],
     );
@@ -151,6 +234,29 @@ export async function assertVaultUsable(userId, vaultId, defaultName = '') {
   }
   evaluateVaultAccess(row);
   return row;
+}
+
+/**
+ * 判断一条 `user_vaults` 记录是否是「可安全清理的自动登记空壳」（1.4.0 需求10）。
+ *
+ * 判据（**全部满足**才返回 true，保守优先 —— 删错不可逆）：
+ *  1. `auto_registered = 1`（由本模块自动登记时打的标记）；
+ *  2. `doc_count = 0` 且 `bytes = 0`；
+ *  3. 名为自动生成形态（等于 vaultId，或为 'Neo MD' 这类默认名）；
+ *  4. 从未同步过（`last_synced_at IS NULL`）。
+ *
+ * 注意：**这只是 DB 侧判据**。调用方还必须额外验证「云端前缀下确实没有任何对象」
+ * （见 `tools/re14-clean-vaults.mjs` 的实列验证），因为 DB 统计列可能滞后。
+ */
+export function isAutoRegisteredShell(row) {
+  if (!row) return false;
+  if (Number(row.auto_registered ?? 0) !== 1) return false;
+  if (Number(row.doc_count ?? 0) !== 0) return false;
+  if (Number(row.bytes ?? 0) !== 0) return false;
+  if (row.last_synced_at) return false;
+  const name = String(row.name ?? '').trim();
+  const id = String(row.vault_id ?? '').trim();
+  return name === id || name === 'Neo MD' || name === '';
 }
 
 /** 仓库对外投影（不含 user_id 等内部字段） */
@@ -172,6 +278,7 @@ export default {
   USER_ROOT,
   VAULT_ID_RE,
   LEGACY_HEADER,
+  MAX_ACTIVE_VAULTS_PER_USER,
   legacyUserPrefix,
   vaultPrefix,
   userVaultsRoot,
@@ -180,5 +287,6 @@ export default {
   getVaultRow,
   evaluateVaultAccess,
   assertVaultUsable,
+  isAutoRegisteredShell,
   vaultItem,
 };

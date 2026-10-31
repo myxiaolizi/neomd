@@ -1,0 +1,79 @@
+{
+  "_note": "Subagent-B localStorage snapshot taken BEFORE any mutation. Restore these exact values at the end.",
+  "capturedAt": "2026-10-30T15:51:57.833Z",
+  "capturedAtLocal": "2026-10-30 23:51:57 +08:00",
+  "origin": "http://127.0.0.1:5178",
+  "keysPresent": [
+    "neomd.user.cache",
+    "neomd.vaultList.v1",
+    "neomd.appearanceBaseline.v1",
+    "neomd.refresh",
+    "neomd.layoutBaseline.v1",
+    "neomd.lastVault",
+    "neomd.firstSyncDone.v1:admin",
+    "neomd.settings.v1",
+    "neomd.access",
+    "neomd.deviceId"
+  ],
+  "neomd.themeScope": null,
+  "neomd.themeScope.note": "KEY WAS ABSENT before testing (readThemeScope() therefore returned 'all'). On restore, REMOVE this key rather than writing a value.",
+  "neomd.settings.v1.appearance": {
+    "theme": "system",
+    "accent": "#FF8A3D",
+    "fontFamily": "system-ui",
+    "fontSize": 24,
+    "lineHeight": 2,
+    "pageWidth": "full",
+    "showLineNumbers": false,
+    "spellcheck": true,
+    "typewriterMode": false,
+    "editorColorScheme": "white",
+    "customEditorBg": "#ffffff",
+    "customEditorFg": "#1f2329",
+    "zoom": 70,
+    "themePresetId": "daylight",
+    "customThemes": [
+      {
+        "id": "custom-mvv2i1pg-ms8j",
+        "name": "日光白（自定义）",
+        "mode": "light",
+        "contentBg": "#64dae3",
+        "contentFg": "#1f2329",
+        "chromeBg": "#f2f4f7",
+        "border": "#e2e6ec",
+        "accent": "#1677ff",
+        "builtin": false
+      }
+    ]
+  },
+  "neomd.appearanceBaseline.v1": {
+    "theme": "system",
+    "themePresetId": "daylight",
+    "accent": "#FF8A3D",
+    "customThemes": [
+      {
+        "id": "custom-mvv2i1pg-ms8j",
+        "name": "日光白（自定义）",
+        "mode": "light",
+        "contentBg": "#64dae3",
+        "contentFg": "#1f2329",
+        "chromeBg": "#f2f4f7",
+        "border": "#e2e6ec",
+        "accent": "#1677ff",
+        "builtin": false
+      }
+    ],
+    "fontFamily": "system-ui",
+    "editorColorScheme": "white",
+    "customEditorBg": "#ffffff",
+    "customEditorFg": "#1f2329"
+  },
+  "neomd.settings.v1.cloudVersion": 350,
+  "neomd.settings.v1.updatedAt": 1793375433733,
+  "_credentials_redacted": [
+    "neomd.access (JWT) - not persisted here",
+    "neomd.refresh (JWT) - not persisted here",
+    "storage.accessKeyId present in settings - not persisted here"
+  ],
+  "_full_settings_raw_location": "Full raw neomd.settings.v1 string (5245 chars) is held in-page as window.__B_SNAP__ and re-stashed to localStorage key __b_snap_settings_v1 during the run; the authoritative restore source is the live browser profile."
+}

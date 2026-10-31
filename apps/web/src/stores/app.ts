@@ -2262,6 +2262,37 @@ export const useAppStore = defineStore('app', () => {
       if (!opts.silent) notify(`仓库「${entry.name}」已停用，无法同步`, 'info', 3200);
       return false;
     }
+    /*
+     * 1.4.0 需求10 防复发：orphan（云端已删除）条目**绝不能**继续同步。
+     *
+     * ## 为什么这一条必须加在 `syncVaultById` 里（而不是只在 syncAllVaults 过滤）
+     *
+     * 实测复现：给 `syncAllVaults()` 换成 `listSyncable()` 之后，幽灵**仍然**被
+     * 服务端重新登记了。原因就是本函数会在同步前调用：
+     *   `vaultsApi.upsert({ vaultId, name, docCount, bytes })`   （见下方 :2306 / :2328）
+     * 这是**显式的登记请求**，与服务端的自动登记是两条独立通路 ——
+     * 只要还有任何调用方（「全部同步」、单个仓库同步按钮、自动同步定时器）
+     * 能走到这里，幽灵就会被重新写回 `user_vaults`。
+     *
+     * 因此拦截点必须在**这个唯一的单仓同步入口**上，而不是散在各调用方。
+     * 拦截后行为：静默跳过（不弹错），并记一条 info 级同步日志便于排查。
+     */
+    if (entry.orphan) {
+      if (!opts.silent) {
+        notify(`仓库「${entry.name}」在云端已删除，已跳过同步`, 'info', 3200);
+      }
+      syncLogs.value = [
+        {
+          id: `sync-orphan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          at: Date.now(),
+          level: 'info' as const,
+          message: `已跳过「${entry.name}」：云端已不存在该仓库（避免把它重新登记回去）`,
+          detail: `vaultId=${entry.vaultId} orphanMiss=${entry.orphanMissCount ?? 0}`,
+        },
+        ...syncLogs.value,
+      ].slice(0, 200);
+      return false;
+    }
     // 当前仓库直接走主流程
     if (
       (vault.value && entry.vaultId === vault.value.vaultId) ||
@@ -2424,7 +2455,21 @@ export const useAppStore = defineStore('app', () => {
     }
 
     const registry = sharedVaultRegistry();
-    const allEntries = registry.list().filter((e) => e.status === 'active');
+    /*
+     * 1.4.0 需求10 防复发：**必须用 listSyncable() 而不是 list()**。
+     *
+     * 这是「幽灵仓库反弹」的实际触发点，也是本修复最关键的一行：
+     * `list()` 会返回注册表里的全部条目，包括 `orphan: true`（云端已删除）的那些。
+     * 一旦它们进入下面的循环，`syncVaultById()` → `syncNow()` → `PUT /api/storage/*`
+     * → 服务端 `assertVaultUsable()` 看到未登记的 `(user_id, vault_id)`
+     * → **自动 INSERT 回 `user_vaults`** → 刚清理掉的幽灵仓库重新出现。
+     *
+     * 实测证据：清理后 `user_vaults` 10→4，约 25 分钟后被某个仍开着的工作台标签页
+     * 通过这条链路重新建回 10 条，且新行的 `auto_registered=1`（证明是新代码写的）。
+     *
+     * `listSyncable()` 已排除 orphan / disabled / 无 location 三种情况。
+     */
+    const allEntries = registry.listSyncable();
     const curId = vault.value?.vaultId || registry.currentId;
     const curLoc = vaultLocation.value;
     const others = allEntries.filter((e) => e.vaultId !== curId && (!curLoc || e.location !== curLoc));
@@ -2754,6 +2799,19 @@ export const useAppStore = defineStore('app', () => {
 
   /**
    * 从云端同步仓库清单，与本机合并。
+   *
+   * ## 1.4.0 需求10：本方法是「幽灵仓库」的**唯一对账入口**
+   *
+   * 三件事按顺序做（顺序不能换）：
+   *  1. `mergeRemote()` —— 云端有→对齐/插入；云端没有但本机有云端痕迹→累加 orphan 计数，
+   *     连续 `ORPHAN_REMOVE_AFTER_MISSES` 轮后物理移除；
+   *  2. `prunePseudoCloudVaults()` —— 清理 `cloud:<username>` 这类历史伪仓库（1.1.9 逻辑保留）；
+   *  3. `refreshVaultList()` —— 把结果同步到 UI。
+   *
+   * 关键：**`mergeRemote()` 抛错时不做任何 orphan 计数**。
+   * 如果云端接口失败（网络/401/限流），我们拿不到「云端有什么」，此时若仍累加
+   * miss 计数，几轮抖动之后就会把用户**真实存在**的仓库误判成 orphan 并删除。
+   * 因此只有 `vaultsApi.list()` 真正成功、且返回了非空清单时才进入对账。
    */
   async function pullVaultList(): Promise<void> {
     const auth = useAuthStore();
@@ -2761,6 +2819,17 @@ export const useAppStore = defineStore('app', () => {
     try {
       const res = await vaultsApi.list();
       const list = res.vaults ?? [];
+      /*
+       * 注意：`mergeRemote()` 内部对**空数组**直接 return，不做 orphan 计数。
+       *
+       * 这是刻意的保守选择：无法区分「云端真的一无所有」与「接口返回空但其实是
+       * 异常/权限退化」。若把空清单当成「全部已删除」，连续几轮抖动就会清空
+       * 用户本机全部云端仓库记录 —— 代价远大于收益。
+       *
+       * 代价：用户把云端仓库**全部删光**这一极端场景下，本机的 orphan 条目不会被
+       * 自动逐渐移除。但它仍因 `orphan:true` 而不参与同步，**不会引发反弹** ——
+       * 反弹链路的阻断靠 `isSyncable()`，与能否清理 orphan 条目无关。
+       */
       vaultRegistry.mergeRemote(list);
       const remoteIds = new Set(list.map((v) => v.vaultId).filter(Boolean));
       if (remoteIds.size > 0) {
@@ -2781,6 +2850,15 @@ export const useAppStore = defineStore('app', () => {
     if (!auth.isLoggedIn || !vault.value) return;
     const entry = vaultRegistry.get(vault.value.vaultId);
     if (!entry) return;
+    /*
+     * 1.4.0 需求10：orphan 条目不得被主动登记回云端。
+     *
+     * 理论上「当前打开的仓库」不该是 orphan（能打开说明它有本地内容），
+     * 但存在边界：用户正开着某仓库时，另一台设备把它从云端删除了 →
+     * `mergeRemote()` 会把它标成 orphan，而本端仍在周期性地 `pushVaultEntry`
+     * → 又把它写回去。这一行是**兜底防线**。
+     */
+    if (entry.orphan) return;
     try {
       await vaultsApi.upsert({
         vaultId: entry.vaultId,

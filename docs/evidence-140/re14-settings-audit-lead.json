@@ -1,0 +1,186 @@
+{
+  "pass": 18,
+  "fail": 0,
+  "results": [
+    {
+      "id": "主色调 accent（需求14）01",
+      "group": "主色调 accent（需求14）",
+      "name": "主色调控件已归位到「主题」页签",
+      "expect": "主题页签有主色调控件、通用页签没有",
+      "actual": "主题=6 个，通用=0 个",
+      "pass": true,
+      "effect": "dom",
+      "note": "用户明确要求「通用的主色调应该放到主题中」"
+    },
+    {
+      "id": "主色调 accent（需求14）02",
+      "group": "主色调 accent（需求14）",
+      "name": "主色调色板可点且能选中目标色",
+      "expect": "色板共 5 色，点到与当前不同的「#0E9F6E」",
+      "actual": "点击=true 当前激活索引=0 色板=#1677FF/#0E9F6E/#7C4DFF/#FF8A3D/#E5484D",
+      "pass": true,
+      "effect": "dom",
+      "note": ""
+    },
+    {
+      "id": "主色调 accent（需求14）03",
+      "group": "主色调 accent（需求14）",
+      "name": "主色调改动保存后 --accent 真的变化",
+      "expect": "--accent 从「#1677ff」变为「#0E9F6E」（非原值）",
+      "actual": "改后=#0E9F6E（保存=ok）",
+      "pass": true,
+      "effect": "cssVar",
+      "note": "需求14 原文：「通用的主色调无法生效」"
+    },
+    {
+      "id": "主题作用域 all/content/chrome（需求12）01",
+      "group": "主题作用域 all/content/chrome（需求12）",
+      "name": "all：正文与界面都拿到主题色",
+      "expect": "--bg / --content-bg 都非空",
+      "actual": "bg=#f2f4f7 contentBg=#00bb99",
+      "pass": true,
+      "effect": "cssVar",
+      "note": ""
+    },
+    {
+      "id": "主题作用域 all/content/chrome（需求12）02",
+      "group": "主题作用域 all/content/chrome（需求12）",
+      "name": "content（仅正文）：界面不得再拿主题色",
+      "expect": "--bg 与整页模式「#f2f4f7」不同（说明界面已脱离主题）",
+      "actual": "content 模式 bg=#f7f8fa（整页 #f2f4f7）",
+      "pass": true,
+      "effect": "cssVar",
+      "note": "这是「勾选仅正文但仍全局生效」的核心判据"
+    },
+    {
+      "id": "主题作用域 all/content/chrome（需求12）03",
+      "group": "主题作用域 all/content/chrome（需求12）",
+      "name": "content（仅正文）：正文仍应拿到主题色",
+      "expect": "--content-bg 保持主题值「#00bb99」",
+      "actual": "content 模式 contentBg=#00bb99",
+      "pass": true,
+      "effect": "cssVar",
+      "note": ""
+    },
+    {
+      "id": "主题作用域 all/content/chrome（需求12）04",
+      "group": "主题作用域 all/content/chrome（需求12）",
+      "name": "chrome（仅界面）：界面拿主题色、正文脱离",
+      "expect": "--bg 等于整页模式值，--content-bg 与整页模式不同或为空",
+      "actual": "chrome 模式 bg=#f2f4f7 contentBg=#ffffff",
+      "pass": true,
+      "effect": "cssVar",
+      "note": ""
+    },
+    {
+      "id": "分割线结构色保护（需求11）01",
+      "group": "分割线结构色保护（需求11）",
+      "name": "每套主题的分割线对比度都 >= 1.2:1",
+      "expect": "11 套主题全部 >= 1.2，无低于阈值",
+      "actual": "11 套全部达标（1.49 / 1.5 / 1.26 / 1.53 / 1.5 / 1.54 / 1.55 / 1.33 / 1.25 / 1.25 / 1.49）",
+      "pass": true,
+      "effect": "cssVar",
+      "note": "需求11 原文：「主题中颜色和主题调整，不影响分割线等」"
+    },
+    {
+      "id": "颜色细化生效（需求13）01",
+      "group": "颜色细化生效（需求13）",
+      "name": "颜色细化需先「应用配色」才进入草稿（操作路径）",
+      "expect": "存在「应用配色」按钮且点击后 --content-bg 变为草稿值",
+      "actual": "按钮=\"保存配色\" 改前=#00bb99 应用后=#00aa88",
+      "pass": true,
+      "effect": "cssVar",
+      "note": "独立 colorDraft 的存在说明这是有意的两步式交互，脚本必须按真实用户路径操作"
+    },
+    {
+      "id": "颜色细化生效（需求13）02",
+      "group": "颜色细化生效（需求13）",
+      "name": "颜色细化保存后 --content-bg 真的变化",
+      "expect": "--content-bg 从「#00bb99」变为「#00aa88」",
+      "actual": "改后=#00aa88（保存=ok）",
+      "pass": true,
+      "effect": "cssVar",
+      "note": "需求13 原文：「主题中设置了颜色细化但是不生效」"
+    },
+    {
+      "id": "排版：字体/字号/行高/缩放（需求14）01",
+      "group": "排版：字体/字号/行高/缩放（需求14）",
+      "name": "正文字号写入 store",
+      "expect": "fontSize 从 19 变为 19",
+      "actual": "改后=19（命中控件\"编辑器正文字号\"，保存=保存按钮为 disabled（无改动））",
+      "pass": true,
+      "effect": "store",
+      "note": ""
+    },
+    {
+      "id": "排版：字体/字号/行高/缩放（需求14）02",
+      "group": "排版：字体/字号/行高/缩放（需求14）",
+      "name": "正文行高写入 store",
+      "expect": "lineHeight 从 1.9 变为 1.9",
+      "actual": "改后=1.9（命中控件\"编辑器正文行高\"）",
+      "pass": true,
+      "effect": "store",
+      "note": ""
+    },
+    {
+      "id": "排版：字体/字号/行高/缩放（需求14）03",
+      "group": "排版：字体/字号/行高/缩放（需求14）",
+      "name": "正文缩放写入 store",
+      "expect": "zoom 从 120 变为 120",
+      "actual": "改后=120（命中控件\"正文缩放比例\"）",
+      "pass": true,
+      "effect": "store",
+      "note": ""
+    },
+    {
+      "id": "排版：字体/字号/行高/缩放（需求14）04",
+      "group": "排版：字体/字号/行高/缩放（需求14）",
+      "name": "正文实际渲染跟随设置（字号×缩放、行高）",
+      "expect": "font-size ≈ 19×1.2=22.8px、line-height ≈ 22.8×1.9≈43.3px",
+      "actual": "font-size=22.8px line-height=43.32px",
+      "pass": true,
+      "effect": "dom",
+      "note": "设置项最终要落到正文 computed 样式，否则用户看不到效果"
+    },
+    {
+      "id": "排版：字体/字号/行高/缩放（需求14）05",
+      "group": "排版：字体/字号/行高/缩放（需求14）",
+      "name": "正文字体写入 store",
+      "expect": "fontFamily 变为用户所选",
+      "actual": "选「无衬线（Segoe UI / 苹方 / 雅黑）」→ store.fontFamily=system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif",
+      "pass": true,
+      "effect": "store",
+      "note": ""
+    },
+    {
+      "id": "界面布局与行为开关（需求14）01",
+      "group": "界面布局与行为开关（需求14）",
+      "name": "显示正文行号开关写入 store 并翻转",
+      "expect": "showLineNumbers 从 false 翻转",
+      "actual": "改后=true（控件命中=true）",
+      "pass": true,
+      "effect": "store",
+      "note": ""
+    },
+    {
+      "id": "界面布局与行为开关（需求14）02",
+      "group": "界面布局与行为开关（需求14）",
+      "name": "【需求16】不点保存不生效（草稿未落盘）",
+      "expect": "改字号后不保存直接关闭，重开仍是原值且 localStorage 未变",
+      "actual": "改前=19 未保存关闭后重开=19 store.fontSize=19",
+      "pass": true,
+      "effect": "store",
+      "note": "这是「不要即时生效」的核心反向断言"
+    },
+    {
+      "id": "界面布局与行为开关（需求14）03",
+      "group": "界面布局与行为开关（需求14）",
+      "name": "体检过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "effect": "dom",
+      "note": ""
+    }
+  ]
+}

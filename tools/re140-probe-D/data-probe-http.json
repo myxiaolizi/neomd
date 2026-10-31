@@ -1,0 +1,602 @@
+{
+  "sampledAt": "2026-10-30T16:06:49.991Z",
+  "login": {
+    "status": 200,
+    "user": {
+      "id": 1,
+      "email": "admin@zhengl.vip",
+      "username": "admin",
+      "role": "admin",
+      "status": "active",
+      "quotaBytes": 1073741824,
+      "createdAt": "2026-10-23 17:02:11",
+      "lastLoginAt": "2026-10-30T16:06:50.098Z",
+      "lastLoginIp": "127.0.0.1"
+    },
+    "hasToken": true
+  },
+  "p1_settings_web": {
+    "status": 200,
+    "version": 350,
+    "naming": {
+      "mode": "datetime-input",
+      "template": "YY?MM?DD?HHMM-?input?",
+      "fallback": "???",
+      "confirmBeforeRename": true,
+      "aiPrompt": "????????????????? Markdown ??,???????????????\n??:\n1. ???????,????????????????;\n2. ?? 6-24 ???(?????????);\n3. ????????,????????;\n4. ???? / \\ : * ? \" < > | ?????????",
+      "appendAiSummary": true
+    },
+    "payloadKeys": [
+      "version",
+      "appearance",
+      "naming",
+      "autosave",
+      "shareStyle",
+      "localVault",
+      "layout",
+      "shortcuts",
+      "enabledPlugins",
+      "storage",
+      "ai",
+      "sync",
+      "cloudVersion",
+      "updatedAt",
+      "knowledge",
+      "diagram",
+      "server"
+    ],
+    "rawSnippet": "{\"mode\":\"datetime-input\",\"template\":\"YY?MM?DD?HHMM-?input?\",\"fallback\":\"???\",\"confirmBeforeRename\":true,\"aiPrompt\":\"????????????????? Markdown ??,???????????????\\n??:\\n1. ???????,????????????????;\\n2. ?? 6-24 ???(?????????);\\n3. ????????,????????;\\n4. ???? / \\\\ : * ? \\\" < > | ?????????\",\"appendAiSummary\":true}"
+  },
+  "p1_settings_desktop": {
+    "status": 200,
+    "version": 350,
+    "naming": {
+      "mode": "datetime-input",
+      "template": "YY?MM?DD?HHMM-?input?",
+      "fallback": "???",
+      "confirmBeforeRename": true,
+      "aiPrompt": "????????????????? Markdown ??,???????????????\n??:\n1. ???????,????????????????;\n2. ?? 6-24 ???(?????????);\n3. ????????,????????;\n4. ???? / \\ : * ? \" < > | ?????????",
+      "appendAiSummary": true
+    },
+    "payloadKeys": [
+      "version",
+      "appearance",
+      "naming",
+      "autosave",
+      "shareStyle",
+      "localVault",
+      "layout",
+      "shortcuts",
+      "enabledPlugins",
+      "storage",
+      "ai",
+      "sync",
+      "cloudVersion",
+      "updatedAt",
+      "knowledge",
+      "diagram",
+      "server"
+    ],
+    "rawSnippet": "{\"mode\":\"datetime-input\",\"template\":\"YY?MM?DD?HHMM-?input?\",\"fallback\":\"???\",\"confirmBeforeRename\":true,\"aiPrompt\":\"????????????????? Markdown ??,???????????????\\n??:\\n1. ???????,????????????????;\\n2. ?? 6-24 ???(?????????);\\n3. ????????,????????;\\n4. ???? / \\\\ : * ? \\\" < > | ?????????\",\"appendAiSummary\":true}"
+  },
+  "p1_settings_none": {
+    "status": 200,
+    "version": 350,
+    "naming": {
+      "mode": "datetime-input",
+      "template": "YY?MM?DD?HHMM-?input?",
+      "fallback": "???",
+      "confirmBeforeRename": true,
+      "aiPrompt": "????????????????? Markdown ??,???????????????\n??:\n1. ???????,????????????????;\n2. ?? 6-24 ???(?????????);\n3. ????????,????????;\n4. ???? / \\ : * ? \" < > | ?????????",
+      "appendAiSummary": true
+    },
+    "payloadKeys": [
+      "version",
+      "appearance",
+      "naming",
+      "autosave",
+      "shareStyle",
+      "localVault",
+      "layout",
+      "shortcuts",
+      "enabledPlugins",
+      "storage",
+      "ai",
+      "sync",
+      "cloudVersion",
+      "updatedAt",
+      "knowledge",
+      "diagram",
+      "server"
+    ],
+    "rawSnippet": "{\"mode\":\"datetime-input\",\"template\":\"YY?MM?DD?HHMM-?input?\",\"fallback\":\"???\",\"confirmBeforeRename\":true,\"aiPrompt\":\"????????????????? Markdown ??,???????????????\\n??:\\n1. ???????,????????????????;\\n2. ?? 6-24 ???(?????????);\\n3. ????????,????????;\\n4. ???? / \\\\ : * ? \\\" < > | ?????????\",\"appendAiSummary\":true}"
+  },
+  "p2_vaults_http": {
+    "status": 200,
+    "count": 10,
+    "vaults": [
+      {
+        "vaultId": "admin",
+        "name": "admin",
+        "docCount": 155,
+        "bytes": 19878,
+        "status": "active",
+        "lastSyncedAt": "2026-10-30 16:06:48",
+        "createdAt": "2026-10-30 17:25:20",
+        "updatedAt": "2026-10-31 00:06:48"
+      },
+      {
+        "vaultId": "vaultmvuwofkdujt0qkd1",
+        "name": "Neo MD",
+        "docCount": 0,
+        "bytes": 0,
+        "status": "active",
+        "lastSyncedAt": "2026-10-30 16:06:00",
+        "createdAt": "2026-10-30 19:46:04",
+        "updatedAt": "2026-10-31 00:05:59"
+      },
+      {
+        "vaultId": "vaultmvuqt3rn8ubd9num",
+        "name": "笔记本",
+        "docCount": 700,
+        "bytes": 4021982,
+        "status": "active",
+        "lastSyncedAt": "2026-10-30 14:47:36",
+        "createdAt": "2026-10-30 17:01:15",
+        "updatedAt": "2026-10-30 22:47:35"
+      },
+      {
+        "vaultId": "vaultmvuwmdvqjn2nx9ua",
+        "name": "Neo MD",
+        "docCount": 0,
+        "bytes": 0,
+        "status": "active",
+        "lastSyncedAt": "2026-10-30 11:44:31",
+        "createdAt": "2026-10-30 19:44:30",
+        "updatedAt": "2026-10-30 19:44:30"
+      },
+      {
+        "vaultId": "vaultmvuvie3ow1lmima1",
+        "name": "Neo MD",
+        "docCount": 0,
+        "bytes": 0,
+        "status": "active",
+        "lastSyncedAt": "2026-10-30 11:39:36",
+        "createdAt": "2026-10-30 19:14:33",
+        "updatedAt": "2026-10-30 19:39:36"
+      },
+      {
+        "vaultId": "vaultmvuvit17zdnnk53h",
+        "name": "Neo MD",
+        "docCount": 0,
+        "bytes": 0,
+        "status": "active",
+        "lastSyncedAt": "2026-10-30 11:13:32",
+        "createdAt": "2026-10-30 19:13:31",
+        "updatedAt": "2026-10-30 19:13:31"
+      },
+      {
+        "vaultId": "vaultmvuu69foaszoa8u9",
+        "name": "Neo MD",
+        "docCount": 0,
+        "bytes": 0,
+        "status": "active",
+        "lastSyncedAt": "2026-10-30 11:01:07",
+        "createdAt": "2026-10-30 18:40:35",
+        "updatedAt": "2026-10-30 19:01:07"
+      },
+      {
+        "vaultId": "vaultmvuu8x1gibxqzo06",
+        "name": "Neo MD",
+        "docCount": 0,
+        "bytes": 0,
+        "status": "active",
+        "lastSyncedAt": "2026-10-30 10:39:21",
+        "createdAt": "2026-10-30 18:37:39",
+        "updatedAt": "2026-10-30 18:39:21"
+      },
+      {
+        "vaultId": "vaultmvp3augl2m72a0nw",
+        "name": "vaultmvp3augl2m72a0nw",
+        "docCount": 298,
+        "bytes": 2184414,
+        "status": "active",
+        "lastSyncedAt": null,
+        "createdAt": "2026-10-30 17:07:20",
+        "updatedAt": "2026-10-30 17:07:20"
+      },
+      {
+        "vaultId": "vaultmvs9ey2vkpj8q5jy",
+        "name": "Neo MD",
+        "docCount": 436,
+        "bytes": 4302589,
+        "status": "active",
+        "lastSyncedAt": null,
+        "createdAt": "2026-10-30 17:05:46",
+        "updatedAt": "2026-10-30 17:05:46"
+      }
+    ]
+  },
+  "p3_admin_releases": {
+    "status": 200,
+    "body": {
+      "prefix": "mdadmin/releases/",
+      "files": [
+        {
+          "key": "mdadmin/releases/NeoMD-1.3.1.apk",
+          "size": 4363947,
+          "lastModified": "2026-10-30T14:56:12.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.3.1.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.3.1-setup.exe",
+          "size": 113187877,
+          "lastModified": "2026-10-30T14:53:35.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.3.1-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.3.1-win-x64.zip",
+          "size": 159312203,
+          "lastModified": "2026-10-30T14:49:53.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.3.1-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.7-setup.exe",
+          "size": 113126415,
+          "lastModified": "2026-10-27T16:27:50.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.7-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.7-win-x64.zip",
+          "size": 159244288,
+          "lastModified": "2026-10-27T16:22:33.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.7-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.6.apk",
+          "size": 4285548,
+          "lastModified": "2026-10-27T09:31:35.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.6.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.6-setup.exe",
+          "size": 113106525,
+          "lastModified": "2026-10-27T09:30:58.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.6-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.6-win-x64.zip",
+          "size": 159220889,
+          "lastModified": "2026-10-27T09:30:06.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.6-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.5.apk",
+          "size": 4285552,
+          "lastModified": "2026-10-27T08:42:59.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.5.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.5-setup.exe",
+          "size": 113106366,
+          "lastModified": "2026-10-27T08:42:22.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.5-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.5-win-x64.zip",
+          "size": 159220893,
+          "lastModified": "2026-10-27T08:41:30.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.5-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.2.apk",
+          "size": 4276688,
+          "lastModified": "2026-10-27T04:47:00.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.2.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.2-setup.exe",
+          "size": 113099159,
+          "lastModified": "2026-10-27T04:46:23.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.2-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.2-win-x64.zip",
+          "size": 159212020,
+          "lastModified": "2026-10-27T04:45:31.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.2-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.1.apk",
+          "size": 4276584,
+          "lastModified": "2026-10-27T04:08:26.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.1.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.1-setup.exe",
+          "size": 113099045,
+          "lastModified": "2026-10-27T04:07:49.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.1-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.1-win-x64.zip",
+          "size": 159211910,
+          "lastModified": "2026-10-27T04:06:56.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.1-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.0.apk",
+          "size": 4270392,
+          "lastModified": "2026-10-27T01:18:51.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.0.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.0-setup.exe",
+          "size": 113093975,
+          "lastModified": "2026-10-27T01:18:14.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.0-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.1.0-win-x64.zip",
+          "size": 159205735,
+          "lastModified": "2026-10-27T01:17:22.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.1.0-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.2.apk",
+          "size": 4220492,
+          "lastModified": "2026-10-26T17:59:27.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.2.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.2-setup.exe",
+          "size": 113052873,
+          "lastModified": "2026-10-26T17:59:19.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.2-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.2-win-x64.zip",
+          "size": 159155840,
+          "lastModified": "2026-10-26T17:59:08.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.2-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.1.apk",
+          "size": 4199653,
+          "lastModified": "2026-10-26T13:14:39.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.1.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.1-setup.exe",
+          "size": 113036007,
+          "lastModified": "2026-10-26T13:14:31.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.1-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.1-win-x64.zip",
+          "size": 159135086,
+          "lastModified": "2026-10-26T13:14:19.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.1-win-x64.zip"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.0.apk",
+          "size": 4186116,
+          "lastModified": "2026-10-25T15:46:25.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.0.apk"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.0-setup.exe",
+          "size": 113021270,
+          "lastModified": "2026-10-25T15:46:18.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.0-setup.exe"
+        },
+        {
+          "key": "mdadmin/releases/NeoMD-1.0.0-win-x64.zip",
+          "size": 159118603,
+          "lastModified": "2026-10-25T15:46:06.000Z",
+          "url": "https://mdadmin.zhengl.vip/mdadmin/releases/NeoMD-1.0.0-win-x64.zip"
+        }
+      ]
+    }
+  },
+  "p3_download_list": {
+    "status": 200,
+    "body": {
+      "files": [
+        {
+          "file": "NeoMD-1.3.1-win-x64.zip",
+          "title": "Windows x64 绿色版",
+          "platform": "windows",
+          "size": null,
+          "url": "https://md.zhengl.vip/api/download/NeoMD-1.3.1-win-x64.zip"
+        },
+        {
+          "file": "NeoMD-1.3.1-setup.exe",
+          "title": "Windows x64 安装包",
+          "platform": "windows",
+          "size": null,
+          "url": "https://md.zhengl.vip/api/download/NeoMD-1.3.1-setup.exe"
+        },
+        {
+          "file": "NeoMD-1.3.1.apk",
+          "title": "Android APK",
+          "platform": "android",
+          "size": null,
+          "url": "https://md.zhengl.vip/api/download/NeoMD-1.3.1.apk"
+        }
+      ]
+    }
+  },
+  "p4_admin_plugins": {
+    "status": 200,
+    "itemCount": 20,
+    "hasPage": true,
+    "hasPageSize": true,
+    "hasTotal": true,
+    "page": 1,
+    "pageSize": 20,
+    "total": 53,
+    "sample": [
+      {
+        "id": 54,
+        "pluginId": "sync-brief",
+        "name": "同步简报",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 5
+      },
+      {
+        "id": 53,
+        "pluginId": "share-summary",
+        "name": "分享摘要卡片",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 52,
+        "pluginId": "owner-reminder",
+        "name": "任务催办清单",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 5
+      },
+      {
+        "id": 51,
+        "pluginId": "kickoff-brief",
+        "name": "项目启动简报",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 50,
+        "pluginId": "team-glossary",
+        "name": "团队术语表",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 4
+      },
+      {
+        "id": 49,
+        "pluginId": "status-report",
+        "name": "项目状态周报",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 48,
+        "pluginId": "handoff-doc",
+        "name": "交接文档模板",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 47,
+        "pluginId": "contact-card",
+        "name": "联系人卡片",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 46,
+        "pluginId": "raci-matrix",
+        "name": "RACI 责任矩阵",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 45,
+        "pluginId": "assignee-board",
+        "name": "负责人看板",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 4
+      },
+      {
+        "id": 44,
+        "pluginId": "doc-review-loop",
+        "name": "文档评审轮次",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 4
+      },
+      {
+        "id": 43,
+        "pluginId": "postmortem-report",
+        "name": "故障复盘报告",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 42,
+        "pluginId": "changelog-entry",
+        "name": "更新日志条目",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 41,
+        "pluginId": "bug-report-tpl",
+        "name": "缺陷报告模板",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 40,
+        "pluginId": "roadmap-timeline",
+        "name": "路线图时间线",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 4
+      },
+      {
+        "id": 39,
+        "pluginId": "risk-register",
+        "name": "风险登记表",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 4
+      },
+      {
+        "id": 38,
+        "pluginId": "qa-test-plan",
+        "name": "测试计划模板",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 37,
+        "pluginId": "release-checklist",
+        "name": "发布检查清单",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 36,
+        "pluginId": "pr-description",
+        "name": "变更说明模板",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      },
+      {
+        "id": 35,
+        "pluginId": "review-checklist-code",
+        "name": "代码评审清单",
+        "version": "1.0.0",
+        "status": "published",
+        "downloads": 3
+      }
+    ]
+  }
+}

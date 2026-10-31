@@ -13,6 +13,130 @@
 
 ---
 
+## [1.4.0] - 2026-10-31
+
+本版是**插件生态 + 后台能力 + 设置体系**三条主线的大版本：把插件从「装了用不了」变成「装了就能在功能区点」，后台补齐插件编辑/翻页/客户端分发/用户管理，设置页做草稿化改造并逐项体检；同时根治了分屏拖动、主题作用域、命名乱码、仓库泛滥等一批用户报障。
+
+### Added
+
+- **插件：安装后自动出现在功能区且可执行**
+  - 社区插件用 `community:<pluginId>` 前缀 + **独立存储 key** `neomd.communityRibbon.v1`，内置白名单 `layout.ribbonItems` 一个字都没改（实测 12 项逐字节不变，避免设置页出现幽灵项）；
+  - 安装即校验：`installCommunityPlugin()` 内部先跑 `loadPluginModule()`，坏插件当场报可读错误、不进「我的插件」；
+  - 功能区按钮、右键菜单「加入/移出功能区」、命令面板三处入口统一识别 `community:` 前缀；
+  - `runCommunityPlugin()` 如实返回 `{changed, notified}` —— 插件 setup 什么都没做时明确告知「已执行但没有产生任何变化」，不再假成功。
+
+- **插件源码解析器重写**：新增 `packages/shared/src/plugin-source.ts`
+  - 用**逐字符状态机**（正确跳过字符串/模板字符串/`${}`/行注释/块注释/正则字面量）只在「代码区 + 顶层」找 `export default`，字符串里的同样字样永远碰不到；
+  - 修掉 3 个正则方案无法覆盖的坑：**ASI 陷阱**（`export default\n{...}` 被补分号变块语句）、多个 `export default` 静默取第一个、括号不闭合时错误文案点名到「`//` 注释吞掉了 `}`」；
+  - **20 条单元测试**覆盖 a~g 七类写法 + 7 条边界 + 5 个真实市场插件样本。
+
+- **后台插件市场：编辑功能**（需求2）
+  - 新增 `GET/PUT /api/admin/plugins/:id`（按数字主键），可改元数据 + `codeJs`，含**语法校验与危险标识符拦截**（`require` / `child_process` / `process.binding`），拒绝时记审计 `admin.plugin.update_rejected`；
+  - 前端编辑弹窗 + 实时校验 + 变更摘要 + 保存反馈。
+
+- **后台插件市场：翻页**（需求3）
+  - `GET /api/plugins/market` 与 `GET /api/admin/plugins` 均支持 `page`/`pageSize`，返回**真实 `COUNT(*)`** 的 `total` + `hasMore`；**不传参时与 1.3.1 行为完全一致**（向后兼容）；
+  - 前端分页 UI：每页 20 条、上一页/下一页/页码/总数、翻页回列表顶部、页码进 URL（`?pluginPage=N`，刷新不丢）。
+
+- **后台客户端分发：显示当前版本与三态**（需求4）
+  - 复用 `download.js` 的 `DOWNLOAD_FILES` 单一数据源（不造第二份清单）；
+  - `isCurrent` 徽标、下载次数、HEAD 可用性探测、**OSS/本地/两者都有/仅本地**四态区分 +「只看异常」筛选；
+  - 新增 `tools/re14-release-gate.mjs` 发版门禁：校验运行期目录 + 部署产物 + 客户端真实 HEAD 三层，缺件直接非 0 退出。
+
+- **后台用户管理：6 项新能力**（需求5，超出「至少 5 项」）
+  - 封禁/解封（原因 + 到期时间）、统一状态入口、批量操作（禁用/启用/发积分/改角色）、角色调整（独立审计）、登录记录（审计聚合，无需新表）、数据概览（仓库/文档/分享/AI/积分）、CSV 导出（UTF-8 BOM）。
+
+- **设置：草稿 + 保存**（需求16）
+  - 进入设置页快照草稿，改动只进草稿，底部固定「保存 / 取消 / 恢复默认」操作栏；不保存关闭会提示未保存修改；
+  - 「实时预览」开关（预览只改 CSS 变量，不进 store、不推云端）；
+  - **只提交差集**（`buildDraftDelta()`）—— 避免把云端刚拉下来的新值用本端旧快照覆盖回去（跨设备覆盖写缺陷，见 Fixed）。
+
+- **设置项归位**（需求14）：主色调从「通用」搬到「主题」，与颜色细化同源；主题页签只负责配色，排版与编辑行为类控件统一归「编辑器」页签。
+
+- **主题语义分档**：`themes.ts` 新增 `CONTENT_THEME_VARS` / `CHROME_THEME_VARS` / `STRUCTURAL_THEME_VARS` 三档 + `contrastRatio()` / `ensureContrast()` / `protectStructuralColors()` / `scopedThemeVars()`。
+
+- **仓库防复发**：`VaultEntry` 新增 `orphan` / `orphanSince` / `orphanMissCount`；云端不存在但本地残留的条目判定为 orphan 并**不参与同步**（连续 3 轮确认后才物理移除，防单次网络抖动误删）；本地纯本地目录仓库永不误判。
+
+- `tools/verify-140.mjs` + `tools/re140/` 发布门禁（59 条断言，覆盖全部 16 项需求 + 负向对照 + 零污染自证）、`tools/re14-settings-audit.mjs` 设置逐项体检（18 条）、`tools/re14-settings-save-verify.mjs`（15 条）、`tools/re14-builtin-plugins.mjs`（26 款逐款）、`tools/re14-release-gate.mjs`。
+
+### Fixed
+
+- **新安装的插件无法使用**：根因是**功能区入口机制根本不存在** —— `layout.ribbonItems` 只装内置 id，`ribbonActions` 查 `PLUGIN_RIBBON_DEFS` 时未知 id 直接 `continue`。装完插件后功能区零变化，唯一入口只剩命令面板。
+
+- **插件点击没反应**：解析器正则误伤（字符串里的 `export default` 被静默改写、`//` 注释压缩后抛 `SyntaxError`）。已换状态机解析器，详见 Added。
+
+- **21 款内置插件「不完整」**：根因是 `PluginPanel.vue` 是**全仓无人 import 的死代码** —— 5 款只声明 `panel: true` 的插件没有任何渲染路径；19 个声明命令旧 dispatcher 只命中 2 个。已接回并补齐，`onPanelAction` 的 `default` 分支假成功（只 `notify('已触发插件')`）已拆为明确报错。
+  - **26 款逐款结论：可用 21 / 部分可用 5 / 暂不可用 0 / 失败 0**。5 款部分可用（录音机需 S3+麦克风、数据库 `.base` 持久化无宿主、网页浏览器受目标站 `X-Frame-Options` 限制、斜杠命令行内触发、页面预览行内悬停）均在界面内**主动标注限制**，不虚报。
+
+- **顺带修掉一个真实用户缺陷**：属性/数据库面板解析 frontmatter 的键名正则只允许 ASCII，**中文属性名（`状态: 进行中`）一律解析不出来**，属性表永远是空的，被误判成「插件坏了」。已改用 `\p{L}\p{N}`。
+
+- **左右/上下分屏拖动不跟手**（需求7）：**两个独立 bug 叠加**。
+  1. `ResizeHandle` 是「像素增量」模型，而分屏传的是 `0..100` 的百分比 → 1px 位移被当成 1%，1300px 宽的分屏上灵敏度放大 **13 倍**；
+  2. `flex: 0 0 ${splitRatio*100}%` 绑在**第二栏**，比例变大 → 第二栏变大 → 分隔条向**左/上**跑，与鼠标（右/下）**相反**。
+  - 修法：新增 `unit: 'px' | 'percent'`（默认 px，侧栏/区块高度行为不变），percent 模式在 mousedown 量一次容器尺寸后换算；方向修正放布局层（第二栏用 `(1 - splitRatio)`），**不使用 `invert`**（只加 invert 灵敏度仍错，两者都加会双重翻转）。
+  - 实测：左右分屏 30%/50%/70% 偏差 **0px / 0px / 0px**，上下分屏 **0.42 / 0.41 / 0.38px**，松手漂移 0px（判据 <3px）。修复前同场景偏差 129~672px。
+
+- **右侧栏无上限、无法拖动排序**（需求8）：
+  - 上限 3 + 点第 4 个自动关闭最上方一个（`toggleRightSectionWithLimit()` 纯函数，EditorPage 与 SettingsPage 共用同一语义，用 `while` 让老数据一次性收敛）+ 提示文案点名被关掉的区块；
+  - 标题栏与抓手双通道拖动排序，顺序持久化且刷新保持；
+  - **前提修复**：`enabledRightSections` 原来强制按 `RIGHT_SECTIONS` 常量顺序输出、丢弃用户顺序，不修这个任何拖拽排序都会被抹平。
+
+- **设置界面仍渲染正文工具栏**（需求15）：`<EditorBar v-if="activeTab && !isFlowTab && !isMindTab">` —— 设置标签是虚拟 tab，对 `activeTab` 为真且不是 flow/mind，所以整条工具栏照常渲染。补 `!isSettingsActive && !isPluginActive` 后实测设置页/插件商店/图文档 `.editorbar` 均为 0，普通文档仍为 1。
+
+- **主题勾选「仅正文」仍全局生效**（需求12）：根因是「排除的一侧用 `removeProperty` 清空」，而清空后 CSS 会**回落到 `themes.css` 的同一套主题静态值** —— 看起来就是没生效。改为写**中性基线值**（`scopedThemeVars()`），而非清空。
+
+- **颜色细化不生效**（需求13）：强调色优先级判断只看「`appearance.accent` 是否有值」，而 `applyThemePreset()` 每次都把 accent 写成主题自带值 → 用户改的强调色被上一轮主题值吞掉。改为只在「用户值 ≠ 主题值」时才覆盖。另修：颜色细化有独立 `colorDraft`，必须点「保存配色 / 存为新主题」才进草稿（两步式交互，按钮文案随当前是否自定义主题变化）。
+
+- **主题调色影响分割线**（需求11）：区分「用户可调颜色」与「结构性颜色（边框/分割线）」，`themeVars()` 自带结构色保护，并用 `ensureContrast()` 保证任意主题下 `--border` 与背景对比度 ≥1.2:1（10 套主题实测 1.25~1.63，修复前 6 套 <1.2）。
+
+- **设置中「命名模板」「AI 命名提示词」乱码**（需求9）：
+  - 根因是**历史脏数据**，不是当前代码缺陷：6 组对照值（`ABC123` / `AB{CD}EF` / `AB日CD` / 完整模板等）PUT→GET 全部原样往返；`user_settings` 为 `utf8mb4`、`sql_mode=STRICT_TRANS_TABLES`（不可表示会报错而非替换）、`crypto.js` 编码参数全 `utf8` —— 三条路径全部排除；
+  - 原值经**逐字符对齐反推**为旧版默认模板 `YY年MM月DD日HHMM-{input}`（落库 `YY?MM?DD?HHMM-?input?` 21 字符 ↔ 原值 21 字符，规则 = 非 ASCII **或** 花括号 → 单个 `?`），旁证是 `SettingsPage.vue` 的 placeholder 至今写着 `YY年MM月DD日HHMM`；
+  - 修复：精确签名表 + `garbleBackup` 原值备份（不做比例推断，避免误杀 `A?B?C` 这类合法输入）+ 存量数据修复（`YY?MM?DD?HHMM-?input?` → `YYMMDD日HHMM-{input}`、`???` → `无标题`、aiPrompt 恢复完整中文）+ **21 条单测**（含 4 条防误杀）。
+
+- **admin 用户出现很多仓库**（需求10）：
+  - 根因是服务端 `assertVaultUsable()` 对未登记的 `(user_id, vault_id)` **无条件 INSERT**（无 name 去重、无上限、无来源标记），配合客户端在「云端无仓库」时落 `uid('vault')` 随机 id，每次新 profile / 测试脚本都造一条 0 文档空壳；
+  - 服务端三层收敛：同 name 复用（堵住「每次新 profile 造一条 Neo MD」）、`auto_registered` 来源标记（既有行默认 0，绝不会被误清）、每用户 20 个上限（超限 409 `VAULT_LIMIT_REACHED`）；
+  - 清理存量：`user_vaults` **10 行 → 4 行，云端对象归零**，剩余 3 个真实仓库（700/436/298 篇）+ admin；
+  - **防复发**：云端不存在但本地残留的条目判为 `orphan` 且**不参与同步**。关键教训是「过滤遍历列表 ≠ 堵住所有入口」—— 只改 `syncAllVaults` 用 `listSyncable()` 不够，`syncVaultById()` 同步前还有一次显式 `vaultsApi.upsert()`，必须在该入口拦截。实测：注入 2 条幽灵 → 重载 → 全部同步 → 云端仓库数 **4 → 4**（对照组证明机制真实存在）；**18 条单测**覆盖 orphan 判定/移除阈值/恢复/持久化往返/4 条防误杀边界。
+
+- **顺带修掉一个隐蔽缺陷**：`registry.ts` 的 `normalizeEntry()` 是**白名单式**构造新对象，新加的 `orphan` 字段在「读盘 → 再存」时被静默丢弃 → 标了 orphan 刷新后失效、继续参与同步。教训：给持久化结构加字段必须同时改 **接口 + normalizeEntry + persist** 三处。
+
+### Changed
+
+- **`splitRatio` 语义统一为「第一栏占比」**：左右分屏表示左栏、上下分屏表示上栏，与 `flex` 修正后的行为一致、代码无分支。**这是行为变更**：极少数把比例调到非 50% 且已持久化的老用户，首次打开会看到上下比例对调（历史值本身是按旧的反向语义存的）。考虑到改前拖动功能实际不可用（偏差 129~672px），未做数据迁移。
+- **设置改为草稿模式**：改动不点「保存」不再即时生效（需求16）。这是**交互契约变更**，所有自动化脚本需在断言前插入「点保存」步骤。
+- **`pruneVersions` 默认保留策略**由 30 天 / 50 版放宽为 180 天 / 200 版（1.3.1 起），本版延续。
+- 生产环境升级到 1.4.0。
+
+### Security
+
+- **插件代码写入的两处入口都做校验**（1.4.0 门禁发现的安全缺口）：后台侧 `PUT /api/admin/plugins/:id` 早已调用 `validatePluginCode()`，但**作者侧 `PUT /api/plugins/:pluginId` 一个字节都不校验** —— 坏代码与危险标识符（`require` / `child_process` / `process.binding`）可直接落库，而插件代码最终在客户端 `new Function` 里执行。已在作者侧补上同一校验器（共用，不写第二套规则），两个端点口径一致。
+
+- **封禁到期时间时区错误**（本版顺带挖出的真·安全缺陷）：`pool.js` 是 `timezone: 'Z'`（JS `Date` 按 UTC 写入 DATETIME），而 MySQL `NOW()` 返回服务器本地时间（+08:00），差 8 小时 → **「封禁 2 小时」被立刻判成「已到期」**：后台显示「已解封」，账号实际仍 disabled，还会被 `sweepExpiredBans` 误清记录。危害是**管理员以为封了人，实际没封住**。
+  - 修复三处：SQL 侧统一 `UTC_TIMESTAMP()`（计算列 + sweep + 写入）；输出统一 `toIsoUtc()` 带 Z 的 ISO；JS 兜底 `isBanExpired()` 显式按 UTC 解析裸字符串。
+  - 固化为回归断言 `D2g2`（封禁 2 小时的到期时间必须落在约 120 分钟后）与 `D2g3`（`banExpired === false`）。
+
+- **草稿模式的跨设备覆盖写**：草稿在 `onMounted` 快照，而云端拉取通常在快照**之后**完成。若按整份草稿提交，会把刚拉下来的云端新值（另一台设备改的字体/主题/布局）用本端旧快照覆盖回去，并因「与保存前不同」被标进 pending **反向推回云端**，等于静默抹掉他人改动。改为只提交「用户真的动过的那几项」的差集（`buildDraftDelta()` + `diffObjects()`），密钥类字段也仅在确实被改过时提交。
+
+### Docs
+
+- 新增 `docs/ACCEPTANCE-140.md`（16 项需求逐条根因 + 修复前后实测 + 未覆盖项）、`docs/RELEASE-140.md`、`docs/DEPLOY-140.md`。
+- 新增 `docs/ACCEPTANCE-140-PLUGINS.md`（插件专项：26 款逐款结论）。
+- `docs/evidence-140/` 与 `docs/shots-140/` 存放各组的机器可读证据与截图。
+
+### 已知遗留（不在本版范围）
+
+1. **服务端与前端两份插件校验器**：`packages/shared/src/plugin-source.ts` 是给前端用的 TS 源码，服务端（Node ESM）无法直接 import，因此 `plugins.js` 里有一份**等价实现**，规则靠人工对齐。任一侧新增规则（如新黑名单标识符）必须同步另一侧，否则会出现「后台能存、客户端跑不了」或反之。正解是把校验器下沉到 `packages/shared` 编译产物由服务端引用（需改 shared 构建），记为 1.4.1。
+2. **斜杠命令的行内 `/` 触发、页面预览的行内悬停浮层**：需要编辑器扩展层（`WysiwygEditor` 的 slash 扩展与 wikilink hover DOM），本版按优先级砍至 1.5，功能标注为「部分可用」。
+3. **`SettingsModal.vue` 是死代码**（全仓无 import），本版未删除。
+4. **云端历史版本无数量上限**，`pruneRemoteVersions` 存在但无调用点（1.3.1 起遗留）。
+5. **`@neomd/core/dist/` 产物不可用**（`tsc` 输出省略扩展名的 ESM + 空 `index.js`），当前构建链路不依赖（Vite 直读源码）。
+6. **封禁到期为惰性解封**（读列表时纠正），无定时任务；长期无人访问后台时到期账号会短暂保持 disabled（语义无害，下次任何读取都会纠正）。
+7. **`admin.js` 已达 3473 行**，未来可按 users / releases / ai 拆分路由文件。
+
+---
+
 ## [1.3.1] - 2026-10-30
 
 本版是**纯缺陷修复版**，把六项用户可感知的问题逐条根治：编辑器排版（行距 / 分屏配色 / 空行保真）、设置项（字体改完自动恢复 / 选项重复）、历史版本（多版本列表与回滚）。不含新功能。

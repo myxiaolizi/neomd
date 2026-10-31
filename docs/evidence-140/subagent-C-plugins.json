@@ -1,0 +1,996 @@
+{
+  "schemaVersion": "1.0",
+  "title": "Neo MD 1.4 Plugin Chain Independent Evidence C",
+  "measurement": {
+    "sampleStartedAt": "2026-10-30T23:28:54+08:00",
+    "reportGeneratedAt": "2026-10-30T15:44:45.911Z",
+    "platform": "Windows / PowerShell / Node 24",
+    "services": {
+      "web": "http://127.0.0.1:5178",
+      "api": "http://127.0.0.1:3200"
+    },
+    "fileMtimes": {
+      "apps/web/src/views/EditorPage.vue": {
+        "mtimeUtc": "2026-10-30T11:11:41.314Z",
+        "bytes": 173497
+      },
+      "apps/web/src/components/panels/PluginCenter.vue": {
+        "mtimeUtc": "2026-10-28T15:48:06.772Z",
+        "bytes": 41008
+      },
+      "services/api/src/routes/plugins.js": {
+        "mtimeUtc": "2026-10-25T12:56:36.180Z",
+        "bytes": 16446
+      },
+      "apps/web/src/components/panels/PluginPanel.vue": {
+        "mtimeUtc": "2026-10-23T09:26:55.013Z",
+        "bytes": 14190
+      },
+      "packages/shared/src/plugins.ts": {
+        "mtimeUtc": "2026-10-27T13:49:23.595Z",
+        "bytes": 10216
+      }
+    }
+  },
+  "issue1": {
+    "rootCause": "Community plugin source is executed as a Function body. normalizePluginSource first does a line-anchored ESM replacement, then performs an unrestricted second replacement anywhere in the source. It does not parse JavaScript; therefore it mutates an export-default phrase inside a string literal. It also cannot repair a source whose // comment was collapsed with later syntax onto the same line. The current version does correctly handle leading block comments, export-default newline object, braces in strings/regex/template literals, normal // comments, and legacy return bodies.",
+    "evidence": {
+      "implementation": {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": [
+          483,
+          492
+        ],
+        "algorithm": [
+          "strip BOM",
+          "if no export-default token return unchanged",
+          "replace line-start export default with return using m",
+          "fallback replace first word-boundary export default anywhere"
+        ]
+      },
+      "probe": {
+        "script": "tools/re140-probe-C/normalize-probe.cjs",
+        "rawResults": "tools/re140-probe-C/normalize-results.json",
+        "engine": "Node 24 new Function(cleaned)()"
+      },
+      "caseTable": [
+        {
+          "case": "a_block_comment",
+          "compileExecute": "ok",
+          "error": null,
+          "semanticIntegrity": "pass",
+          "cleaned": "/* header */\nreturn { id: \"a\", setup() {} };"
+        },
+        {
+          "case": "b_newline_after_export",
+          "compileExecute": "ok",
+          "error": null,
+          "semanticIntegrity": "pass",
+          "cleaned": "return { id: \"b\", setup() {} };"
+        },
+        {
+          "case": "c_string_export_default",
+          "compileExecute": "ok",
+          "error": null,
+          "semanticIntegrity": "FAIL: literal changed from \"export default object\" to \"return object\"",
+          "cleaned": "return { id: \"c\", note: \"literal return object\", setup() {} };"
+        },
+        {
+          "case": "d_brace_in_string_template_regex",
+          "compileExecute": "ok",
+          "error": null,
+          "semanticIntegrity": "pass",
+          "cleaned": "return { id: \"d\", template: `contains } brace`, re: /}/, setup() {} };"
+        },
+        {
+          "case": "e_single_line_comment",
+          "compileExecute": "ok",
+          "error": null,
+          "semanticIntegrity": "pass",
+          "cleaned": "return { id: \"e\", // comment then code\n setup() {} };"
+        },
+        {
+          "case": "e_single_line_comment_minified",
+          "compileExecute": "fail",
+          "error": "SyntaxError: Unexpected token ')'",
+          "semanticIntegrity": "pass",
+          "cleaned": "return { id: \"emin\", // comment then code setup() {} };"
+        },
+        {
+          "case": "f_template_literal",
+          "compileExecute": "ok",
+          "error": null,
+          "semanticIntegrity": "pass",
+          "cleaned": "return { id: \"f\", text: `hello ${1 + 2}`, setup() {} };"
+        },
+        {
+          "case": "g_legacy_return",
+          "compileExecute": "ok",
+          "error": null,
+          "semanticIntegrity": "pass",
+          "cleaned": "return { id: \"g\", setup() {} };"
+        }
+      ]
+    },
+    "affectedLines": [
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "483-492",
+        "reason": "regex normalization and unsafe fallback"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "511-520",
+        "reason": "new Function executes normalized source and only surfaces runtime syntax error"
+      },
+      {
+        "file": "apps/web/src/components/panels/PluginCenter.vue",
+        "lines": "298-309",
+        "reason": "market install stores raw codeJs locally"
+      },
+      {
+        "file": "services/api/src/routes/plugins.js",
+        "lines": "312-318",
+        "reason": "download endpoint returns formatPlugin(fresh, true), including plugin code"
+      }
+    ],
+    "suggestedFix": "Remove the arbitrary-position fallback replacement. Accept a strict documented Function-body format (return {...}) or parse/transpile the ESM source with a real parser/compiler. Validate source on publish/install with the same executor and reject malformed minified // comments. Preserve strings/comments by AST transform rather than regex."
+  },
+  "issue2": {
+    "rootCause": "settings.layout.ribbonItems is an ordered whitelist of known built-in action IDs, not a dynamic plugin registry. EditorPage maps every candidate through the hard-coded PLUGIN_RIBBON_DEFS; unknown IDs are discarded. PluginCenter installation only writes neomd.communityPlugins.v1 and enabledPlugins[pluginId]. It does not append to ribbonItems, and the context-menu add list RIBBON_ALL_ITEMS also contains only built-ins. Community commands are only injected into buildCommands, which is evaluated when the command palette opens.",
+    "evidence": {
+      "browserTest": {
+        "login": "admin (one successful login; no retry)",
+        "installedPlugin": {
+          "pluginId": "meeting-minutes-tpl",
+          "name": "商务会议纪要模板"
+        },
+        "before": {
+          "ribbonItems": [
+            "daily-notes",
+            "random-note",
+            "graph",
+            "tag-list",
+            "bookmarks",
+            "file-recovery",
+            "whiteboard",
+            "slides",
+            "database",
+            "web-browser",
+            "recorder",
+            "diagram-flowchart"
+          ]
+        },
+        "after": {
+          "localCommunityPluginPresent": true,
+          "enabledPluginsValue": true,
+          "ribbonItemsUnchanged": true,
+          "newRibbonButtonPresent": false
+        },
+        "executionEntrySearch": "No community button was rendered in ribbon/status bar. EditorPage source shows one potential entry: command palette buildCommands() reads localStorage and appends command plugin:<id> only while enabled. The palette is the only discovered execution entry; it is not a persistent function-area entry."
+      },
+      "sourceEvidence": [
+        {
+          "file": "apps/web/src/components/panels/PluginCenter.vue",
+          "lines": "69-106",
+          "fact": "installation persistence is localStorage plus settingsStore.togglePlugin"
+        },
+        {
+          "file": "apps/web/src/components/panels/PluginCenter.vue",
+          "lines": "298-309",
+          "fact": "market install downloads and saves raw community package; no ribbon update"
+        },
+        {
+          "file": "apps/web/src/views/EditorPage.vue",
+          "lines": "195-230",
+          "fact": "ribbon candidate IDs are resolved exclusively through hard-coded PLUGIN_RIBBON_DEFS; unknown IDs continue"
+        },
+        {
+          "file": "apps/web/src/views/EditorPage.vue",
+          "lines": "446-465",
+          "fact": "community commands are added only in buildCommands"
+        },
+        {
+          "file": "apps/web/src/views/EditorPage.vue",
+          "lines": "1915-1929",
+          "fact": "right-click add list is hard-coded built-ins"
+        },
+        {
+          "file": "apps/web/src/views/EditorPage.vue",
+          "lines": "525,3279",
+          "fact": "paletteCommands is refreshed when palette opens and passed to CommandPalette"
+        }
+      ]
+    },
+    "affectedLines": [
+      {
+        "file": "apps/web/src/components/panels/PluginCenter.vue",
+        "lines": "96-109"
+      },
+      {
+        "file": "apps/web/src/components/panels/PluginCenter.vue",
+        "lines": "298-313"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "195-230"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "446-465"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "1915-1974"
+      }
+    ],
+    "suggestedFix": "Keep built-in ribbonItems as a validated built-in whitelist. Add a separate layout.communityRibbonItems:string[] containing IDs prefixed community:. On installation, offer an explicit \"Add to ribbon\" command only for community manifests that declare a ribbon contribution. Generate the visual action from the installed plugin registry, resolve community:<id> to runCommunityPlugin, and include the separate list in the ribbon context menu. Keep the command palette entry as a secondary discovery path."
+  },
+  "issue3": {
+    "rootCause": "The shared manifest is declarative only. PluginPanel hosts 13 component branches plus file-list metadata without a render branch, while several panel=true manifests have no host entry at all. EditorPage’s shortcut/command dispatcher recognizes only random.open and daily.today among the 20 declared built-in command IDs; diagrams are actually exposed by separate ribbon action IDs, not their declared command IDs. No manifest-to-chunk loader or editor-extension registration was found in EditorPage.",
+    "evidence": {
+      "script": "tools/re140-probe-C/builtin-host-audit.cjs",
+      "rawResults": "tools/re140-probe-C/builtin-host-audit.json",
+      "manifestCount": 26,
+      "table": [
+        {
+          "id": "whiteboard",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "whiteboard.create"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "whiteboard"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "whiteboard.create",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "note-reorganize",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "reorganize.batch"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "note-reorganize"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "reorganize.batch",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "tag-list",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "tags.panel"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "tag-list"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "tags.panel",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "hosted-or-forced-candidate"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "outgoing-links",
+          "declared": {
+            "panel": true,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "outgoing-links"
+          },
+          "hostApi": {
+            "panel": "missing",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "manifest panel=true but PluginPanel has no PANEL_META/render branch"
+          ]
+        },
+        {
+          "id": "outline",
+          "declared": {
+            "panel": true,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "outline"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "host path observed",
+          "certainFailure": false,
+          "findings": []
+        },
+        {
+          "id": "publish",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "publish.current"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "publish"
+          },
+          "hostApi": {
+            "panel": "missing",
+            "command": [
+              {
+                "id": "publish.current",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "manifest panel=true but PluginPanel has no PANEL_META/render branch",
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "backlinks",
+          "declared": {
+            "panel": true,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "backlinks"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "host path observed",
+          "certainFailure": false,
+          "findings": []
+        },
+        {
+          "id": "workspace",
+          "declared": {
+            "panel": false,
+            "commands": [
+              "workspace.save",
+              "workspace.restore"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "workspace"
+          },
+          "hostApi": {
+            "panel": "not-required",
+            "command": [
+              {
+                "id": "workspace.save",
+                "provided": false
+              },
+              {
+                "id": "workspace.restore",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "graph",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "graph.open"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "graph"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "graph.open",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "slides",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "slides.present"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "slides"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "slides.present",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "footnote-view",
+          "declared": {
+            "panel": true,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "footnote-view"
+          },
+          "hostApi": {
+            "panel": "missing",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "manifest panel=true but PluginPanel has no PANEL_META/render branch"
+          ]
+        },
+        {
+          "id": "quick-switcher",
+          "declared": {
+            "panel": false,
+            "commands": [
+              "quick.open"
+            ],
+            "shortcuts": [
+              "Ctrl+O"
+            ],
+            "editorExtension": false,
+            "chunk": "quick-switcher"
+          },
+          "hostApi": {
+            "panel": "not-required",
+            "command": [
+              {
+                "id": "quick.open",
+                "provided": false
+              }
+            ],
+            "shortcut": "missing-manifest-binding",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case",
+            "manifest shortcut is declarative; no command-id binding from manifest found"
+          ]
+        },
+        {
+          "id": "recorder",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "recorder.toggle"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "recorder"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "recorder.toggle",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "random-note",
+          "declared": {
+            "panel": false,
+            "commands": [
+              "random.open"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "random-note"
+          },
+          "hostApi": {
+            "panel": "not-required",
+            "command": [
+              {
+                "id": "random.open",
+                "provided": true
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "hosted-or-forced-candidate"
+          },
+          "verdict": "host path observed",
+          "certainFailure": false,
+          "findings": []
+        },
+        {
+          "id": "daily-notes",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "daily.open",
+              "daily.today"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "daily-notes"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "daily.open",
+                "provided": false
+              },
+              {
+                "id": "daily.today",
+                "provided": true
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "hosted-or-forced-candidate"
+          },
+          "verdict": "host path observed",
+          "certainFailure": false,
+          "findings": []
+        },
+        {
+          "id": "bookmarks",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "bookmark.toggle"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "bookmarks"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "bookmark.toggle",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "properties",
+          "declared": {
+            "panel": true,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "properties"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "host path observed",
+          "certainFailure": false,
+          "findings": []
+        },
+        {
+          "id": "database",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "database.create"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "database"
+          },
+          "hostApi": {
+            "panel": "missing",
+            "command": [
+              {
+                "id": "database.create",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "manifest panel=true but PluginPanel has no PANEL_META/render branch",
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "web-browser",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "browser.open"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "web-browser"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "browser.open",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "hosted-or-forced-candidate"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "file-recovery",
+          "declared": {
+            "panel": true,
+            "commands": [
+              "recovery.open"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "file-recovery"
+          },
+          "hostApi": {
+            "panel": "provided",
+            "command": [
+              {
+                "id": "recovery.open",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "hosted-or-forced-candidate"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "file-list",
+          "declared": {
+            "panel": true,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "file-list"
+          },
+          "hostApi": {
+            "panel": "missing-render-branch",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "PANEL_META exists but no render branch"
+          ]
+        },
+        {
+          "id": "slash-commands",
+          "declared": {
+            "panel": false,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": true,
+            "chunk": "slash-commands"
+          },
+          "hostApi": {
+            "panel": "not-required",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "missing-loader-registration",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "manifest editorExtension is declarative; no chunk loader/extension registration found in EditorPage"
+          ]
+        },
+        {
+          "id": "page-preview",
+          "declared": {
+            "panel": false,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": true,
+            "chunk": "page-preview"
+          },
+          "hostApi": {
+            "panel": "not-required",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "missing-loader-registration",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "manifest editorExtension is declarative; no chunk loader/extension registration found in EditorPage"
+          ]
+        },
+        {
+          "id": "word-count",
+          "declared": {
+            "panel": true,
+            "commands": [],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "word-count"
+          },
+          "hostApi": {
+            "panel": "missing",
+            "command": [],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "not-required"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "manifest panel=true but PluginPanel has no PANEL_META/render branch"
+          ]
+        },
+        {
+          "id": "diagram-flowchart",
+          "declared": {
+            "panel": false,
+            "commands": [
+              "diagram.createFlowchart"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "diagram"
+          },
+          "hostApi": {
+            "panel": "not-required",
+            "command": [
+              {
+                "id": "diagram.createFlowchart",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "hosted-or-forced-candidate"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        },
+        {
+          "id": "diagram-mindmap",
+          "declared": {
+            "panel": false,
+            "commands": [
+              "diagram.createMindmap"
+            ],
+            "shortcuts": [],
+            "editorExtension": false,
+            "chunk": "diagram"
+          },
+          "hostApi": {
+            "panel": "not-required",
+            "command": [
+              {
+                "id": "diagram.createMindmap",
+                "provided": false
+              }
+            ],
+            "shortcut": "not-required",
+            "editorExtension": "not-required",
+            "ribbon": "hosted-or-forced-candidate"
+          },
+          "verdict": "definitely incomplete",
+          "certainFailure": true,
+          "findings": [
+            "declared command has no EditorPage command dispatcher case"
+          ]
+        }
+      ],
+      "certainlyIncomplete": [
+        "whiteboard",
+        "note-reorganize",
+        "tag-list",
+        "outgoing-links",
+        "publish",
+        "workspace",
+        "graph",
+        "slides",
+        "footnote-view",
+        "quick-switcher",
+        "recorder",
+        "bookmarks",
+        "database",
+        "web-browser",
+        "file-recovery",
+        "file-list",
+        "slash-commands",
+        "page-preview",
+        "word-count",
+        "diagram-flowchart",
+        "diagram-mindmap"
+      ],
+      "notes": [
+        "A panel branch proves a panel host path, not every declared command.",
+        "daily-notes is partially hosted: panel and daily.today exist; daily.open is absent.",
+        "diagram plugins are feature-hosted via direct ribbon cases diagram-flowchart/diagram-mindmap but their declared command IDs diagram.createFlowchart/diagram.createMindmap are absent."
+      ]
+    },
+    "affectedLines": [
+      {
+        "file": "packages/shared/src/plugins.ts",
+        "lines": "26-299",
+        "reason": "26 declarative plugin definitions"
+      },
+      {
+        "file": "apps/web/src/components/panels/PluginPanel.vue",
+        "lines": "29-45",
+        "reason": "panel registry excludes outgoing-links,publish,footnote-view,database,word-count"
+      },
+      {
+        "file": "apps/web/src/components/panels/PluginPanel.vue",
+        "lines": "285-345",
+        "reason": "file-list has metadata but no branch; supported branches listed"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "630-669",
+        "reason": "shortcut dispatcher only has daily.today/random.open of declared plugin command IDs"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "1553-1603",
+        "reason": "ribbon action switch does not route most declared built-in command IDs"
+      }
+    ],
+    "suggestedFix": "Define a typed runtime contribution registry and make PLUGINS the source of truth: map each manifest command to a host handler, each panel contribution to a renderable component, and each editorExtension to an actual extension factory. At startup, assert every enabled manifest contribution resolves. Either implement or remove unsupported declared contributions; add explicit tests for all 26 IDs."
+  },
+  "limitations": [
+    "No source files were modified. Only tools/re140-probe-C and docs/evidence-140 were created.",
+    "The browser test installed one public plugin into the authenticated browser localStorage as requested; no API data or source files were changed.",
+    "Browser evaluate output contained credentials in localStorage; none are recorded in this report."
+  ]
+}

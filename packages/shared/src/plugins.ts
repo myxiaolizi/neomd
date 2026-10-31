@@ -241,17 +241,40 @@ export const PLUGINS: PluginManifest[] = [
     icon: icon('M16 3 8 21'),
     category: 'writing',
     defaultEnabled: true,
-    contributes: { editorExtension: true },
+    /**
+     * 1.4.0：补上 `commands` 贡献点。
+     *
+     * 原来这里只有 `editorExtension: true`，而宿主 `WysiwygEditor.vue` 从未按
+     * manifest 注册过任何编辑器扩展 —— 于是「斜杠命令」在 1.3.1 里没有任何可点
+     * 入口，只是一条清单项（插件中心能开能关，但开关本身不起作用）。
+     *
+     * 现在改为「命令入口 + 编辑器扩展」双贡献点：命令 `slash.insertMenu` 已接进
+     * `builtin-plugin-runtime.ts` 的派发表，命令面板与功能区都能唤出插入菜单；
+     * 行内键入 `/` 就地弹菜单仍需编辑器扩展层，未在 1.4.0 落地，已在验收报告中
+     * 如实标注为「部分可用」。
+     */
+    contributes: { editorExtension: true, commands: ['slash.insertMenu'] },
     chunk: 'slash-commands',
   },
   {
     id: 'page-preview',
     name: '页面预览',
-    description: '悬停链接时预览目标笔记内容。',
+    description: '预览当前文档 Wikilink 目标笔记的首段内容。',
     icon: icon('M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6z'),
     category: 'navigation',
     defaultEnabled: true,
-    contributes: { editorExtension: true },
+    /**
+     * 1.4.0：补上 `panel: true`。
+     *
+     * 原来只有 `editorExtension: true`，而宿主从未按 manifest 注册过编辑器扩展 ——
+     * 这款插件在 1.3.1 里既没有面板也没有入口，完全是清单项。
+     * 现在有了真实的「页面预览」面板（列出当前文档所有 Wikilink 目标 + 首段摘要，
+     * 并标出目标是否存在于仓库），因此清单必须如实声明 `panel: true`。
+     *
+     * 正文里悬停链接直接浮出的就地预览仍依赖编辑器扩展层，未在 1.4.0 落地，
+     * 已在验收报告中标注为「部分可用」。
+     */
+    contributes: { panel: true, editorExtension: true },
     chunk: 'page-preview',
   },
   {

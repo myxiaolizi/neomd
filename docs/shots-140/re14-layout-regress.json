@@ -1,0 +1,116 @@
+{
+  "tolerance": 3,
+  "cases": [
+    {
+      "name": "左侧栏宽度(px)",
+      "startWidth": 260,
+      "sampleCount": 6,
+      "worstDeviation": 0.67,
+      "widthDelta": 80,
+      "pass": true,
+      "samples": [
+        {
+          "step": 1,
+          "mouse": 313.33,
+          "divider": 313,
+          "deviation": 0.33,
+          "widthDelta": 13
+        },
+        {
+          "step": 2,
+          "mouse": 326.67,
+          "divider": 326,
+          "deviation": 0.67,
+          "widthDelta": 26
+        },
+        {
+          "step": 3,
+          "mouse": 340,
+          "divider": 340,
+          "deviation": 0,
+          "widthDelta": 40
+        },
+        {
+          "step": 4,
+          "mouse": 353.33,
+          "divider": 353,
+          "deviation": 0.33,
+          "widthDelta": 53
+        },
+        {
+          "step": 5,
+          "mouse": 366.67,
+          "divider": 366,
+          "deviation": 0.67,
+          "widthDelta": 66
+        },
+        {
+          "step": 6,
+          "mouse": 380,
+          "divider": 380,
+          "deviation": 0,
+          "widthDelta": 80
+        }
+      ]
+    },
+    {
+      "name": "右侧区块高度(px)",
+      "paneCount": 3,
+      "firstHeightBefore": 380,
+      "sampleCount": 6,
+      "worstDeviation": 0,
+      "heightDelta": 60,
+      "pass": true,
+      "samples": [
+        {
+          "step": 1,
+          "mouse": 460,
+          "divider": 460,
+          "deviation": 0,
+          "heightDelta": 10
+        },
+        {
+          "step": 2,
+          "mouse": 470,
+          "divider": 470,
+          "deviation": 0,
+          "heightDelta": 20
+        },
+        {
+          "step": 3,
+          "mouse": 480,
+          "divider": 480,
+          "deviation": 0,
+          "heightDelta": 30
+        },
+        {
+          "step": 4,
+          "mouse": 490,
+          "divider": 490,
+          "deviation": 0,
+          "heightDelta": 40
+        },
+        {
+          "step": 5,
+          "mouse": 500,
+          "divider": 500,
+          "deviation": 0,
+          "heightDelta": 50
+        },
+        {
+          "step": 6,
+          "mouse": 510,
+          "divider": 510,
+          "deviation": 0,
+          "heightDelta": 60
+        }
+      ]
+    }
+  ],
+  "shots": [
+    "docs/shots-140/re14-regress-leftwidth.png",
+    "docs/shots-140/re14-regress-sectionheight.png"
+  ],
+  "failures": [],
+  "pass": true
+}

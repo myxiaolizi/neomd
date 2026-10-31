@@ -10,6 +10,8 @@ import fs from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import config from '../config.js';
+// 1.4.0 客户端分发下载计数（后台「下载次数」列的数据来源）
+import { execute } from '../db/pool.js';
 import { notFound, ok } from '../lib/http.js';
 import { adminPrefix, platformConfig } from '../lib/oss.js';
 import { presignGet } from '../lib/s3.js';
@@ -137,8 +139,12 @@ function publicFile(item) {
  * 让旧链接仍然可用。
  *
  * 目录不可读（未部署 releases/、权限不足）时返回空数组，不影响当前版本下载。
+ *
+ * 1.4.0：改为 `export`，让管理后台（`/api/admin/releases`）**复用同一份数据源**。
+ * 后台必须与客户端看到同一批文件，因此绝不能在那里另写一遍目录扫描 + `APK_RE` 正则
+ * —— 那就是「第二份清单」，正是 1.3.1 里 `DOWNLOAD_FILES` 硬编码 1.1.8 导致 APK 永远 404 的成因。
  */
-async function listHistoricalApks() {
+export async function listHistoricalApks() {
   try {
     const names = await fs.readdir(LOCAL_DIR);
     return names
@@ -171,6 +177,36 @@ function objectKey(file) {
   return `${RELEASES_PREFIX}/${file}`;
 }
 
+/**
+ * 记录一次真实下载（1.4.0）。
+ *
+ * ## 为什么按天聚合 UPSERT
+ *
+ * 详情见 `db/migrate-v2.js` 的 `ensureReleaseDownloadStats()`：明细表会随下载量无限膨胀，
+ * 而运营需要的只有总数与趋势。`(file, day)` 主键让写入摊平成一行 UPSERT，
+ * 行数上界是「文件数 × 天数」，永远很小。
+ *
+ * ## 为什么是「发射后不管」但又必须显式 catch
+ *
+ * 下载是核心链路，**统计写入绝不能拖慢或阻断它**，所以不能 `await`。
+ * 但 Node 24 对未处理的 Promise 拒绝是**默认终止进程**的（unhandledRejection → 退出），
+ * 一次统计表写失败就可能导致整个 API 挂掉 —— 这是不可接受的。
+ * 因此这里保证「任何路径都不让异常逃逸」：内部 try/catch 全包，函数本身也永不 reject。
+ *
+ * @param {import('fastify').FastifyRequest} req
+ * @param {string} file 已通过白名单校验的安装包文件名
+ * @returns {void} 不返回可等待的 Promise（调用方无需也没有机会 await）
+ */
+function recordReleaseDownload(req, file) {
+  execute(
+    `INSERT INTO release_downloads (file, day, count, last_at) VALUES (?, CURDATE(), 1, NOW())
+     ON DUPLICATE KEY UPDATE count = count + 1, last_at = NOW()`,
+    [file],
+  ).catch((err) => {
+    req.log.warn({ err, file }, '写入下载统计失败');
+  });
+}
+
 export async function downloadRoutes(app) {
   // 清单（公开）
   app.get('/api/download/list', async (_req, reply) => {
@@ -183,6 +219,16 @@ export async function downloadRoutes(app) {
     if (!FILE_RE.test(name)) throw notFound('安装包不存在', 'RELEASE_NOT_FOUND');
     const item = await findFile(name);
     if (!item) throw notFound('安装包不存在', 'RELEASE_NOT_FOUND');
+
+    /*
+     * 下载计数：放在「文件确认存在」之后、真正发起传输之前。
+     *
+     * 排除 HEAD：Fastify 默认给每个 GET 自动挂一条 HEAD 路由（exposeHeadRoutes），
+     * 而后台「是否可下载」的可用性探测正是用 HEAD 做的（见 admin.js 的 releaseHeadProbe）。
+     * 若不排除，管理员每刷新一次后台就会凭空多出几次「下载」——统计立刻失真。
+     */
+    if (req.method !== 'HEAD') recordReleaseDownload(req, item.file);
+
 
     const key = objectKey(item.file);
     let signed;

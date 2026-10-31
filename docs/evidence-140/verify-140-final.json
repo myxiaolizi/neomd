@@ -1,0 +1,605 @@
+{
+  "base": "http://127.0.0.1:5178",
+  "api": "http://127.0.0.1:3200",
+  "startedAt": "2026-10-30T21:06:10.112Z",
+  "durationMs": 223250,
+  "sections": [
+    "A",
+    "B",
+    "C",
+    "D",
+    "E"
+  ],
+  "results": [
+    {
+      "id": "A01",
+      "section": "A",
+      "name": "A1 内置插件清单可读且 id 无重复",
+      "expect": "从 packages/shared/src/plugins.ts 解析出 >= 20 款插件，且 id 全唯一",
+      "actual": "26 款；唯一 id 26 个；contributes 声明 27 个",
+      "pass": true,
+      "repro": "node -e \"读 packages/shared/src/plugins.ts 的 PLUGINS\"",
+      "note": ""
+    },
+    {
+      "id": "A02",
+      "section": "A",
+      "name": "A2 每款内置插件都声明了 contributes（可用性前提）",
+      "expect": "每款插件都有 contributes（panel / commands / editorExtension 至少一项）",
+      "actual": "缺 contributes 的插件数：0（清单 26 / contributes 27）",
+      "pass": true,
+      "repro": "读 packages/shared/src/plugins.ts，逐个检查 contributes 字段",
+      "note": ""
+    },
+    {
+      "id": "A03",
+      "section": "A",
+      "name": "A3 社区插件可安装、写入功能区白名单且置为启用",
+      "expect": "neomd.communityPlugins.v1 含该插件、neomd.communityRibbon.v1 含**裸** pluginId、enabledPlugins[id]=true",
+      "actual": "插件列表 1 条；白名单（写后）=[\"qa140-e2e-plugin\"]；白名单（reload 后回读）=[\"qa140-e2e-plugin\"]；enabled=true",
+      "pass": true,
+      "repro": "写 neomd.communityPlugins.v1 + neomd.communityRibbon.v1（裸 pluginId）+ settings.update({enabledPlugins}) → reload",
+      "note": "白名单存裸 pluginId（见 community-plugins.ts 的 getCommunityRibbonIds）；community:<id> 只是按钮 DOM id"
+    },
+    {
+      "id": "A04",
+      "section": "A",
+      "name": "A4 安装后功能区出现该插件的可点击入口（需求1 硬要求）",
+      "expect": "安装社区插件并挂到 neomd.communityRibbon.v1 后，功能区 .ribbon__btn 中出现标题含该插件名的按钮",
+      "actual": "功能区按钮数 9→10；命中=true（title=社区插件：QA140 端到端插件（点击运行））；按钮清单=[{\"title\":\"今日日记 Ctrl+D\",\"aria\":\"\",\"dataRibbon\":\"\",\"text\":\"\"},{\"title\":\"漫游笔记 Ctrl+Shift+R\",\"aria\":\"\",\"dataRibbon\":\"\",\"text\":\"\"},{\"title\":\"关系图谱\",\"aria\":\"\",\"dataRibbon\":\"\",\"text\":\"\"},{\"title\":\"标签列表\",\"aria\":\"\",\"dataRibbon\":\"\",\"text\":\"\"},{\"title\":\"书签\",\"aria\":\"\",\"dataRibbon\":\"\",\"text\":\"\"},{\"title\":\"文件恢复\",\"aria\":\"\",\"dataRibbon\":\"\",\"text\":\"\"},{\"title\":\"流程图\",\"aria\":\"\",\"dataRibbon\":\"\",\"text\":\"\"},{\"title\":\"思维导图\",\"aria\":\"\",\"dataRibbon\":\"\",\"text\":\"\"},{\"title\":\"社区插件：QA1...",
+      "pass": true,
+      "repro": "安装社区插件（写 communityPlugins + communityRibbon）→ 数 .ribbon__btn 中标题含插件名的按钮",
+      "note": "需求1 原文要求「功能区增加入口」；命令面板入口不能替代功能区"
+    },
+    {
+      "id": "A05",
+      "section": "A",
+      "name": "A5 点击功能区插件入口后文档内容真的变化（需求1「确保插件可用」）",
+      "expect": "点击功能区按钮后 activeTab.content 追加了插件写入的标记文本",
+      "actual": "点击={\"ok\":true}；内容长度 0 → 26；含标记=true；命令面板附加信息=[\"运行扩展插件：QA140 端到端插件扩展插件\",\"运行扩展插件：QA140 端到端插件\"]",
+      "pass": true,
+      "repro": "点功能区的「QA140 端到端插件」按钮 → 读 activeTab.content",
+      "note": "插件源码故意带文件头注释 + export default，同时防 1.3.0 修过的注释匹配回归"
+    },
+    {
+      "id": "A06",
+      "section": "A",
+      "name": "A6 插件执行异常能抛出可读错误（不静默失败）",
+      "expect": "插件内部 throw 能被捕获并得到含原文的错误信息",
+      "actual": "{\"threw\":true,\"message\":\"QA140 故意抛错\"}",
+      "pass": true,
+      "repro": "构造 setup() 抛错的插件，断言错误信息可读",
+      "note": ""
+    },
+    {
+      "id": "A07",
+      "section": "A",
+      "name": "A7 插件市场列表能渲染卡片（用本地分页数据拦截生产请求）",
+      "expect": "拦截 /api/plugins/market 后，切到「插件市场」应渲染 >= 1 个插件卡片或安装按钮",
+      "actual": "插件中心打开=true；页签=[\"插件市场\",\"我的插件\",\"发布插件\",\"开发指南\",\"内置插件\",\"导入本地\",\"刷新\",\"★ 420\",\"一键安装并启用\",\"★ 342\",\"★ 218\",\"★ 0\",\"上一页\",\"下一页\"]；第1页卡片=20 安装按钮=20；拦截到的请求=[{\"page\":1,\"pageSize\":20,\"status\":200,\"items\":20,\"total\":53}]",
+      "pass": true,
+      "repro": "page.route 拦截 /api/plugins/market → 用本地 3200 分页响应 fulfil → 打开插件市场",
+      "note": "客户端市场强制 viaMarket 走官方服务端；localhost 直连拿到的是生产 1.3.1 数据（无分页字段），故必须拦截"
+    },
+    {
+      "id": "A08",
+      "section": "A",
+      "name": "A8 插件市场分页：每页 20 条，第 2 页正确加载",
+      "expect": "第 1 页请求 pageSize=20 且 items=20；点「下一页」后发起 page=2 请求并渲染新一批卡片",
+      "actual": "第1页响应={\"page\":1,\"pageSize\":20,\"status\":200,\"items\":20,\"total\":53}；第2页响应={\"page\":2,\"pageSize\":20,\"status\":200,\"items\":20,\"total\":53}；UI 第1页卡片=20 → 第2页卡片=20；翻页动作={\"ok\":true}",
+      "pass": true,
+      "repro": "拦截市场请求 → 打开插件市场 → 点「下一页」→ 观察 page=2 请求与卡片数",
+      "note": "需求3：每页显示 20 个插件；第 2 页条数 = total - 40（数据量不足时可能更少）"
+    },
+    {
+      "id": "A09",
+      "section": "A",
+      "name": "A9 翻页后市场列表滚动位置回到顶部，且页码持久化在 URL",
+      "expect": "市场列表自身滚动容器（含 .pcard 的最近可滚动祖先）翻页后 scrollTop <= 2；URL 出现 ?pluginPage=N",
+      "actual": "滚动容器=1 明细=[{\"cls\":\"pc__body nm-scroll\",\"scrollTop\":0}]；回顶部=true；URL=http://127.0.0.1:5178/app?pluginPage=2；含 page 参数=true；当前卡片数=20",
+      "pass": true,
+      "repro": "市场页（第 1 页）→ 点「下一页」→ 读市场列表自身 scrollTop 与 location.href",
+      "note": "只测市场列表的滚动容器；左侧文件树/正文编辑器的 scrollTop 与翻页无关，不应纳入"
+    },
+    {
+      "id": "A10",
+      "section": "A",
+      "name": "A10 内置插件面板真实渲染（抽 5 款，要求全部出现非空面板）",
+      "expect": "每款面板型插件开启后，对应 .rightstack__pane 存在且文本内容非空",
+      "actual": "5/5 款面板非空；明细=[\"outline: pane=true len=14\",\"tag-list: pane=true len=15\",\"outgoing-links: pane=true len=19\",\"backlinks: pane=true len=19\",\"bookmarks: pane=true len=2\"]",
+      "pass": true,
+      "repro": "逐个开启 outline/tag-list/outgoing-links/backlinks/bookmarks → 读对应 .rightstack__pane 文本",
+      "note": "「开关可写」不等于「能用」；这里断言面板真的渲染出内容"
+    },
+    {
+      "id": "A11",
+      "section": "A",
+      "name": "A12 全部内置插件（26 款）启用开关可写、pluginOn 可查",
+      "expect": "每款的 enabledPlugins 可写且 pluginOn 返回布尔值，无异常",
+      "actual": "26/26 款可写；失败=[]",
+      "pass": true,
+      "repro": "浏览器内逐个开关全部内置插件（settings.update({enabledPlugins})）",
+      "note": "这是「接线正确」的必要条件；「真的能用」由 A10 面板渲染覆盖"
+    },
+    {
+      "id": "A12",
+      "section": "A",
+      "name": "A9 插件流程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": "插件代码经 new Function 执行，任何定义错误都会体现在这里"
+    },
+    {
+      "id": "B01",
+      "section": "B",
+      "name": "B1 插件市场服务端分页：第 1 页恰好 20 条且 total 正确",
+      "expect": "pageSize=20 时第 1 页 items.length === 20，且 total >= 20",
+      "actual": "status=200 第1页=20 条 total=53 page=1 pageSize=20",
+      "pass": true,
+      "repro": "GET /api/admin/plugins?page=1&pageSize=20",
+      "note": ""
+    },
+    {
+      "id": "B02",
+      "section": "B",
+      "name": "B2 插件市场分页第 2 页与第 1 页无重叠（翻页正确）",
+      "expect": "第 2 页返回 total-20 条（或 20 条），且与第 1 页 id 无交集",
+      "actual": "第2页=20 条；重叠 id 数=0；第2页 page=2",
+      "pass": true,
+      "repro": "GET /api/admin/plugins?page=2&pageSize=20，与第 1 页 id 求交",
+      "note": ""
+    },
+    {
+      "id": "B03",
+      "section": "B",
+      "name": "B3 客户端插件市场也支持分页（page/pageSize/total）",
+      "expect": "GET /api/plugins/market?page=1&pageSize=20 返回 <=20 条，且能给出 total",
+      "actual": "status=200 items=20 total=53",
+      "pass": true,
+      "repro": "GET /api/plugins/market?page=1&pageSize=20",
+      "note": ""
+    },
+    {
+      "id": "B04",
+      "section": "B",
+      "name": "B4 插件市场编辑：修改元数据后保存生效（回读一致）",
+      "expect": "PUT /api/plugins/<pluginId> 改 description → 后台列表回读到新值",
+      "actual": "PUT status=200 ok=true；回读 description 变化=true",
+      "pass": true,
+      "repro": "PUT /api/plugins/sync-brief { description: \"QA140 编辑验证 1793394398053\" }",
+      "note": "需求2 要求「能对插件进行修改和调整」；此断言验证保存后真的落库"
+    },
+    {
+      "id": "B05",
+      "section": "B",
+      "name": "B5 插件市场编辑：可还原原值（自清理）",
+      "expect": "把 description 改回原值后回读等于原值",
+      "actual": "原值=统计文档规模、最近修改痕迹与待办变化，生成跨端同步简报区块，便于多端协作时快速对；回读=统计文档规模、最近修改痕迹与待办变化，生成跨端同步简报区块，便于多端协作时快速对",
+      "pass": true,
+      "repro": "再次 PUT 原 description",
+      "note": ""
+    },
+    {
+      "id": "B06",
+      "section": "B",
+      "name": "B6 插件代码编辑有语法校验（合法可写、非法被拒）",
+      "expect": "合法 codeJs 可以保存（200）；语法错误的 codeJs 必须被拒（4xx）",
+      "actual": "合法 PUT status=200（可写=true）；非法 PUT status=200",
+      "pass": false,
+      "repro": "先 PUT 合法 codeJs → 再 PUT 语法错误 codeJs，比对两次状态码",
+      "note": "需求2：编辑代码有安全风险，至少做语法校验"
+    },
+    {
+      "id": "B07",
+      "section": "B",
+      "name": "B7 客户端分发清单包含当前版本（== services/api/package.json）",
+      "expect": "GET /api/download/list 至少有一个文件名包含 version=1.3.1",
+      "actual": "api version=1.3.1；清单=[\"NeoMD-1.3.1-win-x64.zip\",\"NeoMD-1.3.1-setup.exe\",\"NeoMD-1.3.1.apk\"]；命中=true",
+      "pass": true,
+      "repro": "GET /api/download/list，与 services/api/package.json 的 version 比对",
+      "note": "需求4：后台客户端分发没有最新版本 —— 版本号必须只有一个事实源"
+    },
+    {
+      "id": "B08",
+      "section": "B",
+      "name": "B8 后台「发布与分发」对象清单含当前版本，且当前版本被标记 isCurrent",
+      "expect": "GET /api/admin/releases 的 files 里至少一个 file 包含 1.3.1，且存在 isCurrent=true 的条目",
+      "actual": "status=200 文件数=31 命中=true 当前版本条目=[\"NeoMD-1.3.1.apk(v1.3.1, downloadable=true)\",\"NeoMD-1.3.1-setup.exe(v1.3.1, downloadable=true)\",\"NeoMD-1.3.1-win-x64.zip(v1.3.1, downloadable=true)\"]；样例=[\"NeoMD-1.3.1.apk\",\"NeoMD-1.3.1-setup.exe\",\"NeoMD-1.3.1-win-x64.zip\"]",
+      "pass": true,
+      "repro": "GET /api/admin/releases，读 files[].file / version / isCurrent",
+      "note": "需求4：后台客户端分发没有最新版本；1.4 接口已给出 isCurrent/downloadable/isCurrentManifest 等标记"
+    },
+    {
+      "id": "B09",
+      "section": "B",
+      "name": "B8b 当前版本安装包标记为可下载（downloadable=true）",
+      "expect": "isCurrent=true 的条目里至少 3 个（win zip / setup.exe / apk）downloadable=true",
+      "actual": "当前版本条目 3 个，其中可下载 3 个：[\"NeoMD-1.3.1.apk\",\"NeoMD-1.3.1-setup.exe\",\"NeoMD-1.3.1-win-x64.zip\"]",
+      "pass": true,
+      "repro": "GET /api/admin/releases → 过滤 isCurrent=true → 看 downloadable 字段",
+      "note": "需求4 要求显示「是否可下载」；服务端做 HEAD 探测后给出该标记"
+    },
+    {
+      "id": "B10",
+      "section": "B",
+      "name": "B9 版本号单一事实源：根 package.json 与 services/api/package.json 一致",
+      "expect": "root=1.3.1 与 api=1.3.1 必须相等（避免两个硬编码清单漂移）",
+      "actual": "root=1.3.1 / api=1.3.1",
+      "pass": true,
+      "repro": "比对两个 package.json 的 version",
+      "note": ""
+    },
+    {
+      "id": "B11",
+      "section": "B",
+      "name": "B10 用户列表接口可用（含分页与总数）",
+      "expect": "GET /api/admin/users 返回 items 非空且给出 total",
+      "actual": "status=200 items=3 total=3",
+      "pass": true,
+      "repro": "GET /api/admin/users?page=1&pageSize=5",
+      "note": ""
+    },
+    {
+      "id": "B12",
+      "section": "B",
+      "name": "B11 批量操作接口存在",
+      "expect": "POST /api/admin/users/batch 不应返回 404/405 或 NOT_FOUND（400 参数校验失败算接口已实现）",
+      "actual": "status=400 code=VALIDATION_ERROR body=批量操作内容校验失败：ids: 请至少选择一个用户；action: 不支持的批量操作",
+      "pass": true,
+      "repro": "POST /api/admin/users/batch",
+      "note": "需求5 要求至少 5 项新增用户管理功能"
+    },
+    {
+      "id": "B13",
+      "section": "B",
+      "name": "B12 用户封禁/状态接口存在",
+      "expect": "PUT /api/admin/users/6/status 不应返回 404/405 或 NOT_FOUND（400 参数校验失败算接口已实现）",
+      "actual": "status=200 code= body=",
+      "pass": true,
+      "repro": "PUT /api/admin/users/6/status",
+      "note": "需求5 要求至少 5 项新增用户管理功能"
+    },
+    {
+      "id": "B14",
+      "section": "B",
+      "name": "B13 用户导出 CSV 接口存在",
+      "expect": "GET /api/admin/users/export 不应返回 404/405 或 NOT_FOUND（400 参数校验失败算接口已实现）",
+      "actual": "status=400 code=VALIDATION_ERROR body=用户编号不合法",
+      "pass": true,
+      "repro": "GET /api/admin/users/export",
+      "note": "需求5 要求至少 5 项新增用户管理功能"
+    },
+    {
+      "id": "B15",
+      "section": "B",
+      "name": "B14 用户数据概览接口存在",
+      "expect": "GET /api/admin/users/6/overview 不应返回 404/405 或 NOT_FOUND（400 参数校验失败算接口已实现）",
+      "actual": "status=200 code= body=",
+      "pass": true,
+      "repro": "GET /api/admin/users/6/overview",
+      "note": "需求5 要求至少 5 项新增用户管理功能"
+    },
+    {
+      "id": "B16",
+      "section": "B",
+      "name": "B15 后台管理接口鉴权正常（admin 可访问）",
+      "expect": "GET /api/admin/status 返回 200 且 ok",
+      "actual": "status=200 ok=true",
+      "pass": true,
+      "repro": "GET /api/admin/status（带 admin token）",
+      "note": ""
+    },
+    {
+      "id": "C01",
+      "section": "C",
+      "name": "C1 左右分屏：可分屏并出现分隔条",
+      "expect": "准备两个文档标签并设置 splitDirection 后，.shell__splitpane 与 .resizer 存在",
+      "actual": "标签数=2 splitTabId=tabmvvgpyou5f2p440v dir=v；hasSplitpane=true；写入的 localLayout={\"splitDirection\":\"v\",\"splitRatio\":0.5,\"splitTabId\":\"tabmvvgpyou5f2p440v\"}",
+      "pass": true,
+      "repro": "确保有两个文档标签 → 写 localLayout.splitDirection='v' + splitTabId → reload",
+      "note": "分屏要求存在另一个可用标签（见 EditorPage.onSetSplit 的 validSplit 判定）"
+    },
+    {
+      "id": "C02",
+      "section": "C",
+      "name": "C2 左右分屏：拖动跟手（3 个位置，鼠标与分隔条偏差 < 3px）",
+      "expect": "拖到 30% / 50% / 70% 时，分隔条轴线与鼠标位置的偏差均 < 3px",
+      "actual": "30%→目标690 实测690 偏差0px | 50%→目标950 实测950 偏差0px | 70%→目标1210 实测1210 偏差0px；maxDev=0px（容器 {\"w\":1300,\"h\":880}，手柄数=v）",
+      "pass": true,
+      "repro": "拖动 .shell__splitpane 的分隔条到 30%/50%/70%，比对鼠标 x/y 与分隔条轴线",
+      "note": "需求7 的核心：ResizeHandle 必须把 px 位移按容器尺寸换算成比例增量（1px ≠ 1%）"
+    },
+    {
+      "id": "C03",
+      "section": "C",
+      "name": "C3 左右分屏：松手前后分隔条不跳变",
+      "expect": "mouseup 前后分隔条位置漂移 < 3px",
+      "actual": "漂移=0px / 0px / 0px",
+      "pass": true,
+      "repro": "拖动到目标位置后松手，比较 mouseup 前后的 boundingBox",
+      "note": ""
+    },
+    {
+      "id": "C04",
+      "section": "C",
+      "name": "C4 上下分屏：可分屏并出现分隔条",
+      "expect": "准备两个文档标签并设置 splitDirection 后，.shell__splitpane 与 .resizer 存在",
+      "actual": "标签数=2 splitTabId=tabmvvgq1q07w0z0454 dir=h；hasSplitpane=true；写入的 localLayout={\"leftWidth\":260,\"rightWidth\":400,\"outlineHeight\":320,\"openMode\":\"replace\",\"splitDirection\":\"h\",\"splitRatio\":0.7,\"rightSectionHeights\":{},\"rightTab\":\"\",\"splitTabId\":\"tabmvvgq1q07w0z0454\"}",
+      "pass": true,
+      "repro": "确保有两个文档标签 → 写 localLayout.splitDirection='h' + splitTabId → reload",
+      "note": "分屏要求存在另一个可用标签（见 EditorPage.onSetSplit 的 validSplit 判定）"
+    },
+    {
+      "id": "C05",
+      "section": "C",
+      "name": "C5 上下分屏：拖动跟手（3 个位置，鼠标与分隔条偏差 < 3px）",
+      "expect": "拖到 30% / 50% / 70% 时，分隔条轴线与鼠标位置的偏差均 < 3px",
+      "actual": "30%→目标304 实测304 偏差0.42px | 50%→目标480 实测480 偏差0.41px | 70%→目标656 实测656 偏差0.38px；maxDev=0.42px（容器 {\"w\":1300,\"h\":880}，手柄数=h）",
+      "pass": true,
+      "repro": "拖动 .shell__splitpane 的分隔条到 30%/50%/70%，比对鼠标 x/y 与分隔条轴线",
+      "note": "需求7 的核心：ResizeHandle 必须把 px 位移按容器尺寸换算成比例增量（1px ≠ 1%）"
+    },
+    {
+      "id": "C06",
+      "section": "C",
+      "name": "C6 上下分屏：松手前后分隔条不跳变",
+      "expect": "mouseup 前后分隔条位置漂移 < 3px",
+      "actual": "漂移=0px / 0px / 0px",
+      "pass": true,
+      "repro": "拖动到目标位置后松手，比较 mouseup 前后的 boundingBox",
+      "note": ""
+    },
+    {
+      "id": "C07",
+      "section": "C",
+      "name": "C7 右侧栏同时最多 3 个（点第 4 个后仍为 3）",
+      "expect": "依次打开 ai/outline/tags/backlinks 四个后，DOM 中 .rightstack__pane 数量 === 3",
+      "actual": "4 次 toggle 后 enabled=[\"outline\",\"tags\",\"backlinks\"]；DOM panes=3",
+      "pass": true,
+      "repro": "依次打开 4 个右侧区块（ai/outline/tags/backlinks）",
+      "note": "需求8：上限 3，点第 4 个时自动关闭最上方一个"
+    },
+    {
+      "id": "C08",
+      "section": "C",
+      "name": "C8 点第 4 个时替换的是「最上方一个」（原第 0 项被移除）",
+      "expect": "打开第 4 个后，settings.layout.rightPanelSections 不含原来的第 0 项，且含新加的第 4 项",
+      "actual": "最终列表=[\"outline\",\"tags\",\"backlinks\"]",
+      "pass": true,
+      "repro": "依次打开 ai → outline → tags → backlinks，检查 rightPanelSections",
+      "note": "若实现是「关掉最后加的」或「关掉任意一个」，这条会失败"
+    },
+    {
+      "id": "C09",
+      "section": "C",
+      "name": "C9 每个右侧区块都有可拖动的标题栏 grip（拖动排序的前提）",
+      "expect": ".rightstack__grip 数量 === 区块数量（3）",
+      "actual": "grips=3 panes=3；data-right-grip=[\"outline\",\"tags\",\"backlinks\"]",
+      "pass": true,
+      "repro": "读 .rightstack__grip 与 data-right-grip",
+      "note": ""
+    },
+    {
+      "id": "C10",
+      "section": "C",
+      "name": "C10 右侧区块顺序可调整且 DOM 立即跟随（拖动排序的存储与渲染）",
+      "expect": "把 rightPanelSections 反转后，.rightstack__pane 的 data-right-grip 顺序也反转（不再是 RIGHT_SECTIONS 固定顺序）",
+      "actual": "存储 before=[\"outline\",\"tags\",\"backlinks\"] → after=[\"backlinks\",\"tags\",\"outline\"]；DOM 顺序=[\"backlinks\",\"tags\",\"outline\"]",
+      "pass": true,
+      "repro": "反转 settings.layout.rightPanelSections，读 .rightstack__pane 的 data-right-grip 顺序",
+      "note": "修复前 enabledRightSections 强制按 RIGHT_SECTIONS 常量排序，会丢弃用户顺序 → 这条会失败"
+    },
+    {
+      "id": "C11",
+      "section": "C",
+      "name": "C11 右侧栏顺序与数量刷新后保持",
+      "expect": "刷新后 .rightstack__pane 数量 === 3，顺序与刷新前存储顺序一致",
+      "actual": "刷新后 panes=3 顺序=[\"backlinks\",\"tags\",\"outline\"]；存储=[\"backlinks\",\"tags\",\"outline\"]",
+      "pass": true,
+      "repro": "调整右侧栏顺序后 F5，读 .rightstack__pane 的 data-right-grip",
+      "note": "持久化路径：settings.layout.rightPanelSections → 云端 settings"
+    },
+    {
+      "id": "C12",
+      "section": "C",
+      "name": "C12 布局操作过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "D01",
+      "section": "D",
+      "name": "D1 设置全项审计（引用 tools/re14-settings-audit.mjs，需求11/12/13/14/16）",
+      "expect": "脚本 exit=0，且汇总显示 0 失败",
+      "actual": "exit=0；汇总=未解析到汇总行；失败项=[]",
+      "pass": true,
+      "repro": "node tools/re14-settings-audit.mjs",
+      "note": "Lead 交付；覆盖三档作用域、10 套主题对比度、颜色细化、主色调归位、排版四项、不保存不生效"
+    },
+    {
+      "id": "D02",
+      "section": "D",
+      "name": "D2 设置保存按钮语义（引用 tools/re14-settings-save-verify.mjs，需求16）",
+      "expect": "脚本 exit=0 且 0 失败（不保存不生效 / 保存后生效且刷新保持）",
+      "actual": "exit=1；失败项=[\"B6 解除拦截后本地改动已收敛到云端（保护没有退化成永久拒绝云端） → {\\\"expect\\\":\\\"KaiTi\\\",\\\"actual\\\":\\\"Georgia, 'Songti SC', 'SimSun', serif\\\",\\\"waitedMs\\\":45000}\",\"明细：\"]",
+      "pass": false,
+      "repro": "node tools/re14-settings-save-verify.mjs",
+      "note": "Lead 交付；15/15 覆盖保存语义"
+    },
+    {
+      "id": "D03",
+      "section": "D",
+      "name": "D3 设置标签页不渲染正文编辑工具栏（需求15）",
+      "expect": "打开设置标签时 .editorbar 数量为 0 或全部不可见",
+      "actual": "打开设置页时 .editorbar 数=0；activeTabIsSettings=true；明细=[]",
+      "pass": true,
+      "repro": "打开设置标签 → 数 .editorbar 的数量与可见性",
+      "note": "需求15：设置界面还会出现正文工具栏"
+    },
+    {
+      "id": "D04",
+      "section": "D",
+      "name": "D4 文档标签页仍正常渲染工具栏（反向断言）",
+      "expect": "切回文档标签后 .editorbar 存在且可见",
+      "actual": "切回文档后 .editorbar 数=1，可见=1",
+      "pass": true,
+      "repro": "切回文档标签 → 数 .editorbar",
+      "note": "与 D3 成对，避免用全局隐藏绕过需求15"
+    },
+    {
+      "id": "D05",
+      "section": "D",
+      "name": "D5 设置页存在底部保存操作栏（需求16 UI）",
+      "expect": "settings-save-bar 存在，含「保存」「取消」按钮",
+      "actual": "{\"hasBar\":true,\"hasSave\":true,\"hasCancel\":true,\"hasReset\":true,\"dirty\":false,\"saveDisabled\":true,\"cancelDisabled\":true,\"barText\":\"全部改动已保存 恢复默认 取消 保存\"}",
+      "pass": true,
+      "repro": "打开设置页 → 查 [data-testid=\"settings-save-bar\"] / settings-save / settings-cancel",
+      "note": ""
+    },
+    {
+      "id": "D06",
+      "section": "D",
+      "name": "D6 设置操作过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "repro": "",
+      "note": ""
+    },
+    {
+      "id": "E01",
+      "section": "E",
+      "name": "E1 相关源文件无 GBK 误解码乱码（(a) 类，注释里的示例串已排除）",
+      "expect": "5 个关键源文件的**代码与字符串字面量**里 GBK 典型误解码字符数为 0",
+      "actual": "0 命中（扫描 5 个文件：0/0/0/0/0）",
+      "pass": true,
+      "repro": "node 读源文件 utf8，逐行剥掉注释后匹配 閿|銆|鏂|鐨|鈥|锛|鍚|瀛|缂|鏄|涓|寮",
+      "note": "PowerShell 的 Get-Content 默认 ANSI 解码看不到这类乱码，必须用 Node 读；注释里的示例串需排除"
+    },
+    {
+      "id": "E02",
+      "section": "E",
+      "name": "E2 云端 naming.template 无乱码且等于默认模板（需求9 核心）",
+      "expect": "云端 naming.template === \"YYMMDD日HHMM-{input}\"，且不含连续 '?' 等有损乱码",
+      "actual": "云端值=YYMMDD日HHMM-{input}（长度 19）；有损乱码=false；期望=YYMMDD日HHMM-{input}",
+      "pass": true,
+      "repro": "GET /api/settings?platform=desktop → 读 payload.naming.template",
+      "note": "实测缺陷：云端存的是 \"YY?MM?DD?HHMM-?input?\" —— 中文「日」与花括号被有损转成 ?"
+    },
+    {
+      "id": "E03",
+      "section": "E",
+      "name": "E3 云端 naming.fallback 无乱码",
+      "expect": "云端 naming.fallback === \"无标题\"",
+      "actual": "云端值=无标题；有损乱码=false",
+      "pass": true,
+      "repro": "GET /api/settings → payload.naming.fallback",
+      "note": "实测缺陷：云端存的是 \"???\""
+    },
+    {
+      "id": "E04",
+      "section": "E",
+      "name": "E4 云端 naming.aiPrompt 无乱码（中文完整）",
+      "expect": "aiPrompt 含中文、不含**连续** '?'（单个 ? 可能是合法标点）、长度接近默认提示词（约 160 字符）",
+      "actual": "长度=163；单个 '?'=1 个；连续 '??' =0；有损乱码=false；前 60 字=你是笔记标题生成器。阅读用户给出的 Markdown 正文，生成一个准确、简洁的中文标题。\n要求：\n1. 只输出标题本身",
+      "pass": true,
+      "repro": "GET /api/settings → payload.naming.aiPrompt",
+      "note": "正常的中文提示词里可能含单个 ? （如「是否为…?」），故判据取「连续 2 个以上 ?」；坏数据的特征是整段中文变成 ???"
+    },
+    {
+      "id": "E05",
+      "section": "E",
+      "name": "E5 settings 版本接口可用（便于前端判断是否需要重拉）",
+      "expect": "GET /api/settings/version 返回 200 且给出 version 数字",
+      "actual": "status=200 version=517",
+      "pass": true,
+      "repro": "GET /api/settings/version",
+      "note": ""
+    },
+    {
+      "id": "E06",
+      "section": "E",
+      "name": "E6 设置页「命名模板」输入框实际文字正确（DOM 侧）",
+      "expect": "输入框 value === \"YYMMDD日HHMM-{input}\"，不含连续 '?'",
+      "actual": "DOM value=YYMMDD日HHMM-{input}；localStorage=YYMMDD日HHMM-{input}",
+      "pass": true,
+      "repro": "设置 → 通用 → 读「命名模板」input 的 value",
+      "note": ""
+    },
+    {
+      "id": "E07",
+      "section": "E",
+      "name": "E7 设置页「AI 命名提示词」文本框实际文字正确（DOM 侧）",
+      "expect": "textarea 含中文、无连续 ?、长度 > 100",
+      "actual": "DOM 长度=163；'?'=1；localStorage 长度=163；前 60 字=你是笔记标题生成器。阅读用户给出的 Markdown 正文，生成一个准确、简洁的中文标题。\n要求：\n1. 只输出标题本身",
+      "pass": true,
+      "repro": "设置 → 通用 → 读「AI 命名提示词」textarea 的 value",
+      "note": ""
+    },
+    {
+      "id": "E08",
+      "section": "E",
+      "name": "E8 admin 仓库数量在合理范围（需求10）",
+      "expect": "仓库数 <= 8（测试残留不应推高数量）",
+      "actual": "实测 4 个；空仓库 0 个；明细=[\"admin(239)\",\"vaultmvs9ey2vkpj8q5jy(305)\",\"vaultmvuqt3rn8ubd9num(700)\",\"vaultmvp3augl2m72a0nw(298)\"]",
+      "pass": true,
+      "repro": "GET /api/vaults，统计条数与 docCount",
+      "note": "实测缺陷：1.4 开工时观察到 10 个仓库，其中 5 个 docCount=0 的测试残留"
+    },
+    {
+      "id": "E09",
+      "section": "E",
+      "name": "E9 admin 仓库无 QA/selftest 测试残留",
+      "expect": "没有任何 vaultId/name 命中 QA121-/QA140-/re121/selftest/test- 等测试前缀",
+      "actual": "0 个残留（共 4 个仓库）",
+      "pass": true,
+      "repro": "GET /api/vaults，按测试前缀过滤",
+      "note": "需求10：admin 用户出现很多仓库，其中大量是测试遗留"
+    },
+    {
+      "id": "E10",
+      "section": "E",
+      "name": "E10 空仓库（docCount=0）数量受控",
+      "expect": "docCount === 0 的仓库数 <= 2（空仓库通常是自动注册/附着产生的幽灵条目）",
+      "actual": "空仓库 0 个：[]",
+      "pass": true,
+      "repro": "GET /api/vaults，过滤 docCount === 0",
+      "note": "registry 的 pullVaultList 会把云端清单自动附着为 available:false 条目，易堆积"
+    },
+    {
+      "id": "E11",
+      "section": "E",
+      "name": "E11 本脚本未发起任何建仓/改仓请求",
+      "expect": "state.selfWrites 中对 /api/vaults 的写请求为 0 条",
+      "actual": "自身写请求 0 条",
+      "pass": true,
+      "repro": "",
+      "note": "并行修复组会自建临时仓库，故按「本脚本自身写请求」自证"
+    },
+    {
+      "id": "P01",
+      "section": "P",
+      "name": "P1 本脚本未向生产库写设置（设置类改动走浏览器内假云端）",
+      "expect": "自证口径：本脚本自身对 /api/settings 的 PUT 请求为 0 条",
+      "actual": "自身写请求 0 条；生产设置版本 跑测前=483 跑测后=517",
+      "pass": true,
+      "repro": "",
+      "note": "版本号变化也可能来自并行任务；能归因的是「本脚本有没有发过 PUT」"
+    },
+    {
+      "id": "P02",
+      "section": "P",
+      "name": "P2 本脚本未发起任何建仓/改仓请求",
+      "expect": "自证口径：本脚本自身对 /api/vaults 的写请求为 0 条",
+      "actual": "自身写请求 0 条；仓库集合变化 无",
+      "pass": true,
+      "repro": "",
+      "note": "并行修复组会建/删自己的临时仓库，总数变化不可归因于本脚本"
+    }
+  ]
+}

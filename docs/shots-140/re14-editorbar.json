@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "scene": "普通文档",
+      "expect": 1,
+      "actual": 1,
+      "box": {
+        "x": 300,
+        "y": 40,
+        "w": 1300,
+        "h": 38
+      },
+      "pass": true
+    },
+    {
+      "scene": "设置页",
+      "expect": 0,
+      "actual": 0,
+      "box": null,
+      "pageVisible": true,
+      "pass": true
+    },
+    {
+      "scene": "图文档",
+      "expect": 0,
+      "actual": 0,
+      "box": null,
+      "flowVisible": true,
+      "pass": true
+    },
+    {
+      "scene": "插件商店",
+      "expect": 0,
+      "actual": 0,
+      "box": null,
+      "pageVisible": true,
+      "entryClicked": true,
+      "pass": true
+    }
+  ],
+  "shots": [
+    "docs/shots-140/re14-editorbar-doc.png",
+    "docs/shots-140/re14-editorbar-settings.png",
+    "docs/shots-140/re14-editorbar-flow.png",
+    "docs/shots-140/re14-editorbar-plugins.png"
+  ],
+  "failures": [],
+  "pass": true
+}

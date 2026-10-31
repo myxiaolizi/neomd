@@ -56,6 +56,40 @@ export interface VaultEntry {
   docCount?: number;
   /** 占用字节数 */
   bytes?: number;
+  /**
+   * 云端已不存在（1.4.0 需求10 防复发）。
+   *
+   * ## 为什么必须有这个标记
+   *
+   * 场景（生产库实测复现）：某台设备的 localStorage 注册表里存着 6 个已删除的 vaultId，
+   * 它们仍在周期同步里被反复访问 `/api/storage/*` → 服务端 `assertVaultUsable()`
+   * 自动把 `(user_id, vault_id)` 重新 INSERT 回去 → 刚清理完的幽灵仓库**又弹回来**。
+   * 实测：清理后 10→4，约 25 分钟后又被重建回 10 条。
+   *
+   * 打断这条链的关键就是：**云端已不存在的条目不得进入同步循环**。
+   * 因此这里加 `orphan` 标记，由 {@link mergeRemote} 在每次拉取云端清单时对账写入：
+   *  - 云端有 → `orphan` 清空（无论本机 available 与否）；
+   *  - 云端没有且**有过云端痕迹**（`location` 是 `cloud:*` 或有 `lastSyncedAt`）
+   *    → `orphan: true`，`available: false`，并记录 `orphanSince` 时间与连续未命中次数。
+   *
+   * ## 为什么不直接删
+   *
+   * `available: false` 有两种截然不同的原因，语义必须区分：
+   *  - 「云端有、本机没下载过」→ 应该**可见可切换**（跨设备发现），现有逻辑正确；
+   *  - 「云端已删除」→ 应该**不可见或标记为已删除**，且**不参与同步**。
+   * 直接删除本地条目在第一种情况下会让用户永远看不到其它设备的仓库，
+   * 因此采取「标记 + 跳过同步 + 连续多轮后才物理移除」的渐进策略。
+   */
+  orphan?: boolean;
+  /** 首次被判定为 orphan 的时间（毫秒），用于渐进清理与 UI 展示 */
+  orphanSince?: number;
+  /**
+   * 连续多少轮拉取云端清单都没见到这个 vaultId。
+   *
+   * 用于**渐进式物理移除**：单次「云端没返回」可能是网络抖动或服务端分页，
+   * 连续 {@link ORPHAN_REMOVE_AFTER_MISSES} 次才真正从注册表删除。
+   */
+  orphanMissCount?: number;
 }
 
 /** 云端返回的仓库摘要（`GET /api/vaults`） */
@@ -84,6 +118,31 @@ export interface RemoteVaultDto {
 const STORAGE_KEY = 'neomd.vaultList.v1';
 /** 当前仓库位置的 key，与既有代码保持一致（`app.ts` 与 `EditorPage.vue` 都在用） */
 export const LAST_VAULT_KEY = 'neomd.lastVault';
+
+/**
+ * 判定为 orphan 后，连续多少轮「云端清单里没有它」才真正从注册表移除（1.4.0）。
+ *
+ * 为什么不是一次就删：单次漏返回可能是网络抖动、服务端分页、或云端接口临时失败。
+ * 3 轮（配合默认 120s 的自动同步间隔 ≈ 6 分钟）既能较快清掉真正的幽灵条目，
+ * 又不会因为一次抖动就丢掉用户真正存在的仓库。
+ */
+export const ORPHAN_REMOVE_AFTER_MISSES = 3;
+
+/**
+ * 判断一条注册表记录是否**曾经与云端建立过关联**（1.4.0）。
+ *
+ * 只有「有过云端痕迹」的条目才可能被判为 orphan：
+ *  - `location` 以 `cloud:` 开头（云端发现/创建的仓库）；
+ *  - 或有过 `lastSyncedAt`（同步过说明云端确实认识它）。
+ *
+ * **纯本地目录仓库（桌面端真实文件夹、从未同步）永不判 orphan** ——
+ * 用户可能只是没登录云端，把他的本地仓库标成「已删除」是不可接受的。
+ */
+function hadCloudPresence(e: VaultEntry): boolean {
+  if (typeof e.location === 'string' && e.location.startsWith('cloud:')) return true;
+  if (e.lastSyncedAt && e.lastSyncedAt > 0) return true;
+  return false;
+}
 
 /** 把各种时间表示统一成毫秒时间戳 */
 function toMs(value: unknown, fallback = 0): number {
@@ -127,6 +186,22 @@ function normalizeEntry(raw: unknown): VaultEntry | null {
     lastSyncedAt: r.lastSyncedAt ? toMs(r.lastSyncedAt) : undefined,
     docCount: typeof r.docCount === 'number' ? r.docCount : undefined,
     bytes: typeof r.bytes === 'number' ? r.bytes : undefined,
+    /*
+     * orphan 三件套必须在这里显式透传（1.4.0）。
+     *
+     * 这是实测踩到的坑：加了 `orphan` 字段、也写进了 persist()，
+     * 但 `normalizeEntry()` 是**白名单式**构造新对象（只挑已知字段），
+     * 漏掉的字段会在「读盘 → 再存」时被静默丢弃 —— 表现为
+     * 「明明标了 orphan，刷新后又变回普通条目，继续参与同步」。
+     *
+     * 因此新增 persistent 字段时**必须同时**改三处：
+     * `VaultEntry` 接口、`normalizeEntry()`、以及 `persist()` 的序列化。
+     * `persist()` 用的是 `JSON.stringify(this.entries)`，会自动带上全部字段，
+     * 所以只有这里需要显式补。
+     */
+    orphan: r.orphan === true ? true : undefined,
+    orphanSince: typeof r.orphanSince === 'number' && r.orphanSince > 0 ? r.orphanSince : undefined,
+    orphanMissCount: typeof r.orphanMissCount === 'number' && r.orphanMissCount > 0 ? r.orphanMissCount : undefined,
   };
 }
 
@@ -524,20 +599,47 @@ export class VaultRegistry {
   }
 
   /**
-   * 与云端列表合并（1.1.9 增强）。
+   * 与云端列表合并（1.1.9 增强，1.4.0 加 orphan 对账）。
    *
    * 规则：
    * - 云端有、本机也有的（按 vaultId 匹配，或本机存在同名且为 `pending:` / `cloud:<name>` 的条目）
    *   → 用云端的 vaultId / name / status / 统计覆盖，保留本机有效 `location` 并确保 `available: true`；
    * - 云端有、本机没有 → 插入一条 `location: "cloud:" + r.vaultId`、`available: true` 的记录，
    *   让 Web 端与 PC 端都能直接点击切换打开该云端仓库并拉取文档内容（PC 端在 `openVault` 时会自动将其映射到 `<默认本地目录>/<仓库名>`）；
-   * - 本机有、云端没有 → 保留（可能还没同步过）。
+   * - **本机有、云端没有（1.4.0 新增）** → 标 `orphan: true` 并累加 `orphanMissCount`；
+   *   连续 {@link ORPHAN_REMOVE_AFTER_MISSES} 轮未出现才从注册表移除。
+   *
+   * ## 为什么「本机有、云端没有」必须处理（原先的注释写的是「保留」）
+   *
+   * 旧行为是原样保留，理由是「可能还没同步过」。但这条宽松策略造成了实测到的**反弹**：
+   * 某设备的 localStorage 里留着 6 个已删除的 vaultId → 周期同步仍会访问
+   * `/api/storage/*`（`syncVaultById` / `syncAllVaults` 遍历的就是这份注册表）
+   * → 服务端 `assertVaultUsable()` 把它们重新登记回 `user_vaults`
+   * → 刚清理干净的幽灵仓库又出现（实测清理后 25 分钟回弹到 10 条）。
+   *
+   * 现在的语义严格区分两种情况（这是本修复的核心）：
+   *  - **云端有、本机没下载** → `available:false` 但**不是** orphan，仍可发现/切换 ✅
+   *  - **云端已删除** → `orphan:true` + `available:false`，**跳过同步**，N 轮后移除
+   *
+   * 关键约束：`hadCloudPresence()` 保证**纯本地仓库永不被判 orphan**
+   * （用户只是没登录云端，不能把本地仓库标成已删除）。
    */
   mergeRemote(remote: RemoteVaultDto[]): void {
     if (!Array.isArray(remote) || !remote.length) return;
     let changed = false;
+
+    /*
+     * 先记录本轮云端返回的全部 vaultId，供后面的 orphan 对账使用。
+     *
+     * 注意还要收集「location 里指向的云目标」，因为有些老条目
+     * `vaultId` 是 `pending:...` 而 `location` 是 `cloud:<真实id>`，
+     * 只比 vaultId 会把它误判成 orphan。
+     */
+    const remoteIds = new Set<string>();
+
     for (const r of remote) {
       if (!r || typeof r.vaultId !== 'string' || !r.vaultId) continue;
+      remoteIds.add(r.vaultId);
       const cleanName = r.name?.trim() || r.vaultId;
       let local = this.get(r.vaultId);
       if (!local) {
@@ -571,6 +673,13 @@ export class VaultRegistry {
           local.available = true;
           changed = true;
         }
+        // 云端确实有它 → 清除 orphan 状态（可能是重新恢复的仓库，或上次网络抖动误判）
+        if (local.orphan) {
+          local.orphan = false;
+          local.orphanSince = undefined;
+          local.orphanMissCount = 0;
+          changed = true;
+        }
         if (r.status === 'disabled' || r.status === 'active') {
           if (local.status !== r.status) {
             local.status = r.status;
@@ -598,10 +707,99 @@ export class VaultRegistry {
         changed = true;
       }
     }
+
+    /*
+     * ── orphan 对账（1.4.0 需求10 防复发的核心）──
+     *
+     * 遍历「本轮云端没返回」的条目：
+     *  - 有云端痕迹 → 累加 miss 次数，首次命中时打 `orphan:true` 与 `orphanSince`；
+     *    达到 ORPHAN_REMOVE_AFTER_MISSES 后从注册表物理移除；
+     *  - 无云端痕迹（纯本地仓库）→ 完全不动。
+     */
+    const now = Date.now();
+    const beforeLen = this.entries.length;
+    this.entries = this.entries.filter((e) => {
+      // 云端这轮返回了它（按 vaultId 或 location 指向的云目标）
+      if (remoteIds.has(e.vaultId)) return true;
+      const locTarget =
+        typeof e.location === 'string' && e.location.startsWith('cloud:')
+          ? e.location.slice('cloud:'.length).trim()
+          : '';
+      if (locTarget && remoteIds.has(locTarget)) return true;
+
+      // 纯本地仓库：永不判 orphan
+      if (!hadCloudPresence(e)) return true;
+
+      const misses = (e.orphanMissCount ?? 0) + 1;
+      e.orphanMissCount = misses;
+      if (!e.orphan) {
+        e.orphan = true;
+        e.orphanSince = now;
+        // orphan 必须同时不可用、不可切换 —— 避免用户点进一个云端已删除的仓库
+        e.available = false;
+        changed = true;
+      }
+      if (misses >= ORPHAN_REMOVE_AFTER_MISSES) {
+        // 连续多轮确认云端确实没有 → 物理移除，彻底打断反弹链路
+        changed = true;
+        return false;
+      }
+      changed = true;
+      return true;
+    });
+
+    /*
+     * 移除后可能把 currentVaultId 指向不存在的条目 → 回落到第一个可用仓库。
+     * 与 `prunePseudoCloudVaults()` 的处理保持一致。
+     */
+    if (this.entries.length !== beforeLen && !this.entries.some((e) => e.vaultId === this.currentVaultId)) {
+      const next =
+        this.entries.find((e) => remoteIds.has(e.vaultId) && e.status === 'active') ??
+        this.entries.find((e) => e.status === 'active' && !e.orphan) ??
+        this.entries[0];
+      this.currentVaultId = next?.vaultId ?? '';
+      if (next && this.storage) {
+        try {
+          this.storage.setItem(LAST_VAULT_KEY, next.location);
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+
     if (changed) {
       this.entries = [...this.entries];
       this.persist();
     }
+  }
+
+  /**
+   * 判断某个仓库当前是否可以参与**同步**（1.4.0 需求10）。
+   *
+   * 这是打断反弹链路的实际执行点：`syncAllVaults()` / `syncVaultById()` 在遍历
+   * 注册表时应该用本方法过滤，而不是直接遍历 `list()`。
+   *
+   * 不可同步的情况：
+   *  - `orphan: true`（云端已删除，再访问会让服务端把它的登记**重新建回来**）；
+   *  - `status === 'disabled'`（用户主动停用）；
+   *  - 没有任何 `location`（无法打开）。
+   */
+  isSyncable(entry: VaultEntry | null | undefined): boolean {
+    if (!entry) return false;
+    if (entry.orphan) return false;
+    if (entry.status === 'disabled') return false;
+    if (!entry.location) return false;
+    return true;
+  }
+
+  /** 返回**可参与同步**的仓库列表（1.4.0 需求10，供同步循环使用） */
+  listSyncable(): VaultEntry[] {
+    return this.entries.filter((e) => this.isSyncable(e));
+  }
+
+  /** 返回当前被标记为 orphan 的仓库（供 UI 展示「云端已删除」与测试断言） */
+  listOrphans(): VaultEntry[] {
+    return this.entries.filter((e) => e.orphan === true);
   }
 
   /**

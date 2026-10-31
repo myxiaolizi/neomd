@@ -1,0 +1,120 @@
+{
+  "limit": 3,
+  "steps": {
+    "openThree": {
+      "initial": [
+        "ai"
+      ],
+      "after": [
+        "ai",
+        "file",
+        "outline"
+      ]
+    },
+    "fourth": {
+      "before": [
+        "ai",
+        "file",
+        "outline"
+      ],
+      "after": [
+        "file",
+        "outline",
+        "tags"
+      ],
+      "evictedExpected": "ai",
+      "toast": "右侧栏最多同时显示 3 个，已自动关闭最上方的「AI 助手」以腾出位置",
+      "toastHasWording": true
+    },
+    "drag": {
+      "before": [
+        "file",
+        "outline",
+        "tags"
+      ],
+      "after": [
+        "tags",
+        "file",
+        "outline"
+      ],
+      "movedId": "tags",
+      "toBefore": "file"
+    },
+    "reopenAi": {
+      "after": [
+        "file",
+        "outline",
+        "ai"
+      ]
+    },
+    "dragAiPanel": {
+      "before": [
+        "file",
+        "outline",
+        "ai"
+      ],
+      "after": [
+        "ai",
+        "file",
+        "outline"
+      ],
+      "movedId": "ai",
+      "toBefore": "file"
+    },
+    "dragByHeader": {
+      "before": [
+        "ai",
+        "file",
+        "outline"
+      ],
+      "after": [
+        "outline",
+        "ai",
+        "file"
+      ],
+      "movedId": "outline",
+      "toBefore": "ai"
+    },
+    "closeButton": {
+      "before": [
+        "outline",
+        "ai",
+        "file"
+      ],
+      "after": [
+        "ai",
+        "file"
+      ],
+      "closedId": "outline",
+      "found": true
+    },
+    "reload": {
+      "domBeforeReload": [
+        "ai",
+        "file"
+      ],
+      "domAfterReload": [
+        "ai",
+        "file"
+      ],
+      "persistedBeforeReload": [
+        "ai",
+        "file"
+      ],
+      "persistedAfterReload": [
+        "ai",
+        "file"
+      ]
+    }
+  },
+  "shots": [
+    "docs/shots-140/re14-rightstack-three.png",
+    "docs/shots-140/re14-rightstack-replace.png",
+    "docs/shots-140/re14-rightstack-dragged.png",
+    "docs/shots-140/re14-rightstack-grip-hover.png",
+    "docs/shots-140/re14-rightstack-header-drag.png",
+    "docs/shots-140/re14-rightstack-reload.png"
+  ],
+  "failures": [],
+  "pass": true
+}

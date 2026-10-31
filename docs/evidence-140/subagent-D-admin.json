@@ -1,0 +1,124 @@
+{
+  "agent": "独立取证员 D",
+  "role": "只读取证（未改任何源码、未写生产数据、未做 git 操作）",
+  "measuredAt": "2026-10-31T00:00:00+08:00 ~ 00:25:00+08:00 (Asia/Shanghai)",
+  "sampledAtIso": "2026-10-30T16:06:49.991Z",
+  "noteTiming": "5 个修复组正在并行改代码，本报告为测量时点的快照；affectedLines 以测量时点文件行号为准（并行改动可能已致行号漂移）。",
+  "problems": {
+    "problem1": {
+      "title": "设置里「命名模板」和「AI 命名提示词」乱码",
+      "rootCause": "数据层污染（唯一）。污染形态不是 GBK 误解码（mojibake），而是『白名单清洗器』把非 [A-Za-z0-9._-] 的字符统一替换成半角问号 0x3F'?'。证据：DB 字节 HEX(template)=59593F4D4D3F44443F48484D4D2D3F696E7075743F = \"YY?MM?DD?HHMM-?input?\"，其中 ASCII 花括号 { }（0x7B/0x7D）也被替换成 '?'，而纯 ASCII 的 Y/M/D/H/M/M/-/i/n/p/u/t 完整存活；fallback 原文『无标题』(3 个汉字) 落库成 '???'（1:1 汉字→'?'）；aiPrompt 全文汉字全部变成 '?'。若为字符集转换（如 latin1→utf8），花括号这类 ASCII 不会被替换、汉字会变成『閿/銆/鏂』等双字节乱码而非单字符 '?'。当前源码（apps/packages/services）不存在这样的清洗器（naming.ts 的 sanitizeTitle 只用 [\\\\/:*?\"<>|控制符] → 空格，不碰 {} 和中文），说明该清洗器来自历史已下线/旧客户端写入路径或历史迁移脚本，已把脏值固化在 user_settings.payload_json 里。",
+      "evidence": {
+        "sourceAudit": {
+          "method": "Node fs.readFileSync(path,'utf8') 扫 apps/packages/services/tools 全部 .ts/.vue/.js/.mjs（排除 node_modules/dist/android 构建产物）",
+          "taskCharsetHitList": "任务给定的 11 个字符(閿銆鏂鐨鈥锛鍚瀛涓鏄浣)：生产目录 apps/、packages/、services/ 命中 0 行",
+          "broadScanHitList": "宽口径乱码字集命中 1 个真实生产源码文件：apps/web/src/stores/settings.ts 第 242 行注释 `/* localStorage 琚绂鐢?*/`（原意『localStorage 被禁用』，纯注释、与命名字段无关、不影响行为）。其余命中均为 tools/re121-* 诊断脚本自带的乱码字典、或 apps/web/dist-base21 构建产物（本不该纳入，已在清单中剔除）",
+          "conclusion": "源文件层干净，无命名相关乱码"
+        },
+        "dataLayer": {
+          "dbBytes": "user_settings.user_id=1，version=350，updated_at=2026-10-30 23:41:59；HEX(JSON_EXTRACT(payload_json,'$.global.naming.template'))=59593F4D4D3F44443F48484D4D2D3F696E7075743F (=YY?MM?DD?HHMM-?input?)",
+          "fallback": "存储值 '???'（原『无标题』3 汉字全变 ?）",
+          "aiPromptChars": "165 字符，其中汉字段全部为 0x3F，仅 ASCII 段(Markdown、数字 6-24、引号、斜杠等)存活",
+          "httpGETsettings": "GET /api/settings?platform=web|desktop|(无) 三路均返回同样污染值 template='YY?MM?DD?HHMM-?input?'、aiPrompt='????...'",
+          "browserLocalStorage": "Playwright 未安装于本仓 node_modules，改用内置 browser 实测：首次打开 http://127.0.0.1:5178/login 时 localStorage['neomd.settings.v1']=null（本机无旧值），登录后经 fetch 读云值为同一份污染值 —— 即界面输入框展示的就是云端这份脏值",
+          "charsetConfig": "character_set_server=utf8mb4 / database=utf8mb4 / 表 user_settings COLLATE=utf8mb4_0900_ai_ci / 列 payload_json utf8mb4 —— 存储层字符集配置正确，证明污染发生在写入前而非存储层"
+        }
+      },
+      "affectedLines": [
+        "packages/shared/src/naming.ts:12 (DEFAULT_NAMING_TEMPLATE='YYMMDD日HHMM-{input}'，源默认值正确)",
+        "packages/core/src/settings/settings.ts:73-78 (DEFAULT_AI_TITLE_PROMPT，正确中文)",
+        "packages/core/src/settings/settings.ts:122,125 (defaultSettings().naming 引用上述默认值)",
+        "apps/web/src/views/SettingsPage.vue:1615-1639 (命名模板/AI 提示词输入框 v-model 绑定 settings.naming.template/aiPrompt → 登录 pullCloudSettings 后被云端脏值覆盖)",
+        "apps/web/src/stores/settings.ts:242 (唯一真实源码乱码，注释级，无害)"
+      ],
+      "conclusion": "仅数据层有问题，源文件层干净。修复应落在数据层（恢复 admin 的 user_settings.payload_json 里 naming 三个字段为正确中文）并追查/封堵历史上引入 '?' 清洗器的旧写入路径；源码头注释 settings.ts:242 可顺带清理。",
+      "suggestedFix": "1) 数据修复：把 user_settings.user_id=1 的 payload_json 里 global.naming.template 恢复为 'YYMMDD日HHMM-{input}'、fallback 恢复 '无标题'、aiPrompt 恢复为 packages/core/src/settings/settings.ts:73-78 的原文案（并 incr version），或用官方 API PUT 正确值覆盖；2) 根因封堵：定位历史 '?' 白名单清洗器（当前源码已无，需查旧版本/旧客户端/migration 脚本），确保写入路径不再把非 ASCII 替换成 '?'；3) 清理 settings.ts:242 注释乱码（可选，非必要）。"
+    },
+    "problem2": {
+      "title": "admin 用户出现很多仓库",
+      "rootCause": "服务端 assertVaultUsable() 的『自动补登记』与客户端 uid('vault') 随机 vaultId 组合，导致每次『空清单首次打开/测试会话』都新造一个随机 vaultId 并被服务端无条件登记，形成空壳仓库堆积。具体链：网页端在云端无仓库时 openVault 若拿到空串 vaultId，会落到 Vault.open 内部的 uid('vault') 随机 id（app.ts 的 resolveAuthoritativeVaultId 第 587-594 行注释已明确警告该故障形态）；随后任何 /api/storage/* 请求命中 vault-scope.js assertVaultUsable()（第 139-154 行），发现 (user_id,vault_id) 未登记就自动 INSERT 一条 active 记录（name 缺省取 vaultId 或默认 'Neo MD'）。没有按 name 去重、没有『文档数为 0 且从未同步的空壳』清理。registry.ts 的 mergeRemote/attachVaultId/repair 只在本机 localStorage 去重，管不到服务端 user_vaults 表。",
+      "evidence": {
+        "schema": "user_vaults 唯一键 uk_user_vaults(user_id, vault_id)；schema.sql:149-163",
+        "sqlReadOnly": "SELECT * FROM user_vaults WHERE user_id=1（admin 的 users.id=1）共 10 行，全部 status=active，全部 created_at 落在 2026-10-30",
+        "rows": [
+          {"id":1214,"vaultId":"vaultmvuqt3rn8ubd9num","name":"笔记本","docCount":700,"bytes":4021982,"lastSyncedAt":"2026-10-30 14:47:36","createdAt":"2026-10-30 17:01:15"},
+          {"id":1227,"vaultId":"vaultmvs9ey2vkpj8q5jy","name":"Neo MD","docCount":436,"bytes":4302589,"lastSyncedAt":null,"createdAt":"2026-10-30 17:05:46"},
+          {"id":1228,"vaultId":"vaultmvp3augl2m72a0nw","name":"vaultmvp3augl2m72a0nw","docCount":298,"bytes":2184414,"lastSyncedAt":null,"createdAt":"2026-10-30 17:07:20"},
+          {"id":1252,"vaultId":"admin","name":"admin","docCount":154,"bytes":19878,"lastSyncedAt":"2026-10-30 15:52:47","createdAt":"2026-10-30 17:25:20"},
+          {"id":1554,"vaultId":"vaultmvuu8x1gibxqzo06","name":"Neo MD","docCount":0,"bytes":0,"lastSyncedAt":"2026-10-30 10:39:21","createdAt":"2026-10-30 18:37:39"},
+          {"id":1585,"vaultId":"vaultmvuu69foaszoa8u9","name":"Neo MD","docCount":0,"bytes":0,"lastSyncedAt":"2026-10-30 11:01:07","createdAt":"2026-10-30 18:40:35"},
+          {"id":1674,"vaultId":"vaultmvuvit17zdnnk53h","name":"Neo MD","docCount":0,"bytes":0,"lastSyncedAt":"2026-10-30 11:13:32","createdAt":"2026-10-30 19:13:31"},
+          {"id":1677,"vaultId":"vaultmvuvie3ow1lmima1","name":"Neo MD","docCount":0,"bytes":0,"lastSyncedAt":"2026-10-30 11:39:36","createdAt":"2026-10-30 19:14:33"},
+          {"id":1729,"vaultId":"vaultmvuwmdvqjn2nx9ua","name":"Neo MD","docCount":0,"bytes":0,"lastSyncedAt":"2026-10-30 11:44:31","createdAt":"2026-10-30 19:44:30"},
+          {"id":1731,"vaultId":"vaultmvuwofkdujt0qkd1","name":"Neo MD","docCount":0,"bytes":0,"lastSyncedAt":"2026-10-30 15:53:38","createdAt":"2026-10-30 19:46:04"}
+        ],
+        "httpCrossCheck": "GET /api/vaults 返回同样 10 条（storageRoot=mdadmin/neomd/users/admin/vaults/），与 DB 一致",
+        "classification": {
+          "real": ["笔记本(700)","Neo MD(436,vaultmvs9ey2vkpj8q5jy)","vaultmvp3augl2m72a0nw(298,自名)","admin(154)"],
+          "suspectedTestLitter": ["6 条 doc_count=0/bytes=0 的随机 vaultId vaultmv... 且 name='Neo MD'，created_at 于 18:37~19:46 每隔 3-6 分钟一条，典型测试会话产物"],
+          "taskGuessedPatternsNotFound": ["未出现 selftest/re121/QA121 字样；实际遗留特征是『vaultmv+16位随机』+ name='Neo MD' + doc_count=0"]
+        },
+        "createdAtDistribution": {"2026-10-30": 10}
+      },
+      "affectedLines": [
+        "services/api/src/lib/vault-scope.js:139-154 (assertVaultUsable 未登记即自动 INSERT active，无 name 去重、无空壳清理)", 
+        "apps/web/src/stores/app.ts:587-599 (resolveAuthoritativeVaultId 兜底返回空串时，Vault.open 落 uid('vault') 随机 id 的故障注释)",
+        "apps/web/src/stores/app.ts:602-719 (openVault 注册与 attachVaultId 流程，仅本机去重)",
+        "packages/core/src/vault/registry.ts:536-605 (mergeRemote：云端有本机无则插入 cloud:<id>，只做本机合并)",
+        "packages/core/src/vault/registry.ts:622-662 (prunePseudoCloudVaults：只清 cloud:<username>/my 伪仓库，不清理 docCount=0 的随机空壳)"
+      ],
+      "conclusion": "10 条中 4 条真实、6 条疑似测试遗留空壳（非任务猜想的 selftest/re121，而是 vaultmv... 随机 id + 'Neo MD' + 0 文档）。根因是服务端 assertVaultUsable 无差别自动登记 + 客户端随机 vaultId，空壳无去重、无回收。",
+      "suggestedFix": "1) 服务端：assertVaultUsable 自动登记前增加『同 name 的 doc_count=0 且 last_synced_at 为 NULL 空壳是否可复用』策略，或给自动登记打『auto-created』标记并在注册真实仓库时回收；2) 新增只读/管理端清理入口（管理员按 user 列出空壳并删除注册记录，不删 OSS 对象）；3) 客户端：确保 openVault 永不返回空串（resolveAuthoritativeVaultId 第五级已用用户名兜底，需确认该分支对『已存在多条随机 vaultId』场景仍可信）；4) 遗留数据可由管理员安全清理 6 条 doc_count=0 空壳记录（不影响任何 doc，因其 OSS 前缀下无对象）。"
+    },
+    "problem3": {
+      "title": "后台「客户端分发」没有最新版本",
+      "rootCause": "结论反转：当前已不成立。后台 GET /api/admin/releases 直接实时列举对象存储 mdadmin/releases/，实测 1.3.1 三项产物（apk/setup.exe/win-x64.zip）均在列且按 lastModified 排序居首；公开下载清单 /api/download/list 的 DOWNLOAD_FILES 在 1.3.1 已改为从 services/api/package.json version=1.3.1 动态推导，同样列出 1.3.1。全仓检索未发现第二份硬编码清单（grep 'NeoMD-1.' 仅命中 download.js 的模板字面量与一条注释）。历史硬编码 1.1.8 静态清单（download.js 头注释描述的 1.2.0 发布缺件故障）已被 1.3.1 根治。",
+      "evidence": {
+        "source_adminReleases": "services/api/src/routes/admin.js:1204-1225 —— GET /api/admin/releases(adminOnly) 调 listObjects(platformConfig(), prefix, 1000)，不读任何本地清单、不硬编码版本",
+        "source_downloadFiles": "services/api/src/routes/download.js:62-108 —— APP_VERSION 读 services/api/package.json version(当前 1.3.1)，DOWNLOAD_FILES 三项动态拼 NeoMD-<ver>-win-x64.zip / -setup.exe / .apk；findFile 另有 listHistoricalApks() 放行历史 APK",
+        "source_configVersion": "services/api/src/config.js:89-96 / 116 readVersion() 读同目录 package.json",
+        "http_adminReleases": "登录后 GET /api/admin/releases 返回 prefix='mdadmin/releases/' 共 30 件；首 3 件 = NeoMD-1.3.1.apk(4363947B, lastModified 2026-10-30T14:56:12Z) / NeoMD-1.3.1-setup.exe(113187877B) / NeoMD-1.3.1-win-x64.zip(159312203B)",
+        "http_downloadList": "GET /api/download/list 返回 files=[NeoMD-1.3.1-win-x64.zip, NeoMD-1.3.1-setup.exe, NeoMD-1.3.1.apk]，与 package.json version 一致",
+        "hardcodedScan": "grep 'NeoMD-1.\\\\|NeoMD-\\$\\\\{...' 于 services 仅命中 download.js 第 87/94/101 行模板字面量与第 51 行注释，无第二份硬编码清单"
+      },
+      "affectedLines": [
+        "services/api/src/routes/admin.js:1204-1225 (GET /api/admin/releases 实时列举 OSS)",
+        "services/api/src/routes/download.js:62-108 (APP_VERSION + DOWNLOAD_FILES 动态推导)",
+        "services/api/src/config.js:89-96,116 (readVersion)",
+        "apps/web/src/components/admin/AdminRelease.vue:29-47 (后台 UI 调 adminApiV2.releases() 渲染 OSS 清单)"
+      ],
+      "conclusion": "后台『客户端分发』已含 1.3.1 最新版本（OSS 实时列举，无需改代码）；『缺失最新版本』只在 1.3.1 之前的硬编码静态清单时代成立，现已修复。下载页与后台数据源一致（均由 version=1.3.1 或 OSS 实际对象决定）。",
+      "suggestedFix": "无需修复。如需防回归：保留 download.js 的动态推导与 admin/releases 的 OSS 实时列举即可；可加一条 release 门禁（发版后校验 OSS 内存在 NeoMD-<pkg.version> 三项，避免『包上传但版本号未更新』的不对称）。"
+    },
+    "problem4": {
+      "title": "后台插件市场现状（为『增加编辑功能』与『翻页 20』做准备）",
+      "rootCause": "后台已有基础列表、搜索、分页、上下架接口，但缺少『管理员编辑插件内容』接口，且前端 AdminPlugins.vue 未做翻页 UI、未消费 total。",
+      "evidence": {
+        "existingRoutes": [
+          {"method":"GET","path":"/api/plugins/market","admin":false,"desc":"公开市场列表（status=published，LIMIT 200，无分页，category/search 过滤）"},
+          {"method":"GET","path":"/api/plugins/my","admin":false,"desc":"登录用户本人发布+统计（无分页）"},
+          {"method":"POST","path":"/api/plugins","admin":false,"desc":"登录用户发布（唯一 pluginId）"},
+          {"method":"PUT","path":"/api/plugins/:pluginId","admin":false,"desc":"作者或 admin 更新插件内容(updatePluginSchema: name/version/category/icon/description/readmeMd/codeJs)——这是一个『作者侧』编辑接口，admin 因 role 判断也放行，但路径在 /api/plugins/:pluginId 而非 /api/admin/*"},
+          {"method":"DELETE","path":"/api/plugins/:pluginId","admin":false,"desc":"作者或 admin 删除"},
+          {"method":"POST","path":"/api/plugins/:pluginId/download","admin":false,"desc":"下载+计数（公开）"},
+          {"method":"POST","path":"/api/plugins/:pluginId/star","admin":false,"desc":"点赞（公开）"},
+          {"method":"GET","path":"/api/admin/plugins","admin":true,"desc":"管理员全部社区插件，支持 page/pageSize/search/total（paginationSchema 默认 page=1,pageSize=20,上限100）"},
+          {"method":"PUT","path":"/api/admin/plugins/:id/status","admin":true,"desc":"管理员审核/上下架（statusSchema: published|pending|rejected|disabled）"}
+        ],
+        "adminEditExists": "无专门 /api/admin/plugins/:id 的 PUT/PATCH 编辑内容接口。现有作者侧 PUT /api/plugins/:pluginId 允许 admin（plugins.js:274 判断 role==='admin' 放行），但语义是『作者更新』且按 pluginId 而非数字 id 定位，后台 UI 未接。",
+        "listPagination": "后端 /api/admin/plugins 已支持 page/pageSize/total；实测 page=1&pageSize=20 返回 itemCount=20、page=1、pageSize=20、total=53",
+        "unpublishMechanism": "『下架』= PUT /api/admin/plugins/:id/status body={'status':'disabled'}；市场列表仅 where status='published'，disabled 即不展示。上架=status='published'；另有 pending/rejected 审核态。",
+        "ui": "apps/web/src/components/admin/AdminPlugins.vue（117 行）：仅搜索 + 表格 + 每行 上架/下架 按钮；load() 硬编码 adminApiV2.plugins(1,60,search)（page=1,size=60），不渲染翻页控件、不展示 total（模板第 77 行只显示 items.length），无编辑表单/弹窗。AdminPage.vue:81,119 将『插件市场』页签映射到 AdminPlugins.vue"
+      },
+      "affectedLines": [
+        "services/api/src/routes/plugins.js:199-218 (market)，221-236 (my)，239-267 (POST 发布)，270-296 (作者侧 PUT 编辑)，299-309 (DELETE)，312-329 (download/star)，334-356 (admin 列表 page/pageSize/total)，358-366 (admin status 上下架)",
+        "services/api/src/lib/validate.js:73-77 (paginationSchema page/pageSize 默认值)",
+        "apps/web/src/components/admin/AdminPlugins.vue:22-31 (load 硬编码 page=1,size=60)，33-41 (setStatus)，106-109 (上架/下架按钮)",
+        "apps/web/src/views/AdminPage.vue:81,119 (插件市场页签挂载)",
+        "apps/web/src/api/client.ts:820-826 (adminApiV2.plugins / setPluginStatus)"
+      ],
+      "conclusion": "后台插件模块已有：列表+搜索+分页(后端)+上下架；缺：管理员编辑插件内容接口（内容编辑目前只有作者侧 PUT /api/plugins/:pluginId 可被 admin 复用，但路径/语义不匹配后台）、前端翻页 UI、前端编辑表单。『增加编辑功能』可新增 PUT/PATCH /api/admin/plugins/:id（按数字 id，schema 复用 updatePluginSchema）；『翻页 20』后端已具备（默认 pageSize=20），只需前端把 size=60 改为 20 并加翻页控件与 total 展示。",
+      "suggestedFix": "1) 新增 admin 编辑接口 PUT /api/admin/plugins/:id（adminOnly，schema 复用 updatePluginSchema，按数字 id 定位，audit 记录），或让 AdminPlugins.vue 复用已有作者侧 PUT /api/plugins/:pluginId（admin 已放行，但建议补专用 admin 路由以区分审核语义）；2) AdminPlugins.vue 增加编辑弹窗（name/version/category/icon/description/readmeMd/codeJs）；3) 翻页：把 load() 的 size 改为 20，消费 total 渲染分页控件（当前后端已返回 total）。"
+    }
+  }
+}

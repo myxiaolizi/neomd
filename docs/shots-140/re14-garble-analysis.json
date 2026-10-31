@@ -1,0 +1,109 @@
+{
+  "at": "2026-10-30T16:16:10.242Z",
+  "stored": {
+    "template": "YY?MM?DD?HHMM-?input?",
+    "fallback": "???",
+    "aiPrompt": "????????????????? Markdown ??,???????????????\n??:\n1. ???????,????????????????;\n2. ?? 6-24 ???(?????????);\n3. ????????,????????;\n4. ???? / \\ : * ? \" < > | ?????????"
+  },
+  "defaults": {
+    "template": "YYMMDD日HHMM-{input}",
+    "fallback": "无标题",
+    "aiPrompt": "你是笔记标题生成器。阅读用户给出的 Markdown 正文，生成一个准确、简洁的中文标题。\n要求：\n1. 只输出标题本身，不要引号、不要标点结尾、不要解释；\n2. 长度 6-24 个汉字（英文概念可保留原词）；\n3. 若正文含一级标题，可参考但需更精炼；\n4. 不得包含 / \\ : * ? \" < > | 等文件名非法字符。"
+  },
+  "fields": [
+    {
+      "field": "template",
+      "storedLen": 21,
+      "defaultLen": 19,
+      "stored": "YY?MM?DD?HHMM-?input?",
+      "default": "YYMMDD日HHMM-{input}",
+      "questionMarks": 5,
+      "asciiSurvivedChars": "YMDH-input",
+      "defaultViaWhitelistRule": "YYMMDD?HHMM-?input?",
+      "ruleReproduces": false,
+      "lengthEqual": false
+    },
+    {
+      "field": "fallback",
+      "storedLen": 3,
+      "defaultLen": 3,
+      "stored": "???",
+      "default": "无标题",
+      "questionMarks": 3,
+      "asciiSurvivedChars": "",
+      "defaultViaWhitelistRule": "???",
+      "ruleReproduces": true,
+      "lengthEqual": true
+    },
+    {
+      "field": "aiPrompt",
+      "storedLen": 163,
+      "defaultLen": 163,
+      "stored": "????????????????? Markdown ??,???????????????\n??:\n1. ???????,????????????????;\n2. ?? 6-24 ???(?????????);\n3. ????????,????????;\n4. ???? / \\ : * ? \" < > | ?????????",
+      "default": "你是笔记标题生成器。阅读用户给出的 Markdown 正文，生成一个准确、简洁的中文标题。\n要求：\n1. 只输出标题本身，不要引号、不要标点结尾、不要解释；\n2. 长度 6-24 个汉字（英文概念可保留原词）；\n3. 若正文含一级标题，可参考但需更精炼；\n4. 不得包含 / \\ : * ? \" < > | 等文件名非法字符。",
+      "questionMarks": 103,
+      "asciiSurvivedChars": " Markdown,\n:1.;26-4()3/\\*\"<>|",
+      "defaultViaWhitelistRule": "??????????????????Markdown????????????????????????1????????????????????????????2?????6-24?????????????????3?????????????????????4??????????????????????????????????",
+      "ruleReproduces": false,
+      "lengthEqual": true
+    }
+  ],
+  "codeHits": [
+    {
+      "file": "apps\\android\\android\\app\\src\\main\\assets\\public\\assets\\app-B0SycY_f.js",
+      "line": 3,
+      "kind": "whitelist-replace",
+      "why": "白名单清洗器：非字母数字一律替换",
+      "code": "`;await this.adapter.writeText(n,i);const r=mt(\"doc\"),c=t.ctime??t.mtime??j(),u=t.mtime??j(),f={docId:r,path:n,title:s,rev:1,hash:await ft(i),size:i.length,crea"
+    },
+    {
+      "file": "dist-artifacts\\deploy\\public\\assets\\app-B0SycY_f.js",
+      "line": 3,
+      "kind": "whitelist-replace",
+      "why": "白名单清洗器：非字母数字一律替换",
+      "code": "`;await this.adapter.writeText(n,i);const r=mt(\"doc\"),c=t.ctime??t.mtime??j(),u=t.mtime??j(),f={docId:r,path:n,title:s,rev:1,hash:await ft(i),size:i.length,crea"
+    },
+    {
+      "file": "dist-artifacts\\deploy-slim\\public\\assets\\app-CdBTVv9t.js",
+      "line": 3,
+      "kind": "whitelist-replace",
+      "why": "白名单清洗器：非字母数字一律替换",
+      "code": "`;await this.adapter.writeText(n,i);const r=mt(\"doc\"),c=t.ctime??t.mtime??W(),h=t.mtime??W(),f={docId:r,path:n,title:s,rev:1,hash:await ft(i),size:i.length,crea"
+    },
+    {
+      "file": "dist-artifacts\\deploy-slim-131\\public\\assets\\app-B0SycY_f.js",
+      "line": 3,
+      "kind": "whitelist-replace",
+      "why": "白名单清洗器：非字母数字一律替换",
+      "code": "`;await this.adapter.writeText(n,i);const r=mt(\"doc\"),c=t.ctime??t.mtime??j(),u=t.mtime??j(),f={docId:r,path:n,title:s,rev:1,hash:await ft(i),size:i.length,crea"
+    },
+    {
+      "file": "dist-artifacts\\NeoMD-1.2.0-win-x64\\resources\\webdist\\assets\\app-CdBTVv9t.js",
+      "line": 3,
+      "kind": "whitelist-replace",
+      "why": "白名单清洗器：非字母数字一律替换",
+      "code": "`;await this.adapter.writeText(n,i);const r=mt(\"doc\"),c=t.ctime??t.mtime??W(),h=t.mtime??W(),f={docId:r,path:n,title:s,rev:1,hash:await ft(i),size:i.length,crea"
+    },
+    {
+      "file": "dist-artifacts\\win-unpacked\\resources\\webdist\\assets\\app-B0SycY_f.js",
+      "line": 3,
+      "kind": "whitelist-replace",
+      "why": "白名单清洗器：非字母数字一律替换",
+      "code": "`;await this.adapter.writeText(n,i);const r=mt(\"doc\"),c=t.ctime??t.mtime??j(),u=t.mtime??j(),f={docId:r,path:n,title:s,rev:1,hash:await ft(i),size:i.length,crea"
+    },
+    {
+      "file": "packages\\core\\src\\vault\\vault.ts",
+      "line": 580,
+      "kind": "whitelist-replace",
+      "why": "白名单清洗器：非字母数字一律替换",
+      "code": "const cleanDev = deviceName.replace(/[^A-Za-z0-9\\u4e00-\\u9fa5_-]/g, '').slice(0, 24);"
+    },
+    {
+      "file": "tools\\make-icons.cjs",
+      "line": 107,
+      "kind": "buffer-from-enc",
+      "why": "Buffer.from 用 ascii/latin1 编码（非 ASCII → ?）",
+      "code": "const typeBuf = Buffer.from(type, 'ascii');"
+    }
+  ]
+}

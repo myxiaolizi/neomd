@@ -1,0 +1,36 @@
+{
+  "pass": 3,
+  "fail": 0,
+  "results": [
+    {
+      "id": "颜色细化生效（需求13）01",
+      "group": "颜色细化生效（需求13）",
+      "name": "颜色细化需先「应用配色」才进入草稿（操作路径）",
+      "expect": "存在「应用配色」按钮且点击后 --content-bg 变为草稿值",
+      "actual": "按钮=\"保存配色\" 改前=#64dae3 应用后=#00aa88",
+      "pass": true,
+      "effect": "cssVar",
+      "note": "独立 colorDraft 的存在说明这是有意的两步式交互，脚本必须按真实用户路径操作"
+    },
+    {
+      "id": "颜色细化生效（需求13）02",
+      "group": "颜色细化生效（需求13）",
+      "name": "颜色细化保存后 --content-bg 真的变化",
+      "expect": "--content-bg 从「#64dae3」变为「#00aa88」",
+      "actual": "改后=#00aa88（保存=ok）",
+      "pass": true,
+      "effect": "cssVar",
+      "note": "需求13 原文：「主题中设置了颜色细化但是不生效」"
+    },
+    {
+      "id": "颜色细化生效（需求13）03",
+      "group": "颜色细化生效（需求13）",
+      "name": "体检过程无 JS 运行时错误",
+      "expect": "0 条 pageerror",
+      "actual": "0 条",
+      "pass": true,
+      "effect": "dom",
+      "note": ""
+    }
+  ]
+}

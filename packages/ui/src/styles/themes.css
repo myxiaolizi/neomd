@@ -7,6 +7,14 @@
  *   html[data-theme='dark']，因此无论打包顺序如何都能稳定覆盖基础变量；
  * - 正文与界面共用同一套变量：--content-bg / --content-fg 是正文纸张，
  *   --bg / --bg-elevated / --bg-sidebar / --border / --accent 是界面 chrome。
+ *
+ * 1.4.0（需求 11）：`--border` / `--border-strong` / `--table-border` 是
+ * **结构性颜色**，数值取自 `themeVars()` 里 `protectStructuralColors()` 的纠正结果，
+ * 保证对 `--bg` 与 `--content-bg` 的对比度都 ≥ 1.2:1（分割线在任意主题下可见）。
+ * 因此这里多数浅色主题的边框比 1.3.1 压暗了一档：
+ * 日光白 #e2e6ec→#c7cad0、石墨灰 #d6dbe3→#bcc1c8、护眼绿 #c3e0c6→#acc5ae、
+ * 静谧蓝 #c4dcf4→#acc2d7、暖纸黄 #e6d8b8→#cabea2、玫瑰粉 #f0d2da→#d3b9c0。
+ * **修改时必须同时改 themes.ts**，否则首屏会出现一次「边框突然变深」的跳变。
  */
 
 /* 日光白（浅色） */
@@ -23,8 +31,8 @@
   --fg: #1f2329;
   --fg-2: #5e6165;
   --fg-3: #8f9194;
-  --border: #e2e6ec;
-  --border-strong: #bec1c6;
+  --border: #c7cad0;
+  --border-strong: #a7aaae;
   --accent: #1677ff;
   --accent-hover: #1366db;
   --accent-weak: rgba(22, 119, 255, 0.13);
@@ -53,8 +61,8 @@
   --fg: #1f2937;
   --fg-2: #5a626c;
   --fg-3: #898f97;
-  --border: #d6dbe3;
-  --border-strong: #b4b8bf;
+  --border: #bcc1c8;
+  --border-strong: #9ea2a8;
   --accent: #4b5563;
   --accent-hover: #414955;
   --accent-weak: rgba(75, 85, 99, 0.13);
@@ -113,8 +121,8 @@
   --fg: #1b3a24;
   --fg-2: #546e5b;
   --fg-3: #829887;
-  --border: #c3e0c6;
-  --border-strong: #a4bca6;
+  --border: #acc5ae;
+  --border-strong: #90a592;
   --accent: #2e7d32;
   --accent-hover: #286c2b;
   --accent-weak: rgba(46, 125, 50, 0.13);
@@ -143,8 +151,8 @@
   --fg: #132a4a;
   --fg-2: #4f637d;
   --fg-3: #7f90a5;
-  --border: #c4dcf4;
-  --border-strong: #a5b9cd;
+  --border: #acc2d7;
+  --border-strong: #91a3b4;
   --accent: #1d6fd4;
   --accent-hover: #195fb6;
   --accent-weak: rgba(29, 111, 212, 0.13);
@@ -173,8 +181,8 @@
   --fg: #4a3f2a;
   --fg-2: #7c725e;
   --fg-3: #a49b87;
-  --border: #e6d8b8;
-  --border-strong: #c1b59b;
+  --border: #cabea2;
+  --border-strong: #aa9f88;
   --accent: #b8860b;
   --accent-hover: #9e7309;
   --accent-weak: rgba(184, 134, 11, 0.13);
@@ -203,8 +211,8 @@
   --fg: #4a2530;
   --fg-2: #7d5f68;
   --fg-3: #a58d94;
-  --border: #f0d2da;
-  --border-strong: #cab0b7;
+  --border: #d3b9c0;
+  --border-strong: #b29ba1;
   --accent: #d1477a;
   --accent-hover: #b43d69;
   --accent-weak: rgba(209, 71, 122, 0.13);

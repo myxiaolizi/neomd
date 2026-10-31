@@ -52,6 +52,43 @@ const COLUMN_ADDITIONS = [
   ['ai_usage', 'status', "ENUM('ok','error') NOT NULL DEFAULT 'ok'", null],
   ['ai_usage', 'latency_ms', 'INT NOT NULL DEFAULT 0', null],
   ['ai_usage', 'error_code', 'VARCHAR(64) NULL DEFAULT NULL', null],
+  /*
+   * 1.4.0 后台用户管理：封禁（含原因与到期时间）。
+   *
+   * 为什么不新增 `status='banned'` 枚举值：`users.status` 已被登录鉴权、用户列表筛选、
+   * `/api/auth/me` 等多处按 `ENUM('active','disabled')` 消费，改枚举属于**破坏性 schema 变更**
+   * （老代码 SELECT 到 'banned' 会走 else 分支，且 ENUM 顺序变化会让既有行语义漂移）。
+   * 这里改为「`status='disabled'` + `ban_reason` 非空」表达封禁，语义由本组接口维护：
+   *   - 封禁 = status→disabled，写 ban_reason/banned_at/ban_until；
+   *   - 解封 = status→active，三列清空；
+   *   - 人工「禁用」（不填原因）不写这三列，与封禁在 UI 上区分展示。
+   * 三列全部可空、无默认值，因此对既有数据零影响，可重复执行。
+   */
+  ['users', 'ban_reason', 'VARCHAR(255) NULL DEFAULT NULL', null],
+  ['users', 'banned_at', 'DATETIME NULL DEFAULT NULL', null],
+  ['users', 'ban_until', 'DATETIME NULL DEFAULT NULL', null],
+  // 1.4.0 后台看板/用户列表按「最后活跃」排序：审计表按用户取 MAX(created_at) 需要复合索引
+  // （老库只有 idx_audit_logs_user(user_id)，回表取时间会扫大量行）
+  /*
+   * 1.4.0 需求10：标识「自动登记的空壳仓库」，用于清理与限流。
+   *
+   * ## 为什么需要这一列
+   *
+   * `lib/vault-scope.js` 的 `assertVaultUsable()` 对**未登记的 (user_id, vault_id)**
+   * 会无条件 `INSERT ... active` —— 于是「客户端首次带一个随机 vaultId 访问存储」
+   * 就会在 `user_vaults` 里凭空登记一条。配合客户端 `openVault()` 在云端无仓库时
+   * 落 `uid('vault')` 随机 id 的逻辑，每开一次新 profile / 每跑一次测试脚本
+   * 就会多一条 `vaultxxx` 空壳（生产库实测：4 条真实 + 6 条空壳，全部 0 文档）。
+   *
+   * 加这一列的目的不是「拦住写入」（自动登记本身是必要的，否则首同步会 403），
+   * 而是让**事后能准确识别**哪些是自动产生的、可以安全清理：
+   *   - `auto_registered = 1` 且 `doc_count = 0` 且云端前缀无对象 → 确定是空壳；
+   *   - 用户主动创建的仓库 / 有过任何文档的仓库 → `0`，永不自动清理。
+   * 默认 0 保证**既有行一律被视为「非自动」**，不会被清理脚本误删（保守优先）。
+   */
+  ['user_vaults', 'auto_registered', 'TINYINT(1) NOT NULL DEFAULT 0', null],
+  // 自动登记时间：与用户主动创建区分，也便于按时间窗口排查
+  ['user_vaults', 'auto_registered_at', 'DATETIME NULL DEFAULT NULL', null],
 ];
 
 /**
@@ -61,6 +98,29 @@ const COLUMN_ADDITIONS = [
 const INDEX_ADDITIONS = [
   // 看板按「时间 + 状态」聚合失败率，加复合索引避免全表扫
   ['ai_usage', 'idx_ai_usage_created_status', '(`created_at`, `status`)'],
+  /*
+   * 1.4.0 后台用户管理「最后活跃 / 登录记录」：
+   * 按用户聚合 MAX(created_at) 与按 (user_id, action) 过滤登录流水。
+   * 老库只有 idx_audit_logs_user(user_id)，取时间要回表逐行读，用户多了会明显变慢。
+   */
+  ['audit_logs', 'idx_audit_logs_user_created', '(`user_id`, `created_at`)'],
+  ['audit_logs', 'idx_audit_logs_action_created', '(`action`, `created_at`)'],
+  /*
+   * 1.4.0 后台插件市场按「状态 + 更新时间」翻页；市场列表按 downloads DESC 排序已有
+   * idx_community_plugins_status(status, downloads)，后台默认按 id DESC 也可用主键。
+   * 但「按分类筛选 + 翻页」缺少前缀索引，这里补一条。
+   */
+  ['community_plugins', 'idx_community_plugins_category', '(`category`, `status`)'],
+  /*
+   * 1.4.0 需求10：自动登记空壳的清理与限流查询。
+   *
+   * 清理脚本按 `(user_id, auto_registered, created_at)` 筛「某用户的自动登记空壳」；
+   * `assertVaultUsable()` 的「同 name 复用」查询按 `(user_id, name, status)` 走。
+   * 生产库 user_vaults 目前只有 10 行，索引收益不大，但这是**防复发**的一部分：
+   * 上限校验每次自动登记都要数一次 active 数量，没有索引在仓库数增长后会变慢。
+   */
+  ['user_vaults', 'idx_user_vaults_user_auto', '(`user_id`, `auto_registered`, `created_at`)'],
+  ['user_vaults', 'idx_user_vaults_user_name', '(`user_id`, `name`, `status`)'],
 ];
 
 /**
@@ -197,6 +257,43 @@ async function ensureKnowledgeTokens() {
        PRIMARY KEY (\`id\`),
        UNIQUE KEY \`uk_knowledge_tokens_hash\` (\`token_hash\`),
        KEY \`idx_knowledge_tokens_user\` (\`user_id\`, \`revoked_at\`)
+     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
+  );
+  return 1;
+}
+
+/**
+ * 补齐 1.4.0 客户端安装包下载统计表（幂等）。
+ *
+ * ## 为什么需要这张表
+ *
+ * 需求要求后台「客户端分发」能看到每个安装包的**下载次数**。这个数据在 1.4.0 之前
+ * 完全没有采集：`download.js` 只负责 302 跳转 / 流式代理，没有任何计数落库，
+ * 而对象存储的访问日志不对本服务开放。所以必须先有地方存，后端才能在后台读出来。
+ *
+ * ## 为什么按 (file, day) 聚合而不是每次下载插一行
+ *
+ * 明细表会随下载量线性膨胀（每次发版预热都是几百次下载），而运营真正需要的只有
+ * 「总数」与「近 7 天趋势」。按天聚合把写入摊平成 UPSERT，行数上界是
+ * `文件数 × 天数`，十年也就几千行，永远不会成为负担。需要明细时再查审计日志。
+ *
+ * ## 幂等性
+ *
+ * `CREATE TABLE IF NOT EXISTS` + 主键 `(file, day)`，重复启动无副作用；
+ * 新库由 schema.sql 建同一张表（两处定义保持一致，避免漂移）。
+ *
+ * @returns {Promise<number>} 实际创建的表数（0 或 1）
+ */
+async function ensureReleaseDownloadStats() {
+  if (await tableExists('release_downloads')) return 0;
+  await execute(
+    `CREATE TABLE IF NOT EXISTS \`release_downloads\` (
+       \`file\` VARCHAR(190) NOT NULL,
+       \`day\` DATE NOT NULL,
+       \`count\` INT NOT NULL DEFAULT 0,
+       \`last_at\` DATETIME NULL DEFAULT NULL,
+       PRIMARY KEY (\`file\`, \`day\`),
+       KEY \`idx_release_downloads_day\` (\`day\`)
      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci`,
   );
   return 1;
@@ -344,6 +441,7 @@ export async function migrateV2() {
   const providerIndexes = await ensureProviderIndexes();
   const declaredIndexes = await ensureDeclaredIndexes();
   const knowledgeTables = await ensureKnowledgeTokens();
+  const releaseDownloadTables = await ensureReleaseDownloadStats();
   const seeded = await seedPlatformDefaults();
 
   /*
@@ -378,6 +476,7 @@ export async function migrateV2() {
     providerIndexes,
     declaredIndexes,
     knowledgeTables,
+    releaseDownloadTables,
     staleStorage,
   };
 }
@@ -392,7 +491,7 @@ if (invokedDirectly) {
     .then(() => migrateV2())
     .then(async (result) => {
       console.log(
-        `[db] v2 迁移完成：新增列 ${result.columns} 个，补充配置 ${result.config.length} 项，新增供应商 ${result.providers} 个，新增索引 ${(result.vaultIndexes ?? 0) + (result.providerIndexes ?? 0) + (result.declaredIndexes ?? 0)} 个，新增表 ${result.knowledgeTables ?? 0} 个`,
+        `[db] v2 迁移完成：新增列 ${result.columns} 个，补充配置 ${result.config.length} 项，新增供应商 ${result.providers} 个，新增索引 ${(result.vaultIndexes ?? 0) + (result.providerIndexes ?? 0) + (result.declaredIndexes ?? 0)} 个，新增表 ${(result.knowledgeTables ?? 0) + (result.releaseDownloadTables ?? 0)} 个`,
       );
       await closePool();
       process.exit(0);

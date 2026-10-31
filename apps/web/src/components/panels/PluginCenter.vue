@@ -11,9 +11,19 @@
  *
  * 所有网络请求与状态均在组件内部自管，不依赖父组件传参（仅 open 走 v-model:open）。
  */
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { NmIcon, NmModal } from '@neomd/ui';
-import { PLUGINS, formatCompactNumber, type PluginManifest } from '@neomd/shared';
+import {
+  PLUGINS,
+  formatCompactNumber,
+  getCommunityPlugins,
+  installCommunityPlugin,
+  isCommunityPluginInRibbon,
+  setCommunityPluginInRibbon,
+  subscribeCommunityPlugins,
+  uninstallCommunityPlugin,
+  type PluginManifest,
+} from '@neomd/shared';
 import { pluginsApi, type CommunityPluginDto } from '@/api/client';
 import { useAuthStore } from '@/stores/auth';
 import { useSettingsStore } from '@/stores/settings';
@@ -62,12 +72,19 @@ function flash(msg: string, isError = false): void {
 
 onBeforeUnmount(() => {
   if (noticeTimer) clearTimeout(noticeTimer);
+  unsubscribeCommunity?.();
+  unsubscribeCommunity = null;
 });
 
 /* --------------------------- 已安装社区插件 --------------------------- */
 
-const INSTALLED_KEY = 'neomd.communityPlugins.v1';
-
+/**
+ * 已装社区插件的存储 key 定义与读写**统一在 `@neomd/shared`**（1.4.0）。
+ *
+ * 1.3.1 时本组件自己 parse/写 `localStorage`，EditorPage 又自己 parse 一遍，
+ * 两处各有一份 JSON 解析逻辑，状态容易不同步（插件中心装了、命令面板没出现）。
+ * 现在只保留一个数据源，本组件仅负责 UI 与调用。
+ */
 interface InstalledCommunityPlugin {
   pluginId: string;
   name: string;
@@ -76,37 +93,92 @@ interface InstalledCommunityPlugin {
   codeJs: string;
 }
 
+/** 订阅注册表变化：安装 / 卸载 / 加入功能区后自动刷新本组件视图 */
+let unsubscribeCommunity: (() => void) | null = null;
+unsubscribeCommunity = subscribeCommunityPlugins(() => {
+  ribbonVersion.value += 1;
+  installedCommunityIds.value = getCommunityPlugins().map((x) => x.pluginId);
+});
+
 /** 读取本地已安装的社区插件清单（localStorage 损坏时降级为空列表） */
 function loadInstalledCommunityIds(): string[] {
-  try {
-    const raw = localStorage.getItem(INSTALLED_KEY);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .map((x) => (x && typeof x === 'object' ? (x as { pluginId?: unknown }).pluginId : undefined))
-      .filter((id): id is string => typeof id === 'string' && Boolean(id));
-  } catch {
-    return [];
-  }
+  return getCommunityPlugins().map((p) => p.pluginId);
 }
 
 const installedCommunityIds = ref<string[]>(loadInstalledCommunityIds());
 
-/** 写入本地已安装列表并立即启用该插件 */
-function saveInstalledCommunityPlugin(item: InstalledCommunityPlugin): void {
+/**
+ * 社区插件注册表的响应式版本号（1.4.0）。
+ *
+ * 注册表存在独立 localStorage key（不是 Vue 状态），用版本号把「它变了」
+ * 桥接进 Vue：安装 / 卸载 / 加入功能区都会 +1，相关 computed 自动重算。
+ */
+const ribbonVersion = ref(0);
+
+/** 已装社区插件记录（用于「我的」列表与功能区状态展示） */
+const installedList = computed(() => {
+  void ribbonVersion.value;
+  return getCommunityPlugins();
+});
+
+/**
+ * 安装 / 更新一款社区插件并**立即启用 + 加入功能区**。
+ *
+ * 1.4.0 的关键变化（需求「新安装的插件无法使用」的根治点）：
+ * 1. **安装即校验**：先交给 `installCommunityPlugin()` 走一遍真实执行器
+ *    （`loadPluginModule` → `new Function`），语法坏掉的插件当场抛可读错误，
+ *    不会「装上了、点了却报 Unexpected token」。
+ * 2. **自动出现在功能区**：写入独立 key `neomd.communityRibbon.v1`，
+ *    **不碰 `layout.ribbonItems`**（内置白名单保持干净，设置页不会有幽灵项）。
+ * 3. 同标签页即时生效：注册表 `emit()` → EditorPage 的订阅把版本号 +1 →
+ *    功能区当帧重算，不需要刷新页面。
+ *
+ * @returns 是否安装成功（调用方据此决定提示文案）
+ */
+function saveInstalledCommunityPlugin(item: InstalledCommunityPlugin): boolean {
   try {
-    const raw = localStorage.getItem(INSTALLED_KEY);
-    const parsed: unknown = raw ? JSON.parse(raw) : [];
-    const list = Array.isArray(parsed) ? (parsed as InstalledCommunityPlugin[]) : [];
-    const filtered = list.filter((x) => x?.pluginId !== item.pluginId);
-    filtered.push(item);
-    localStorage.setItem(INSTALLED_KEY, JSON.stringify(filtered));
-    installedCommunityIds.value = filtered.map((x) => x.pluginId);
+    const result = installCommunityPlugin({
+      pluginId: item.pluginId,
+      name: item.name,
+      version: item.version,
+      description: item.description,
+      codeJs: item.codeJs,
+    });
+    installedCommunityIds.value = getCommunityPlugins().map((x) => x.pluginId);
     settingsStore.togglePlugin(item.pluginId, true);
-  } catch {
-    flash('本地存储不可用，插件仅在本次会话内生效', true);
+    // 插件源码里声明的 id 与市场登记不一致时给出提醒（不阻断，只是告知）
+    if (result.declaredId && result.declaredId !== item.pluginId) {
+      flash(`已安装「${item.name}」，但插件源码声明的 id 是「${result.declaredId}」，与市场登记的「${item.pluginId}」不同`, true);
+    }
+    return true;
+  } catch (e) {
+    // PluginSourceError 的 message 已经是可以直接给用户看的中文原因
+    flash(`插件无法安装：${(e as Error).message}`, true);
+    return false;
   }
+}
+
+/** 该插件当前是否已在功能区（用于按钮状态与「加入/移出」操作） */
+function inRibbon(pluginId: string): boolean {
+  void ribbonVersion.value;
+  return isCommunityPluginInRibbon(pluginId);
+}
+
+/** 加入 / 移出功能区（社区插件专用，不写内置白名单） */
+function toggleRibbon(pluginId: string, name: string): void {
+  const next = !isCommunityPluginInRibbon(pluginId);
+  setCommunityPluginInRibbon(pluginId, next);
+  ribbonVersion.value += 1;
+  flash(next ? `已把「${name}」加入功能区` : `已把「${name}」移出功能区`);
+}
+
+/** 卸载本地已装插件（同时移出功能区） */
+function uninstallLocal(pluginId: string, name: string): void {
+  if (!window.confirm(`确认从本机卸载插件「${name}」？`)) return;
+  uninstallCommunityPlugin(pluginId);
+  installedCommunityIds.value = getCommunityPlugins().map((x) => x.pluginId);
+  ribbonVersion.value += 1;
+  flash(`已卸载「${name}」`);
 }
 
 /* ---------------------------- 市场 / 我的 ---------------------------- */
@@ -118,17 +190,130 @@ const marketLoading = ref(false);
 const myLoading = ref(false);
 const marketError = ref('');
 
-/** 拉取社区插件市场（公开接口，未登录也可浏览） */
-async function loadMarket(): Promise<void> {
+/* --------------------------- 市场分页（1.4.0） --------------------------- */
+
+/** 每页条数（服务端上限 100，这里固定 20 与后台管理页一致） */
+const MARKET_PAGE_SIZE = 20;
+/** 页码写进 URL query（`?pluginPage=2`），刷新不丢 */
+const MARKET_PAGE_QUERY = 'pluginPage';
+
+/** 从 URL 读取初始页码（非法值回落到 1） */
+function readPageFromUrl(): number {
+  try {
+    const raw = new URLSearchParams(window.location.search).get(MARKET_PAGE_QUERY);
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+  } catch {
+    return 1;
+  }
+}
+
+const marketPage = ref(readPageFromUrl());
+const marketTotal = ref(0);
+const marketHasMore = ref(false);
+/**
+ * 服务端是否支持分页（返回了 `total`）。
+ *
+ * 1.3.1 的服务端不带分页字段（一次性返回全量），此时必须按**单页全量**处理，
+ * 否则「总数 / 每页」会算出并不存在的页数，用户点「下一页」永远拿到同一批数据。
+ * T2 上线新接口后此标记自动变 true，无需改代码。
+ */
+const marketPaged = ref(false);
+
+/** 总页数（未分页时恒为 1） */
+const marketPageCount = computed(() => {
+  if (!marketPaged.value) return 1;
+  if (!marketTotal.value) return 1;
+  return Math.max(1, Math.ceil(marketTotal.value / MARKET_PAGE_SIZE));
+});
+
+const canPrevPage = computed(() => marketPaged.value && marketPage.value > 1);
+const canNextPage = computed(() => {
+  if (!marketPaged.value) return false;
+  if (marketHasMore.value) return true;
+  return marketTotal.value > 0 && marketPage.value < marketPageCount.value;
+});
+
+/** 把页码同步进 URL query（`replaceState`，不产生历史记录、不触发路由） */
+function syncPageToUrl(page: number): void {
+  try {
+    const url = new URL(window.location.href);
+    if (page <= 1) url.searchParams.delete(MARKET_PAGE_QUERY);
+    else url.searchParams.set(MARKET_PAGE_QUERY, String(page));
+    window.history.replaceState(window.history.state, '', url.toString());
+  } catch {
+    /* 无 history 权限时忽略，页码仍在内存里 */
+  }
+}
+
+/**
+ * 拉取社区插件市场（公开接口，未登录也可浏览）。
+ *
+ * 1.4.0：支持分页。传 `page` / `pageSize` 时服务端返回 `total` / `hasMore`；
+ * 若服务端尚未升级（1.3.1 行为：返回全量、无分页字段），这里**自动降级**为
+ * 「单页全量」—— 即 `total = items.length`、`hasMore = false`，不会白屏也不会错位。
+ */
+async function loadMarket(opts: { resetPage?: boolean } = {}): Promise<void> {
   marketLoading.value = true;
   marketError.value = '';
   try {
-    const res = await pluginsApi.market();
+    if (opts.resetPage) {
+      marketPage.value = 1;
+      syncPageToUrl(1);
+    }
+    const res = await pluginsApi.market({ page: marketPage.value, pageSize: MARKET_PAGE_SIZE });
     marketPlugins.value = res.items ?? [];
+    if (typeof res.total === 'number') {
+      // 服务端支持分页
+      marketPaged.value = true;
+      marketTotal.value = res.total;
+      marketHasMore.value = res.hasMore === true;
+    } else {
+      // 服务端未升级（1.3.1 行为：全量返回、无分页字段）=> 按单页全量处理
+      marketPaged.value = false;
+      marketTotal.value = marketPlugins.value.length;
+      marketHasMore.value = false;
+    }
+    // 页码越界（例如卸载后总数变少、或用户手改了 URL）时回退
+    if (marketPlugins.value.length === 0 && marketPage.value > 1 && marketTotal.value > 0) {
+      marketPage.value = Math.max(1, marketPageCount.value);
+      syncPageToUrl(marketPage.value);
+      await loadMarket();
+    }
   } catch (e) {
     marketError.value = `插件市场加载失败：${(e as Error).message}`;
   } finally {
     marketLoading.value = false;
+  }
+}
+
+/** 翻页：切换页码 → 重新拉取 → 列表滚动回顶部 */
+async function gotoMarketPage(page: number): Promise<void> {
+  const next = Math.max(1, Math.floor(page));
+  if (next === marketPage.value) return;
+  marketPage.value = next;
+  syncPageToUrl(next);
+  await loadMarket();
+  /*
+   * 翻页后滚动回列表顶部（用户明确要求）。
+   *
+   * ## 为什么必须等 nextTick 且**不能**再调 scrollIntoView
+   *
+   * 1. `loadMarket()` 只是把新数据写进 `marketPlugins`，DOM 要等下一次渲染才更新；
+   *    若此时立刻 scrollTo，滚的是**旧列表**的容器，新列表挂载后位置又变了。
+   *    必须 `await nextTick()` 等列表真正替换完。
+   *
+   * 2. 早先这里还跟了一句 `document.querySelector('.plugin-grid')?.scrollIntoView({ block: 'nearest' })`，
+   *    它是**反效果**的：`.plugin-grid` 相对 `.pc__body` 的滚动原点有约 54px 的偏移
+   *    （上面有筛选项/标题），`block: 'nearest'` 会把容器滚到「grid 顶端贴住容器顶端」，
+   *    于是 scrollTop 从 0 变成 54 —— 用户看到「翻页后没回到顶部」。
+   *    验收断言 A09 抓到的正是这个 54。滚动回顶部只需要 `scrollTo({ top: 0 })`。
+   */
+  await nextTick();
+  try {
+    document.querySelector('.pc__body')?.scrollTo({ top: 0, behavior: 'auto' });
+  } catch {
+    /* 忽略滚动失败（元素未挂载等） */
   }
 }
 
@@ -298,15 +483,16 @@ async function deleteMyPlugin(pluginId: string): Promise<void> {
 async function installMarketPlugin(p: CommunityPluginDto): Promise<void> {
   try {
     const res = await pluginsApi.download(p.pluginId);
-    saveInstalledCommunityPlugin({
+    const ok = saveInstalledCommunityPlugin({
       pluginId: res.plugin.pluginId,
       name: res.plugin.name,
       version: res.plugin.version,
       description: res.plugin.description,
       codeJs: res.plugin.codeJs || p.codeJs || '',
     });
+    if (!ok) return; // 校验失败已由 saveInstalledCommunityPlugin 提示
     await loadPluginsData();
-    flash(`已安装并启用插件「${p.name}」`);
+    flash(`已安装并启用「${p.name}」，功能区已出现入口`);
   } catch (e) {
     flash(`安装失败：${(e as Error).message}`, true);
   }
@@ -355,16 +541,20 @@ function confirmImportPlugin(): void {
   const pid = idMatch?.[1] || `custom-${Date.now()}`;
   const pname = nameMatch?.[1] || '本地导入插件';
   const pver = verMatch?.[1] || '1.0.0';
-  saveInstalledCommunityPlugin({
+  const ok = saveInstalledCommunityPlugin({
     pluginId: pid,
     name: pname,
     version: pver,
     description: '通过本地脚本导入的扩展插件',
     codeJs: raw,
   });
+  if (!ok) {
+    // 校验失败：保留弹窗与输入内容，让用户能改代码重试（不清空、不关闭）
+    return;
+  }
   importModalOpen.value = false;
   importCodeText.value = '';
-  flash(`已导入并启用插件「${pname}」，可在工作台命令面板中使用`);
+  flash(`已导入并启用「${pname}」，功能区已出现入口`);
 }
 
 /* ----------------------------- 内置插件 ----------------------------- */
@@ -544,9 +734,9 @@ const shellProps = computed(() =>
               type="button"
               class="nm-btn nm-btn--sm"
               :disabled="marketLoading"
-              title="刷新插件市场"
+              title="刷新插件市场（回到第 1 页）"
               aria-label="刷新插件市场"
-              @click="loadMarket"
+              @click="loadMarket({ resetPage: true })"
             >
               <NmIcon name="refresh" :size="12" />
               {{ marketLoading ? '加载中…' : '刷新' }}
@@ -589,6 +779,34 @@ const shellProps = computed(() =>
                 </button>
               </div>
             </div>
+          </div>
+
+          <!-- 分页（1.4.0）：每页 20 条，上一页 / 下一页 + 页码 + 总数；翻页后列表回到顶部 -->
+          <div v-if="marketPlugins.length || marketPage > 1" class="pager" data-market-pager>
+            <button
+              type="button"
+              class="nm-btn nm-btn--sm"
+              :disabled="!canPrevPage || marketLoading"
+              title="上一页"
+              @click="gotoMarketPage(marketPage - 1)"
+            >
+              <NmIcon name="chevronLeft" :size="12" />
+              上一页
+            </button>
+            <span class="pager__info">
+              第 <strong>{{ marketPage }}</strong> / {{ marketPageCount }} 页 · 共
+              <strong>{{ marketTotal }}</strong> 款 · 每页 {{ MARKET_PAGE_SIZE }} 条
+            </span>
+            <button
+              type="button"
+              class="nm-btn nm-btn--sm"
+              :disabled="!canNextPage || marketLoading"
+              title="下一页"
+              @click="gotoMarketPage(marketPage + 1)"
+            >
+              下一页
+              <NmIcon name="chevronRight" :size="12" />
+            </button>
           </div>
         </section>
 
@@ -1095,6 +1313,29 @@ const shellProps = computed(() =>
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
   gap: 12px;
+}
+/* 市场分页条（1.4.0）：每页 20 条，上一页/下一页 + 页码 + 总数 */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.pager__info {
+  font-size: 12px;
+  color: var(--fg-3);
+}
+.pager__info strong {
+  color: var(--fg);
+  font-weight: 650;
+}
+.pager .nm-btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .pcard {
   display: flex;

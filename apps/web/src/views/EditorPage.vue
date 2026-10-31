@@ -14,7 +14,27 @@ import {
   generateTitle,
 } from '@neomd/core';
 import type { EditorMode, LeftPanelMode, PageWidth, RightPanelSection } from '@neomd/shared';
-import { buildDiaryName, formatCompactNumber, isDiaryTitle, relativeTime } from '@neomd/shared';
+import {
+  buildDiaryName,
+  formatCompactNumber,
+  isDiaryTitle,
+  relativeTime,
+  executeBuiltinCommand,
+  getBuiltinCapability,
+  getCommunityPlugins,
+  getCommunityRibbonIds,
+  isCommunityPluginInRibbon,
+  parseBookmarks,
+  parseCommunityRibbonId,
+  runCommunityPlugin as runCommunityPluginShared,
+  setCommunityPluginInRibbon,
+  subscribeCommunityPlugins,
+  toCommunityRibbonId,
+  BOOKMARKS_STORE_KEY,
+  BUILTIN_PLUGIN_CAPABILITY,
+  type BuiltinHostContext,
+  type CommunityPluginRecord,
+} from '@neomd/shared';
 import { useAppStore, type DocSortKey } from '@/stores/app';
 import { useSettingsStore } from '@/stores/settings';
 import { useAuthStore } from '@/stores/auth';
@@ -31,6 +51,7 @@ import CommandPalette, { type Command } from '@/components/common/CommandPalette
 import SearchPanel from '@/components/common/SearchPanel.vue';
 import InputDialog from '@/components/common/InputDialog.vue';
 import RightSection from '@/components/panels/right/RightSection.vue';
+import PluginPanel from '@/components/panels/PluginPanel.vue';
 import ResizeHandle from '@/components/layout/ResizeHandle.vue';
 import RibbonContextMenu, { type RibbonItemDef } from '@/components/layout/RibbonContextMenu.vue';
 import {
@@ -39,6 +60,8 @@ import {
   SPLIT_RATIO_MIN,
   RIGHT_SECTION_HEIGHT_MIN,
   RIGHT_SECTION_HEIGHT_MAX,
+  RIGHT_SECTION_LIMIT,
+  toggleRightSectionWithLimit,
 } from '@/lib/local-layout';
 import UserMenu from '@/components/panels/UserMenu.vue';
 
@@ -191,7 +214,31 @@ const narrow = ref(false);
  * 正文颜色只由 <html> 上的主题变量（--content-bg / --content-fg / --bg-elevated）决定。
  * `appearance.editorColorScheme` 字段仍保留，仅由 resolveTheme() 用于老数据迁移。 */
 
-/** 功能区仅展示已开通的插件按钮，不显示保存等文章操作类按钮 */
+/**
+ * 社区插件功能区的**响应式版本号**（1.4.0）。
+ *
+ * 社区插件的功能区集合存在独立 key `neomd.communityRibbon.v1`（见
+ * `@neomd/shared` 的 `community-plugins.ts`），不是 Vue 状态，因此用一个
+ * 递增版本号把「注册表变了」这件事桥接进 Vue 的响应式系统：
+ * 注册表每次 emit，就 `version += 1`，依赖它的 computed 自动重算。
+ *
+ * 这样「插件中心安装插件 → 功能区立刻出现按钮」在同一个标签页里即时生效，
+ * 不需要刷新页面。
+ */
+const communityRibbonVersion = ref(0);
+
+/** 取消订阅句柄（卸载时释放，避免 HMR / 切页后泄漏） */
+let unsubscribeCommunity: (() => void) | null = null;
+
+/** 当前应在功能区展示的社区插件 id（随 version 变化重算） */
+const communityRibbonIds = computed<string[]>(() => {
+  void communityRibbonVersion.value;
+  return getCommunityRibbonIds();
+});
+
+/**
+ * 功能区仅展示已开通的插件按钮，不显示保存等文章操作类按钮
+ */
 const PLUGIN_RIBBON_DEFS: Record<string, { icon: string; title: string; pluginId: string }> = {
   'daily-notes': { icon: 'calendar', title: '今日日记 Ctrl+D', pluginId: 'daily-notes' },
   daily: { icon: 'calendar', title: '今日日记 Ctrl+D', pluginId: 'daily-notes' },
@@ -213,19 +260,63 @@ const PLUGIN_RIBBON_DEFS: Record<string, { icon: string; title: string; pluginId
   'new-mindmap': { icon: 'graph', title: '思维导图', pluginId: 'diagram-mindmap' },
 };
 
+/**
+ * 取某款内置插件在功能区上的图标与标题。
+ *
+ * 1.4.0 修「6 款面板插件无法从功能区打开」：
+ * 旧实现只查 `PLUGIN_RIBBON_DEFS` 这张手写表，表里没有的 id 直接 `continue`。
+ * 而 word-count / footnote-view / outgoing-links / page-preview / publish /
+ * file-list 这 6 款**从来没被写进那张表** —— 于是即便用户在设置里把它们加进
+ * `ribbonItems`，功能区也不会出现按钮，只能干瞪眼。
+ *
+ * 现在改为「手写表优先，能力表兜底」：手写表保留原有的别名与快捷键提示文案，
+ * 表里没有的则从 `BUILTIN_PLUGIN_CAPABILITY` 推导 —— 能力表是单一事实源，
+ * 新增插件不需要再改这张表，也就不会再漏。
+ */
+function builtinRibbonDef(rawId: string): { icon: string; title: string; pluginId: string } | null {
+  const def = PLUGIN_RIBBON_DEFS[rawId];
+  if (def) return def;
+  const cap = getBuiltinCapability(rawId);
+  if (!cap) return null;
+  if (!cap.panel && !cap.commands.length) return null; // 没有任何可执行路径的，不渲染
+  const title = cap.ribbonTitle ?? cap.panelTitle ?? cap.id;
+  return { icon: cap.panelIcon ?? 'sparkles', title, pluginId: cap.id };
+}
+
 const ribbonActions = computed(() => {
   const seen = new Set<string>();
-  const out: Array<{ id: string; icon: string; title: string }> = [];
+  const out: Array<{ id: string; icon: string; title: string; community?: boolean }> = [];
   const rawList = layout.value.ribbonItems ?? [];
   // 兼容升级：若用户的 ribbonItems 尚未包含图表插件 id，默认追加进候选并交由 pluginOn 判断显隐
   const candidates = [...rawList, 'diagram-flowchart', 'diagram-mindmap'];
   for (const rawId of candidates) {
-    const def = PLUGIN_RIBBON_DEFS[rawId];
+    const def = builtinRibbonDef(rawId);
     if (!def) continue;
     if (!settingsStore.pluginOn(def.pluginId)) continue;
     if (seen.has(def.pluginId)) continue;
+    // 1.4.0：内置插件必须**真的能执行**才渲染按钮。
+    // 能力表里状态为 unavailable 的不渲染，
+    // 避免出现「按钮在、点了没反应」的欺骗性入口。
+    const cap = getBuiltinCapability(def.pluginId);
+    if (cap && cap.status === 'unavailable') continue;
     seen.add(def.pluginId);
     out.push({ id: def.pluginId, icon: def.icon, title: def.title });
+  }
+  // 1.4.0：社区插件入口（`community:<pluginId>`）。
+  // 存在独立 key `neomd.communityRibbon.v1`，**不写 layout.ribbonItems**，
+  // 因此内置白名单保持干净、设置页不会出现幽灵项。
+  for (const pluginId of communityRibbonIds.value) {
+    const record = getCommunityPlugins().find((p) => p.pluginId === pluginId);
+    if (!record) continue;
+    const id = toCommunityRibbonId(pluginId);
+    if (seen.has(id)) continue;
+    seen.add(id);
+    out.push({
+      id,
+      icon: 'sparkles',
+      title: `社区插件：${record.name}（点击运行）`,
+      community: true,
+    });
   }
   return out;
 });
@@ -443,83 +534,190 @@ function buildCommands(): Command[] {
     { id: 'format', title: '显示/隐藏正文工具栏', group: '正文视图', icon: 'type', run: () => settingsStore.updateLayout({ editorToolbar: !layout.value.editorToolbar }) },
     { id: 'new-window', title: '新建独立窗口', group: '正文视图', keys: 'Ctrl+Shift+N', icon: 'external', run: () => void openNewAppWindow() },
   ];
-  // 挂载用户导入或安装的社区扩展插件命令
+  // 挂载已安装的社区插件命令与内置插件命令（1.4.0）
+  //
+  // 1.3.1 的问题：只从 localStorage 里**自己 parse** 一遍社区插件，且内置插件的
+  // 19 个声明命令一个都没进命令面板。现在两处都走 `@neomd/shared` 的单一数据源，
+  // 不再各自解析，避免「插件中心装了、命令面板没出现」的状态不一致。
   try {
-    const raw = localStorage.getItem('neomd.communityPlugins.v1');
-    if (raw) {
-      const list = JSON.parse(raw) as Array<{ pluginId: string; name: string; codeJs: string }>;
-      for (const item of list) {
-        if (!settingsStore.pluginOn(item.pluginId)) continue;
-        base.push({
-          id: `plugin:${item.pluginId}`,
-          title: `运行扩展插件：${item.name}`,
-          group: '扩展插件',
-          icon: 'sparkles',
-          run: () => runCommunityPlugin(item),
-        });
-      }
+    for (const item of getCommunityPlugins()) {
+      if (!settingsStore.pluginOn(item.pluginId)) continue;
+      base.push({
+        id: `plugin:${item.pluginId}`,
+        title: `运行扩展插件：${item.name}`,
+        group: '扩展插件',
+        icon: 'sparkles',
+        run: () => runCommunityPlugin(item),
+      });
     }
   } catch {
-    /* ignore */
+    /* 注册表读取异常不应阻塞命令面板 */
+  }
+  // 内置插件命令：由 BUILTIN_PLUGIN_CAPABILITY 反推，缺一条都会被这里补齐。
+  // 这样「manifest 声明了命令但宿主没实现」这类静默失效会立刻暴露出来。
+  for (const cap of BUILTIN_PLUGIN_CAPABILITY) {
+    if (!settingsStore.pluginOn(cap.id)) continue;
+    for (const commandId of cap.commands) {
+      base.push({
+        id: `builtin:${commandId}`,
+        title: `${cap.panelTitle ?? cap.id}：${commandId}`,
+        group: '内置插件',
+        icon: cap.panelIcon ?? 'sparkles',
+        run: () => dispatchBuiltinCommand(commandId),
+      });
+    }
   }
   return base;
 }
 
 /**
- * 把社区插件源码规范化成可交给 `new Function` 的函数体。
+ * 内置插件浮动面板状态（1.4.0）。
  *
- * 插件文件是 ESM 模块，形如：
- *   /** 说明注释 *\/
- *   export default { id, name, version, setup(api) { ... } };
- *
- * 1.2.x 及以前只用 `/^\s*export\s+default\s+/` 替换，**没有 `m` 标志**——
- * 于是「文件头带注释」的插件（这是 PLUGIN_DEVELOPMENT_GUIDE 与市场里最常见的写法）
- * 替换不生效，`new Function` 直接抛 `SyntaxError: Unexpected token 'export'`，
- * 用户点命令只会看到「插件执行异常」。1.3.0 修正为多行匹配，并兼容：
- *   - 前置注释 / 空行；
- *   - `export default` 后换行再写对象；
- *   - 已经写成 `return {...}` 的旧脚本（幂等，不重复加 return）。
+ * `PluginPanel.vue` 在 1.3.1 是**死代码**（无人 import），这里把它接回来，
+ * 用浮动面板承载，避免改动右侧栏的区块枚举（属并行任务的文件）。
  */
-function normalizePluginSource(codeJs: string): string {
-  const src = String(codeJs ?? '').replace(/^\uFEFF/, '');
-  if (!/\bexport\s+default\b/.test(src)) {
-    // 已经是函数体（历史脚本），原样返回
-    return src;
-  }
-  const cleaned = src.replace(/^\s*export\s+default\s+/m, 'return ');
-  // 极少数写法把 export default 放在行尾之外的位置，兜底再替换一次
-  return cleaned.replace(/\bexport\s+default\s+/, 'return ');
+const pluginPanelOpen = ref(false);
+const activePluginPanel = ref('outline');
+
+function openPluginPanel(panel: string): void {
+  activePluginPanel.value = panel;
+  pluginPanelOpen.value = true;
 }
 
-function runCommunityPlugin(item: { pluginId: string; name: string; codeJs: string }): void {
-  const tab = activeTab.value;
-  const hostApi = {
-    getMarkdown: () => tab?.content ?? '',
+function closePluginPanel(): void {
+  pluginPanelOpen.value = false;
+}
+
+/**
+ * 构建内置插件宿主上下文（1.4.0）。
+ *
+ * 所有「打开界面」类动作都映射到本文件已有的函数/状态，不含任何新逻辑，
+ * 因此不会影响 1.3.1 已验证的编辑器行为。
+ */
+function builtinHostContext(): BuiltinHostContext {
+  return {
+    getMarkdown: () => activeTab.value?.content ?? '',
     setMarkdown: (next: string) => {
+      const tab = activeTab.value;
+      if (tab) app.updateTabContent(tab.id, String(next ?? ''));
+    },
+    getTitle: () => activeTab.value?.title ?? '',
+    getDocId: () => activeTab.value?.docId ?? '',
+    notify: (message: string, type: 'info' | 'success' | 'error' = 'info') => app.notify(message, type),
+    openPanel: (panel: string) => openPluginPanel(panel),
+    openLeftPanel: (mode) => settingsStore.updateLayout({ leftPanelOpen: true, leftPanelMode: mode }),
+    searchInLeft: (query: string) => {
+      searchQuery.value = query;
+    },
+    openDaily: (date?: string) => openDaily(date),
+    openRandom: () => openRandom(),
+    openHistory: () => {
+      historyOpen.value = true;
+    },
+    openShare: () => {
+      shareOpen.value = true;
+    },
+    openPalette: () => {
+      paletteOpen.value = true;
+    },
+    createDiagram: (kind: 'flowchart' | 'mindmap') => {
+      void createDiagram(kind);
+    },
+    openPluginCenter: () => openPluginStore(),
+    saveWorkspace: (name: string) => {
+      try {
+        localStorage.setItem(WORKSPACE_STORE_KEY, JSON.stringify({ name, layout: layout.value, at: Date.now() }));
+      } catch {
+        /* 存储不可用时静默降级，由调用方消息体现 */
+      }
+    },
+    restoreWorkspace: () => {
+      try {
+        const raw = localStorage.getItem(WORKSPACE_STORE_KEY);
+        if (!raw) return false;
+        const parsed = JSON.parse(raw) as { layout?: Record<string, unknown> };
+        if (!parsed?.layout) return false;
+        settingsStore.updateLayout(parsed.layout as never);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    readStore: (key: string) => {
+      try {
+        return localStorage.getItem(key);
+      } catch {
+        return null;
+      }
+    },
+    writeStore: (key: string, value: string) => {
+      try {
+        localStorage.setItem(key, value);
+      } catch {
+        /* 忽略配额错误 */
+      }
+    },
+  };
+}
+
+/**
+ * 派发一个内置插件命令，并把结果如实反馈给用户（1.4.0）。
+ *
+ * **不再有「假成功」**：1.3.1 的 `onPanelAction` 落到 `default` 时只弹
+ * 「已触发插件：xxx」，实际什么都没发生。这里 `ok:false` 一律走 error 提示，
+ * 让「功能不可用」对用户可见，而不是伪装成成功。
+ */
+function dispatchBuiltinCommand(commandId: string): void {
+  const result = executeBuiltinCommand(commandId, builtinHostContext());
+  if (!result.ok) {
+    app.notify(result.message, 'error', 4200);
+    return;
+  }
+  if (result.message) app.notify(result.message, 'success', 2000);
+}
+
+/**
+ * 社区插件执行器（1.4.0）。
+ *
+ * 真正的解析与执行在 `@neomd/shared` 的 `runCommunityPlugin()` 里（可被
+ * vitest / Node 脚本直接测），这里只负责把「当前文档」接成宿主 API，
+ * 并把结果**如实**反馈：
+ * - 解析/执行失败 => 红色可读错误（不再是英文裸 SyntaxError）；
+ * - 执行成功但文档没变、插件也没任何提示 => 明确告知「已执行但无变化」，
+ *   而不是弹一个绿色的「已执行」骗人。
+ */
+function runCommunityPlugin(item: CommunityPluginRecord): void {
+  const outcome = runCommunityPluginShared(item, {
+    getMarkdown: () => activeTab.value?.content ?? '',
+    setMarkdown: (next: string) => {
+      const tab = activeTab.value;
       if (tab) app.updateTabContent(tab.id, String(next ?? ''));
     },
     insertMarkdown: (snippet: string) => {
+      const tab = activeTab.value;
       if (tab) app.updateTabContent(tab.id, `${tab.content}${snippet}`);
     },
-    getTitle: () => tab?.title ?? '',
+    getTitle: () => activeTab.value?.title ?? '',
     notify: (msg: string, type: 'info' | 'success' | 'error' = 'info') => app.notify(msg, type),
     registerCommand: (cmd: { id: string; title: string; run: () => void }) => {
+      // 插件注册的命令立即执行一次 —— 「点击功能区按钮跑一次插件」的语义，
+      // 与 1.3.1 一致（当年就是 setup 里立刻 run）。
       cmd?.run?.();
     },
-  };
-  try {
-    const cleaned = normalizePluginSource(item.codeJs);
-    const factory = new Function(cleaned) as () => { setup?: (api: typeof hostApi) => void };
-    const mod = factory();
-    if (typeof mod?.setup === 'function') {
-      mod.setup(hostApi);
-    } else {
-      app.notify(`插件「${item.name}」已执行`, 'success');
-    }
-  } catch (e) {
-    app.notify(`插件执行异常：${(e as Error).message}`, 'error');
+  });
+  if (outcome.changed) {
+    app.notify(outcome.message, 'success', 2000);
+  } else if (outcome.notified > 0 || outcome.commands > 0) {
+    // 插件自己已经 notify 过了，不重复打扰
+  } else if (/异常|错误|无法|不支持|语法|未闭合/.test(outcome.message)) {
+    app.notify(outcome.message, 'error', 4600);
+  } else {
+    app.notify(outcome.message, 'info', 3000);
   }
 }
+
+/** 工作区布局本地存储 key（workspace 插件用，只影响本机） */
+const WORKSPACE_STORE_KEY = 'neomd.workspace.v1';
 
 watch(paletteOpen, (v) => {
   if (v) paletteCommands.value = buildCommands();
@@ -1551,22 +1749,35 @@ function onFileOp(op: string): void {
 }
 
 function onPanelAction(id: string): void {
+  // 1.4.0：社区插件入口（`community:<pluginId>`）。
+  // 这是「装了插件就能在功能区点到」的落点，必须先于内置分支处理。
+  const communityPluginId = parseCommunityRibbonId(id);
+  if (communityPluginId) {
+    const record = getCommunityPlugins().find((p) => p.pluginId === communityPluginId);
+    if (!record) {
+      // 注册表里已经没有这条记录（用户在别处卸载了）=> 如实报错，不静默
+      app.notify(`插件「${communityPluginId}」已不在本机，请到插件中心重新安装`, 'error', 4200);
+      return;
+    }
+    runCommunityPlugin(record);
+    return;
+  }
+
   switch (id) {
     case 'daily':
     case 'daily-notes':
-      openDaily();
+      dispatchBuiltinCommand('daily.today');
       break;
     case 'random':
     case 'random-note':
-      openRandom();
+      dispatchBuiltinCommand('random.open');
       break;
     case 'file-recovery':
-      historyOpen.value = true;
+      dispatchBuiltinCommand('recovery.open');
       break;
     case 'tag-list':
     case 'tags':
-      settingsStore.updateLayout({ leftPanelOpen: true, leftPanelMode: 'search' });
-      searchQuery.value = '#';
+      dispatchBuiltinCommand('tags.panel');
       break;
     case 'width':
       cycleWidth();
@@ -1591,14 +1802,60 @@ function onPanelAction(id: string): void {
       break;
     case 'new-flowchart':
     case 'diagram-flowchart':
-      void createDiagram('flowchart');
+      dispatchBuiltinCommand('diagram.createFlowchart');
       break;
     case 'new-mindmap':
     case 'diagram-mindmap':
-      void createDiagram('mindmap');
+      dispatchBuiltinCommand('diagram.createMindmap');
       break;
+    /* ---- 1.4.0 补齐：这些内置插件此前落到 default 只弹「已触发」，实际没动作 ---- */
+    case 'graph':
+      dispatchBuiltinCommand('graph.open');
+      break;
+    case 'bookmarks':
+      dispatchBuiltinCommand('bookmark.toggle');
+      break;
+    case 'whiteboard':
+    case 'slides':
+    case 'database':
+    case 'web-browser':
+    case 'recorder':
+    case 'note-reorganize':
+    case 'publish':
+    case 'workspace':
+    case 'quick-switcher':
+    case 'outline':
+    case 'backlinks':
+    case 'properties':
+    case 'outgoing-links':
+    case 'footnote-view':
+    case 'word-count':
+    case 'file-list':
+    case 'page-preview':
+    case 'slash-commands': {
+      // 面板 / 命令类：优先用清单里的首条命令，没有命令则直接开面板。
+      const cap = getBuiltinCapability(id);
+      if (cap && cap.commands.length) {
+        dispatchBuiltinCommand(cap.commands[0]!);
+      } else if (cap?.panel) {
+        openPluginPanel(cap.panel);
+        app.notify(`已打开「${cap.panelTitle ?? cap.panel}」面板`, 'success', 2000);
+      } else {
+        app.notify(
+          `「${cap?.panelTitle ?? id}」在当前版本没有可用入口${cap?.limitation ? `：${cap.limitation}` : ''}`,
+          'error',
+          4600,
+        );
+      }
+      break;
+    }
     default:
-      app.notify(`已触发插件：${PLUGIN_RIBBON_DEFS[id]?.title ?? id}`, 'info', 1800);
+      /*
+       * 1.3.1 这里只 `notify('已触发插件：xxx')` 就结束了 ——
+       * **界面显示成功，但实际什么都没发生**，是和「假开关」同源的欺骗性缺陷。
+       * 现在改成明确报错：宁可让用户知道不可用，也不要假装成功。
+       */
+      app.notify(`「${PLUGIN_RIBBON_DEFS[id]?.title ?? id}」在当前版本不可用（没有对应的宿主实现）`, 'error', 4200);
       break;
   }
 }
@@ -1818,6 +2075,19 @@ onMounted(async () => {
   onResize();
 
   /**
+   * 订阅社区插件注册表（1.4.0）。
+   *
+   * 安装 / 卸载 / 加入功能区 / 移出功能区都会触发 `emit()`，这里把版本号 +1，
+   * 于是 `ribbonActions` 与右键菜单列表立刻重算 —— 用户「在插件中心点安装，
+   * 功能区当帧就出现按钮」，不需要刷新页面。
+   */
+  if (!unsubscribeCommunity) {
+    unsubscribeCommunity = subscribeCommunityPlugins(() => {
+      communityRibbonVersion.value += 1;
+    });
+  }
+
+  /**
    * 首帧就放开外壳（1.1.9）。
    *
    * `shellReady` 必须在 `await boot()` **之前**置 true，否则外壳会跟着异步启动流程一起等，
@@ -1848,6 +2118,9 @@ onBeforeUnmount(() => {
   window.removeEventListener('mousedown', closeZoomMenu);
   window.removeEventListener('wheel', onWheelZoom);
   if (autosaveTimer) clearTimeout(autosaveTimer);
+  // 释放注册表订阅，避免切页 / HMR 后重复订阅造成泄漏
+  unsubscribeCommunity?.();
+  unsubscribeCommunity = null;
 });
 
 watch(
@@ -1911,7 +2184,13 @@ function closePluginStoreTab(): void {
 
 /* ---------------- 功能区右键菜单（1.0.2） ---------------- */
 
-/** 功能区全部可选按钮（用于右键「添加功能按钮」列表） */
+/**
+ * 功能区全部可选按钮（用于右键「添加功能按钮」列表）。
+ *
+ * 1.4.0：内置部分现在**同时**覆盖「命令类」插件（此前只列了有图标的少数几款），
+ * 并对齐 `BUILTIN_PLUGIN_CAPABILITY` 的可用状态：状态为 `unavailable` 的不列，
+ * 避免用户把它加进功能区后得到一个点不动的按钮。
+ */
 const RIBBON_ALL_ITEMS: RibbonItemDef[] = [
   { id: 'daily-notes', label: '今日日记', icon: 'calendar' },
   { id: 'random-note', label: '漫游笔记', icon: 'dice' },
@@ -1926,7 +2205,53 @@ const RIBBON_ALL_ITEMS: RibbonItemDef[] = [
   { id: 'recorder', label: '语音录音', icon: 'mic' },
   { id: 'diagram-flowchart', label: '流程图', icon: 'columns' },
   { id: 'diagram-mindmap', label: '思维导图', icon: 'graph' },
+  { id: 'note-reorganize', label: '笔记重组', icon: 'layers' },
+  { id: 'publish', label: '发布', icon: 'upload' },
+  { id: 'outline', label: '大纲', icon: 'outline' },
+  { id: 'backlinks', label: '反向链接', icon: 'link' },
+  { id: 'properties', label: '属性列表', icon: 'table' },
+  { id: 'outgoing-links', label: '出链', icon: 'link' },
+  { id: 'footnote-view', label: '脚注视图', icon: 'footnote' },
+  { id: 'word-count', label: '字数统计', icon: 'chart' },
+  { id: 'page-preview', label: '页面预览', icon: 'eye' },
+  { id: 'file-list', label: '文件列表', icon: 'folder' },
+  { id: 'slash-commands', label: '插入菜单', icon: 'command' },
+  { id: 'workspace', label: '工作区', icon: 'layout' },
+  { id: 'quick-switcher', label: '快速切换', icon: 'search' },
 ];
+
+/**
+ * 右键菜单里的**社区插件**按钮（1.4.0）。
+ *
+ * 与内置的 `RIBBON_ALL_ITEMS` 分开：社区插件用 `community:<pluginId>` 前缀，
+ * 加入/移出写的是独立 key（`neomd.communityRibbon.v1`），
+ * **绝不写 `layout.ribbonItems`** —— 内置白名单保持干净，设置页不会出现幽灵项。
+ */
+const communityRibbonMenuItems = computed<RibbonItemDef[]>(() => {
+  void communityRibbonVersion.value;
+  return getCommunityPlugins().map((p) => ({
+    id: toCommunityRibbonId(p.pluginId),
+    label: p.name,
+    icon: 'sparkles',
+  }));
+});
+
+/** 右键菜单展示的完整候选列表（内置 + 社区） */
+const ribbonAllItemsWithCommunity = computed<RibbonItemDef[]>(() => [
+  ...RIBBON_ALL_ITEMS,
+  ...communityRibbonMenuItems.value,
+]);
+
+/**
+ * 右键菜单里判定「已在功能区」的 id 集合。
+ *
+ * 内置看 `layout.ribbonItems`，社区看独立注册表 —— 两边合并成一份只读视图
+ * 交给 `RibbonContextMenu`，组件本身不需要知道两套存储的存在。
+ */
+const ribbonMenuEnabledIds = computed<string[]>(() => {
+  void communityRibbonVersion.value;
+  return [...(layout.value.ribbonItems ?? []), ...getCommunityRibbonIds().map((p) => toCommunityRibbonId(p))];
+});
 
 const ribbonMenu = ref<{ open: boolean; x: number; y: number; targetId?: string; targetLabel?: string }>({
   open: false,
@@ -1945,15 +2270,36 @@ function closeRibbonMenu(): void {
   ribbonMenu.value = { ...ribbonMenu.value, open: false };
 }
 
-/** 隐藏某个功能区按钮（从 ribbonItems 移除） */
+/**
+ * 隐藏某个功能区按钮。
+ *
+ * 1.4.0：区分内置与社区两条存储。
+ * - 内置：写 `layout.ribbonItems`（内置白名单）；
+ * - 社区（`community:<id>`）：写独立 key `neomd.communityRibbon.v1`。
+ * 两者绝不能互相写入，否则设置页会出现幽灵项（1.3.1 刚修过）。
+ */
 function ribbonHide(id: string): void {
+  const communityId = parseCommunityRibbonId(id);
+  if (communityId) {
+    setCommunityPluginInRibbon(communityId, false);
+    communityRibbonVersion.value += 1;
+    closeRibbonMenu();
+    app.notify('已从功能区移除该社区插件（可在插件中心重新加入）', 'info', 2600);
+    return;
+  }
   const next = (layout.value.ribbonItems ?? []).filter((x) => x !== id);
   settingsStore.updateLayout({ ribbonItems: next });
   closeRibbonMenu();
 }
 
-/** 上下移动功能区按钮顺序 */
+/** 上下移动功能区按钮顺序（社区插件不参与内置顺序，见下） */
 function ribbonMove(id: string, dir: 'up' | 'down'): void {
+  if (parseCommunityRibbonId(id)) {
+    // 社区插件排在功能区末尾，顺序由注册表顺序决定；这里如实告知而不是静默无响应
+    app.notify('社区插件固定排在功能区末尾，顺序由安装顺序决定', 'info', 2600);
+    closeRibbonMenu();
+    return;
+  }
   const list = [...(layout.value.ribbonItems ?? [])];
   const i = list.indexOf(id);
   if (i < 0) return;
@@ -1964,8 +2310,16 @@ function ribbonMove(id: string, dir: 'up' | 'down'): void {
   closeRibbonMenu();
 }
 
-/** 添加 / 移除某个按钮 */
+/** 添加 / 移除某个功能区按钮（同样区分内置与社区两条存储） */
 function ribbonToggle(id: string): void {
+  const communityId = parseCommunityRibbonId(id);
+  if (communityId) {
+    const next = !isCommunityPluginInRibbon(communityId);
+    setCommunityPluginInRibbon(communityId, next);
+    communityRibbonVersion.value += 1;
+    closeRibbonMenu();
+    return;
+  }
   const list = [...(layout.value.ribbonItems ?? [])];
   const i = list.indexOf(id);
   if (i >= 0) list.splice(i, 1);
@@ -2068,7 +2422,7 @@ const splitPickerOpen = ref(false);
 /** 分屏比例：第一栏占可用空间的比例（垂直分屏指宽度，水平分屏指高度） */
 const splitRatio = computed(() => localLayout.value.splitRatio);
 
-/** 拖动分屏分隔条时更新比例 */
+/** 拖动分屏分隔条时更新比例（值来自 ResizeHandle 的百分比模式，单位是 0..100） */
 function onSplitRatio(next: number): void {
   updateLocalLayout({ splitRatio: Math.min(SPLIT_RATIO_MAX, Math.max(SPLIT_RATIO_MIN, next)) });
 }
@@ -2118,9 +2472,29 @@ function onNewTabClick(): void {
   }
 }
 
-const SPLIT_HANDLE_MIN = 20;
-const SPLIT_HANDLE_MAX = 80;
-const splitHandleValue = computed(() => Math.round(splitRatio.value * 100));
+/*
+ * 分屏手柄的取值单位（1.4.0 修「拖动不跟手」）。
+ *
+ * 改前三件事同时错了，所以手感是「拖了不走、走了又反」：
+ * 1. `ResizeHandle` 用**像素增量**模型（`startValue + delta`），而这里传进去的是
+ *    `splitRatio * 100` 这个 **0..100 的百分比**。1px 位移被当成 1% 加进去，
+ *    灵敏度被放大「容器尺寸 / 100」倍（1300px 宽的分屏 = 13 倍）→ 鼠标动 5px，
+ *    分隔条飞出去 60+px。
+ * 2. 百分比绑在**第二栏**（`.shell__splitpane` 的 `flex: 0 0 ratio%`），比例变大
+ *    → 第二栏变大 → 分隔条往左/上跑，与鼠标方向**相反**。
+ * 3. 上下分屏再叠加一次 `invert`（若加在错误的一侧）就会变成「又反回来」，看起来
+ *    时对时错。
+ *
+ * 现在的口径：
+ * - 手柄按**百分比模式**工作（`unit="percent"`）：ResizeHandle 自己量宿主容器
+ *   （`.shell__panes`）的像素宽/高，把鼠标位移换算成百分比增量；
+ * - 百分比**绑到第二栏的「剩余空间」**上：`flex: 0 0 (1 - ratio)%`。这样 ratio 增大
+ *   → 第二栏变小 → 分隔条右移/下移，与鼠标同向，于是**不需要 invert**；
+ * - `precision: 2` 保留两位小数：整数百分比在 1300px 上是 13px 一格，会一格一格跳。
+ */
+const SPLIT_HANDLE_MIN = Math.round(SPLIT_RATIO_MIN * 100);
+const SPLIT_HANDLE_MAX = Math.round(SPLIT_RATIO_MAX * 100);
+const splitHandleValue = computed(() => Math.round(splitRatio.value * 100 * 100) / 100);
 
 function onSplitHandleUpdate(value: number): void {
   onSplitRatio(value / 100);
@@ -2214,19 +2588,172 @@ function rightSectionOn(id: RightPanelSection): boolean {
   return list.includes(id);
 }
 
-/** 当前已开启的右侧栏区块列表（按 RIGHT_SECTIONS 标准顺序排列，上下堆叠展示） */
+/** 取区块的中文名（提示文案 / 无障碍标签共用） */
+function rightSectionLabel(id: RightPanelSection): string {
+  return RIGHT_SECTIONS.find((x) => x.id === id)?.label ?? id;
+}
+
+/**
+ * 当前已开启的右侧栏区块列表（**尊重用户顺序**，1.4.0）。
+ *
+ * 改前是 `RIGHT_SECTIONS.map(id).filter(enabled.includes)` —— 永远按常量顺序输出，
+ * 用户拖出来的顺序被整体丢弃，所以「拖动标题栏排序」根本不可能生效。
+ *
+ * 现在的口径：
+ * - 以 `settings.layout.rightPanelSections` 数组顺序为**唯一真相**（这也正是
+ *   `toggleRightSectionWithLimit()` 追加/删除时维护的数组），已知 id 的相对顺序
+ *   完全由数组决定，不再被常量覆盖；
+ * - `RIGHT_SECTIONS` 只做两件事的兜底：① 提供渲染所需的 label/icon；
+ *   ② 把**未知 id**（老数据里残留、或未来版本新增后又被回滚）按常量位置聚到末尾，
+ *   保证顺序稳定、不因一次刷新乱跳，同时不打断已知 id 的用户顺序。
+ */
 const enabledRightSections = computed<RightPanelSection[]>(() => {
-  const enabled = settingsStore.settings.layout.rightPanelSections ?? [];
-  return RIGHT_SECTIONS.map((s) => s.id).filter((id) => enabled.includes(id));
+  const raw = settingsStore.settings.layout.rightPanelSections ?? [];
+  const knownOrder = new Map<RightPanelSection, number>(RIGHT_SECTIONS.map((s, i) => [s.id, i]));
+  // 去重（老数据里可能有重复 id），保持首次出现的位置
+  const seen = new Set<RightPanelSection>();
+  const known: RightPanelSection[] = [];
+  const unknown: Array<{ id: RightPanelSection; idx: number }> = [];
+  raw.forEach((id, idx) => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    if (knownOrder.has(id)) known.push(id);
+    else unknown.push({ id, idx });
+  });
+  if (!unknown.length) return known;
+  // 未知 id：按常量位置排（不在常量里的一律视为 Infinity），同分时按原始下标，保证稳定
+  unknown.sort((a, b) => {
+    const ka = knownOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+    const kb = knownOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+    return ka - kb || a.idx - b.idx;
+  });
+  return [...known, ...unknown.map((x) => x.id)];
 });
 
-/** 切换某个区块的开启/关闭状态（多选开关，支持同时打开多个操作区上下排列） */
+/**
+ * 切换某个区块的开启/关闭状态（1.4.0：上限 3 + 超出时挤掉最上方一个）。
+ *
+ * 上限与淘汰规则集中在 `toggleRightSectionWithLimit()`（lib/local-layout.ts），
+ * 与 SettingsPage 共用同一份实现，避免「从设置页能绕过限制」。
+ * 淘汰时必须给可读提示 —— 用户点一下发现上面少了一个块，没有提示会以为界面出了 bug。
+ */
 function toggleRightSection(id: RightPanelSection): void {
-  const list = [...(settingsStore.settings.layout.rightPanelSections ?? [])];
-  const idx = list.indexOf(id);
-  if (idx >= 0) list.splice(idx, 1);
-  else list.push(id);
+  const { list, evicted } = toggleRightSectionWithLimit(
+    settingsStore.settings.layout.rightPanelSections,
+    id,
+    RIGHT_SECTION_LIMIT,
+  );
+  if (!evicted) {
+    settingsStore.updateLayout({ rightPanelSections: list });
+    return;
+  }
+  /*
+   * 顺序很关键：先把新列表落地（触发重新渲染），再弹提示。
+   * 反过来的话，提示里说的被关区块还没消失，看起来像「提示说关了但没关」。
+   */
   settingsStore.updateLayout({ rightPanelSections: list });
+  app.notify(
+    `右侧栏最多同时显示 ${RIGHT_SECTION_LIMIT} 个，已自动关闭最上方的「${rightSectionLabel(evicted)}」以腾出位置`,
+    'info',
+    3600,
+  );
+}
+
+/* ---------------- 右侧栏区块拖动排序（1.4.0） ---------------- */
+
+/** 正在拖动排序的区块 id（null = 未在拖） */
+const draggingSection = ref<RightPanelSection | null>(null);
+/** 拖动过程中的插入位置（0..length，表示插到第几项之前） */
+const sectionDropIndex = ref<number | null>(null);
+
+/** 拖动开始：记录源区块 */
+function onSectionDragStart(id: RightPanelSection, e: DragEvent): void {
+  draggingSection.value = id;
+  sectionDropIndex.value = null;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    // Safari / 老 Chromium 需要 setData 才会真正开始拖拽
+    e.dataTransfer.setData('text/plain', id);
+  }
+}
+
+/**
+ * 拖动经过某个区块：计算插入位置。
+ *
+ * 用「上下各半」判定：指针落在目标区块上半 → 插到它前面；下半 → 插到它后面。
+ * 这样拖到列表末尾时也能得到 length（插到最后），不会卡在倒数第一项上。
+ */
+function onSectionDragOver(index: number, e: DragEvent): void {
+  if (!draggingSection.value) return;
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+  const el = e.currentTarget as HTMLElement | null;
+  if (!el) {
+    sectionDropIndex.value = index;
+    return;
+  }
+  const box = el.getBoundingClientRect();
+  const after = e.clientY - box.top > box.height / 2;
+  sectionDropIndex.value = after ? index + 1 : index;
+}
+
+/** 拖离某个区块：清掉插入指示（避免残留一条指示线） */
+function onSectionDragLeave(e: DragEvent): void {
+  const related = e.relatedTarget as Node | null;
+  const cur = e.currentTarget as Node | null;
+  if (related && cur && cur.contains(related)) return;
+  sectionDropIndex.value = null;
+}
+
+/** 拖动结束（无论是否落在有效目标上）：清理全部拖拽态 */
+function onSectionDragEnd(): void {
+  draggingSection.value = null;
+  sectionDropIndex.value = null;
+}
+
+/**
+ * 放下：把源区块移动到目标位置，并把新顺序写回 settings。
+ *
+ * 写回必须走 `settingsStore.updateLayout()`（settings 归 T4，不能直接改 store 文件）；
+ * 该 API 会 persist → localStorage + 触发云端推送，因此**刷新后顺序保持**。
+ */
+function onSectionDrop(): void {
+  const src = draggingSection.value;
+  const dropAt = sectionDropIndex.value;
+  draggingSection.value = null;
+  sectionDropIndex.value = null;
+  if (!src || dropAt === null) return;
+  const current = [...enabledRightSections.value];
+  const from = current.indexOf(src);
+  if (from < 0) return;
+  // 目标索引是「插到第 dropAt 项之前」，源在被删掉后位于它前面的项会整体前移
+  let to = dropAt > from ? dropAt - 1 : dropAt;
+  to = Math.max(0, Math.min(current.length - 1, to));
+  if (to === from) return;
+  const next = [...current];
+  next.splice(from, 1);
+  next.splice(to, 0, src);
+  /*
+   * 只提交启用的这些区块的顺序会**丢掉被关闭区块**在数组里的记录。
+   * 因此这里在同一份原始数组上做同样的搬移：启用项按新顺序排在前，
+   * 未启用项保持原有相对顺序追加在后 —— 这样开关一个块不会打乱已有关闭项。
+   */
+  const all = [...(settingsStore.settings.layout.rightPanelSections ?? [])];
+  const disabled = all.filter((id) => !next.includes(id));
+  settingsStore.updateLayout({ rightPanelSections: [...next, ...disabled] });
+}
+
+/** 是否显示「插到这里」的指示线（在 target 区块之前） */
+function showDropLineBefore(id: RightPanelSection): boolean {
+  if (!draggingSection.value || sectionDropIndex.value === null) return false;
+  const idx = enabledRightSections.value.indexOf(id);
+  return idx >= 0 && sectionDropIndex.value === idx && draggingSection.value !== id;
+}
+
+/** 是否显示「插到最后」的指示线 */
+function showDropLineAtEnd(): boolean {
+  if (!draggingSection.value || sectionDropIndex.value === null) return false;
+  return sectionDropIndex.value >= enabledRightSections.value.length;
 }
 
 /** 获取某个右侧区块的默认高度（px） */
@@ -2572,9 +3099,16 @@ const tabBarTabs = computed(() =>
                   图编辑器（流程图 / 思维导图）自带完整工具栏，不走富文本工具条：
                   页宽 / 编辑模式 / 加粗等按钮对图文档毫无意义，还会挤掉 38px 画布高度，
                   观感上就是「页面错乱」。因此图文档下整条 EditorBar 不渲染。
+
+                  虚拟标签（设置 / 插件商店）同理必须排除（1.4.0 需求15）。
+                  这两个标签是「虚拟 tab」：`activeTab` 对它们**为真**、且扩展名不是
+                  flow/mind，所以只判 `activeTab && !isFlowTab && !isMindTab` 时整条
+                  `.editorbar` 照常渲染，压在设置页标题栏右边，看起来就是
+                  「设置页上多了一条正文工具栏」。实测该盒子 {x:260,y:40,w:1340,h:38}。
+                  设置页与插件商店都有自己的完整布局，不需要正文工具条。
                 -->
                 <EditorBar
-                  v-if="activeTab && !isFlowTab && !isMindTab"
+                  v-if="activeTab && !isFlowTab && !isMindTab && !isSettingsActive && !isPluginActive"
                   :mode="mode"
                   :page-width="pageWidth"
                   :dirty="activeTab.dirty"
@@ -2792,6 +3326,8 @@ const tabBarTabs = computed(() =>
                     :min="SPLIT_HANDLE_MIN"
                     :max="SPLIT_HANDLE_MAX"
                     :default-value="50"
+                    unit="percent"
+                    :precision="2"
                     label="调整分屏比例"
                     @update="onSplitHandleUpdate"
                   />
@@ -2803,7 +3339,7 @@ const tabBarTabs = computed(() =>
                     v-if="splitDirection !== 'none' && splitTab"
                     class="shell__splitpane"
                     :class="{ 'is-pane-active': activePane === 'split' }"
-                    :style="{ flex: `0 0 ${splitRatio * 100}%` }"
+                    :style="{ flex: `0 0 ${(1 - splitRatio) * 100}%` }"
                     @mousedown="activePane = 'split'"
                   >
                     <div class="splitpane__head">
@@ -3027,17 +3563,44 @@ const tabBarTabs = computed(() =>
                   </button>
                 </div>
 
-                <div class="rightstack nm-scroll">
+                <div class="rightstack nm-scroll" @dragend="onSectionDragEnd" @drop.prevent="onSectionDrop">
                   <template v-for="(secId, idx) in enabledRightSections" :key="secId">
                     <div
                       class="rightstack__pane"
                       :class="{
                         'rightstack__pane--single': enabledRightSections.length === 1,
                         'rightstack__pane--last': idx === enabledRightSections.length - 1,
+                        'is-dragging': draggingSection === secId,
+                        'is-drop-before': showDropLineBefore(secId),
+                        'is-drop-after': showDropLineAtEnd() && idx === enabledRightSections.length - 1,
                       }"
                       :data-right-pane="secId"
                       :style="rightPaneStyle(secId, idx)"
+                      @dragover="onSectionDragOver(idx, $event)"
+                      @dragleave="onSectionDragLeave"
+                      @drop.prevent.stop="onSectionDrop"
                     >
+                      <!--
+                        拖动排序的抓取把手（1.4.0）。
+                        用独立的拖拽条而不是给整个标题栏加 draggable：标题栏里有
+                        「关闭」按钮和可点区域，整栏可拖会抢掉它们的点击。
+                        它绝对定位在标题栏左端（不参与 flex 布局，否则会把 AiPanel /
+                        RightSection 挤成第二个 flex 项、整栏排版塌掉），
+                        标题栏的左内边距由下方 `:deep(.ai__head/.rsection__head)` 让出位置。
+                      -->
+                      <div
+                        class="rightstack__grip"
+                        role="button"
+                        tabindex="-1"
+                        draggable="true"
+                        :title="`拖动调整「${rightSectionLabel(secId)}」的位置`"
+                        :aria-label="`拖动调整「${rightSectionLabel(secId)}」的位置`"
+                        :data-right-grip="secId"
+                        @dragstart="onSectionDragStart(secId, $event)"
+                        @dragend="onSectionDragEnd"
+                      >
+                        <span class="rightstack__gripdots" aria-hidden="true">⋮⋮</span>
+                      </div>
                       <AiPanel
                         v-if="secId === 'ai' || secId === 'file'"
                         :active-tab="secId === 'file' ? 'file' : 'ai'"
@@ -3050,6 +3613,8 @@ const tabBarTabs = computed(() =>
                         :outline="headings.map((h) => ({ level: h.level, text: h.text }))"
                         @jump="jumpToHeadingText"
                         @close="toggleRightSection(secId)"
+                        @header-drag-start="(e: DragEvent) => onSectionDragStart(secId, e)"
+                        @header-drag-end="onSectionDragEnd"
                       />
                       <RightSection
                         v-else-if="secId === 'backlinks'"
@@ -3059,12 +3624,16 @@ const tabBarTabs = computed(() =>
                         :docs="app.docs"
                         @open-doc="(id: string) => openDocInMode(id)"
                         @close="toggleRightSection(secId)"
+                        @header-drag-start="(e: DragEvent) => onSectionDragStart(secId, e)"
+                        @header-drag-end="onSectionDragEnd"
                       />
                       <RightSection
                         v-else-if="secId === 'tags'"
                         section="tags"
                         :content="activeTab?.content ?? ''"
                         @close="toggleRightSection(secId)"
+                        @header-drag-start="(e: DragEvent) => onSectionDragStart(secId, e)"
+                        @header-drag-end="onSectionDragEnd"
                       />
                       <RightSection
                         v-else-if="secId === 'history'"
@@ -3072,12 +3641,16 @@ const tabBarTabs = computed(() =>
                         :versions="cloudVersions"
                         @open-version="historyOpen = true"
                         @close="toggleRightSection(secId)"
+                        @header-drag-start="(e: DragEvent) => onSectionDragStart(secId, e)"
+                        @header-drag-end="onSectionDragEnd"
                       />
                       <RightSection
                         v-else-if="secId === 'stats'"
                         section="stats"
                         :content="activeTab?.content ?? ''"
                         @close="toggleRightSection(secId)"
+                        @header-drag-start="(e: DragEvent) => onSectionDragStart(secId, e)"
+                        @header-drag-end="onSectionDragEnd"
                       />
                       <RightSection
                         v-else-if="secId === 'calendar'"
@@ -3085,6 +3658,8 @@ const tabBarTabs = computed(() =>
                         :docs="app.docs"
                         @open-daily="(date: string) => openDaily(date)"
                         @close="toggleRightSection(secId)"
+                        @header-drag-start="(e: DragEvent) => onSectionDragStart(secId, e)"
+                        @header-drag-end="onSectionDragEnd"
                       />
                     </div>
                     <!--
@@ -3107,9 +3682,10 @@ const tabBarTabs = computed(() =>
                       @update="(h: number) => setRightSectionHeight(secId, h)"
                     />
                   </template>
+                  <!-- 拖到列表末尾：由最后一个 pane 的 `is-drop-after` 画下沿指示线 -->
                   <!-- 所有区块都被关掉时给一条提示 -->
                   <p v-if="!enabledRightSections.length" class="rightstack__empty">
-                    点上方图标开启要显示的窗口（AI 助手 / 文件操作 / 大纲 / 反链 / 标签 / 历史 / 统计 / 日历，可同时打开多个并拖动调整高度）
+                    点上方图标开启要显示的窗口（AI 助手 / 文件操作 / 大纲 / 反链 / 标签 / 历史 / 统计 / 日历，最多同时打开 3 个，可拖动 ⋮⋮ 调整顺序、拖动分隔条调整高度）
                   </p>
                 </div>
               </div>
@@ -3284,8 +3860,8 @@ const tabBarTabs = computed(() =>
       :y="ribbonMenu.y"
       :target-id="ribbonMenu.targetId"
       :target-label="ribbonMenu.targetLabel"
-      :all-items="RIBBON_ALL_ITEMS"
-      :enabled-ids="layout.ribbonItems ?? []"
+      :all-items="ribbonAllItemsWithCommunity"
+      :enabled-ids="ribbonMenuEnabledIds"
       :position="layout.ribbonPosition"
       @close="closeRibbonMenu"
       @hide="ribbonHide"
@@ -3307,6 +3883,23 @@ const tabBarTabs = computed(() =>
     
     <!-- 插件中心：功能区入口打开，承载内置插件开关 + 插件市场 + 我的 + 发布 + 开发指南 -->
     
+    <!--
+      内置插件浮动面板（1.4.0）。
+      1.3.1 时 `PluginPanel.vue` 没有任何文件 import（死代码），
+      于是出链 / 发布 / 脚注 / 数据库 / 字数统计这 5 款只声明了 `panel: true`
+      的插件在界面上根本无处可去。这里把它接回来。
+    -->
+    <PluginPanel
+      :panel="activePluginPanel"
+      :doc-id="activeTab?.docId ?? ''"
+      :visible="pluginPanelOpen"
+      @update:panel="(p: string) => (activePluginPanel = p)"
+      @close="closePluginPanel"
+      @open-doc="(id: string) => openDocInMode(id)"
+      @publish="shareOpen = true"
+      @open-left-panel="(m: 'files' | 'outline' | 'both' | 'search') => settingsStore.updateLayout({ leftPanelOpen: true, leftPanelMode: m })"
+    />
+
     <HistoryModal v-model="historyOpen" :doc-id="activeTab?.docId ?? ''" />
     <ShareModal v-model="shareOpen" :doc-id="activeTab?.docId ?? ''" :title="activeTab?.title ?? ''" :content="activeTab?.content ?? ''" />
     <ConflictModal />
@@ -3754,11 +4347,88 @@ const tabBarTabs = computed(() =>
   letter-spacing: 0.05em;
 }
 .rightstack__pane {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 80px;
   overflow: hidden;
   border-bottom: 1px solid var(--border);
+}
+/*
+ * 拖动排序的抓取把手（1.4.0）。
+ *
+ * 绝对定位在区块左端、与标题栏同高：既**不参与 flex 布局**（否则会成为
+ * AiPanel / RightSection 之外的第二个 flex 项，把整栏排版挤塌），
+ * 又能在整块被压缩到 80px 时依然抓得到。
+ * 用 `cursor: grab` 明确「这里可以拖」，拖动中换成 grabbing。
+ */
+.rightstack__grip {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 28px;
+  color: var(--fg-3);
+  opacity: 0;
+  cursor: grab;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
+  border-top-left-radius: 4px;
+}
+.rightstack__gripdots {
+  font-size: 9px;
+  line-height: 1;
+  letter-spacing: -2px;
+  /* 竖排两个点列，视觉上更接近「抓手」 */
+  writing-mode: vertical-rl;
+  transform: translateX(-0.5px);
+}
+/* 鼠标进入区块 / 键盘聚焦 / 正在拖动时才显形，平时不打扰阅读 */
+.rightstack__pane:hover > .rightstack__grip,
+.rightstack__grip:focus-visible,
+.rightstack__pane.is-dragging > .rightstack__grip {
+  opacity: 0.9;
+}
+.rightstack__grip:hover {
+  background: var(--bg-hover);
+  color: var(--accent);
+}
+.rightstack__grip:active {
+  cursor: grabbing;
+}
+/*
+ * 给标题栏让出 14px 抓手宽度。
+ *
+ * 只动左内边距，不碰 AiPanel / RightSection 里任何其它样式
+ * （AiPanel.vue 不在本任务的写入范围内，这里用 :deep 从容器侧兜布局）。
+ * AI 面板标题栏高 38px、RightSection 标题栏高 28px，两者都要让位。
+ */
+.rightstack__pane :deep(.ai__head),
+.rightstack__pane :deep(.rsection__head) {
+  padding-left: 16px;
+}
+/* AI 面板标题栏更高（38px），抓手跟着拉高，保证整条抓手都能命中 */
+.rightstack__pane:has(> .ai) > .rightstack__grip {
+  height: 38px;
+}
+/* 拖动中的源区块：半透明 + 稍微缩小，明确「这块正被搬走」 */
+.rightstack__pane.is-dragging {
+  opacity: 0.45;
+}
+/*
+ * 插入指示线（1.4.0）。
+ *
+ * 用 `box-shadow: inset` 而不是往容器里插一个 2px 的 div：插节点会改变布局高度，
+ * 而 dragover 的「上/下半判定」依赖布局 → 指示线一出现就改变命中区域，
+ * 会出现指示线来回跳、拖不到目标位置的抖动。inset shadow 不占布局，天然无反馈回路。
+ */
+.rightstack__pane.is-drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.rightstack__pane.is-drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 /*
  * 末位区块不画下边框（1.1.9）。

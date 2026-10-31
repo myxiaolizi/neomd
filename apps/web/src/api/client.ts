@@ -681,8 +681,27 @@ export interface CommunityPluginDto {
   status: 'published' | 'pending' | 'rejected' | 'disabled';
   downloads: number;
   stars: number;
+  /** 1.4.0：后台可编辑的标签；无标签时服务端返回 `[]`，不会缺字段 */
+  tags?: string[];
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * 插件市场列表的响应（1.4.0 起支持分页）。
+ *
+ * **向后兼容**：不传 `page` / `pageSize` 时，服务端行为与 1.3.1 完全一致
+ * （一次性返回全量，LIMIT 200），因此 `total` / `hasMore` 可能为 undefined；
+ * 调用方按「没有这些字段就当作单页全量」处理即可。
+ */
+export interface PluginMarketResponse {
+  items: CommunityPluginDto[];
+  /** 当前筛选条件下的**真实** COUNT(*)，不是当前页长度 */
+  total?: number;
+  page?: number;
+  pageSize?: number;
+  /** `offset + items.length < total`，比 `page < ceil(total/pageSize)` 更稳 */
+  hasMore?: boolean;
 }
 
 /**
@@ -693,11 +712,21 @@ export interface CommunityPluginDto {
  * 私有化部署不提供应用商店。
  */
 export const pluginsApi = {
-  market: (query: { category?: string; search?: string } = {}) => {
+  /**
+   * 拉取插件市场列表。
+   *
+   * @param query.page     页码（1 起）。**不传则保持 1.3.1 的全量行为**
+   * @param query.pageSize 每页条数（服务端上限 100）
+   * @param query.category 分类筛选
+   * @param query.search   关键词搜索
+   */
+  market: (query: { category?: string; search?: string; page?: number; pageSize?: number } = {}) => {
     const q = new URLSearchParams();
     if (query.category) q.set('category', query.category);
     if (query.search) q.set('search', query.search);
-    return api<{ items: CommunityPluginDto[] }>(`/api/plugins/market?${q}`, { viaMarket: true });
+    if (typeof query.page === 'number' && Number.isFinite(query.page)) q.set('page', String(query.page));
+    if (typeof query.pageSize === 'number' && Number.isFinite(query.pageSize)) q.set('pageSize', String(query.pageSize));
+    return api<PluginMarketResponse>(`/api/plugins/market?${q}`, { viaMarket: true });
   },
   my: () =>
     api<{

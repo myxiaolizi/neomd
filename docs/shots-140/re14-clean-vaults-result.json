@@ -1,0 +1,29 @@
+{
+  "at": "2026-10-30T18:48:15.315Z",
+  "before": 10,
+  "after": 4,
+  "deleted": 6,
+  "failed": [],
+  "remaining": [
+    {
+      "vault_id": "vaultmvuqt3rn8ubd9num",
+      "name": "笔记本",
+      "doc_count": 700
+    },
+    {
+      "vault_id": "vaultmvs9ey2vkpj8q5jy",
+      "name": "Neo MD",
+      "doc_count": 436
+    },
+    {
+      "vault_id": "vaultmvp3augl2m72a0nw",
+      "name": "vaultmvp3augl2m72a0nw",
+      "doc_count": 298
+    },
+    {
+      "vault_id": "admin",
+      "name": "admin",
+      "doc_count": 192
+    }
+  ]
+}

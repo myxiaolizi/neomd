@@ -34,6 +34,16 @@ const emit = defineEmits<{
   openDaily: [string];
   /** 关闭本子窗口（1.1.9）：由 EditorPage 收到后从 rightPanelSections 移除本区块 */
   close: [];
+  /**
+   * 标题栏开始拖动（1.4.0 拖动排序）。
+   *
+   * 为什么不在这里自己排序：区块的上下顺序由 EditorPage 统一持有
+   * （`settings.layout.rightPanelSections`），单个区块组件不应知道兄弟区块的存在。
+   * 这里只把原生 DragEvent 原样抛上去，由父组件负责插入位置计算与持久化。
+   */
+  headerDragStart: [event: DragEvent];
+  /** 标题栏拖动结束（含被取消），父组件据此清掉拖拽态样式 */
+  headerDragEnd: [];
 }>();
 
 /* ---------------- 反向链接：扫描全库中的 [[当前标题]] ---------------- */
@@ -98,7 +108,19 @@ const titles: Record<string, string> = {
 
 <template>
   <section class="rsection">
-    <header class="rsection__head">
+    <!--
+      标题栏可拖动排序（1.4.0）。
+      `draggable` 直接加在 header 上，满足「拖动标题栏调整位置」的直觉；
+      标题栏内的关闭按钮显式 `draggable="false"`，避免从按钮上按下时
+      起一个拖拽而吞掉这一次点击。
+    -->
+    <header
+      class="rsection__head"
+      draggable="true"
+      :title="`拖动标题栏调整「${titles[section] ?? section}」的位置`"
+      @dragstart="emit('headerDragStart', $event)"
+      @dragend="emit('headerDragEnd')"
+    >
       <NmIcon :name="section === 'outline' ? 'outline' : section === 'backlinks' ? 'link' : section === 'tags' ? 'tag' : section === 'history' ? 'history' : section === 'stats' ? 'chart' : 'calendar'" :size="13" />
       <span class="rsection__label">{{ titles[section] ?? section }}</span>
       <!--
@@ -108,6 +130,7 @@ const titles: Record<string, string> = {
       -->
       <button
         class="rsection__close"
+        draggable="false"
         :title="`关闭「${titles[section] ?? section}」子窗口`"
         :aria-label="`关闭「${titles[section] ?? section}」子窗口`"
         @click="emit('close')"

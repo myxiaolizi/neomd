@@ -1,0 +1,68 @@
+{
+  "at": "2026-10-30T20:30:56.744Z",
+  "ghostIds": [
+    "vaultREBOUNDmvvfg1kgA",
+    "vaultREBOUNDmvvfg1kgB"
+  ],
+  "registryAfterPull": {
+    "ghostA": {
+      "vaultId": "vaultREBOUNDmvvfg1kgA",
+      "orphan": true,
+      "available": false,
+      "miss": 1,
+      "orphanSince": 1793392261064
+    },
+    "ghostB": {
+      "vaultId": "vaultREBOUNDmvvfg1kgB",
+      "orphan": true,
+      "available": false,
+      "miss": 1,
+      "orphanSince": 1793392261064
+    },
+    "syncableIds": [
+      "admin",
+      "vaultmvs9ey2vkpj8q5jy",
+      "vaultmvp3augl2m72a0nw",
+      "vaultmvuqt3rn8ubd9num"
+    ],
+    "orphanIds": [
+      "vaultREBOUNDmvvfg1kgA",
+      "vaultREBOUNDmvvfg1kgB"
+    ]
+  },
+  "sawOrphan": true,
+  "syncAllResult": {
+    "ok": true,
+    "r": {
+      "synced": 4,
+      "skipped": 0,
+      "budgetExhausted": false
+    }
+  },
+  "afterSync": {
+    "count": 4,
+    "ids": [
+      "admin",
+      "vaultmvuqt3rn8ubd9num",
+      "vaultmvp3augl2m72a0nw",
+      "vaultmvs9ey2vkpj8q5jy"
+    ],
+    "rebound": [],
+    "unexpected": []
+  },
+  "controlGroup": {
+    "status": 200,
+    "registered": true,
+    "countAfter": 5,
+    "ghostCtrl": "vaultREBOUNDCTRLmvvfgpjo"
+  },
+  "verdict": {
+    "antiReboundWorks": true,
+    "reboundMechanismExists": true,
+    "ghostAStillAbsent": true,
+    "ghostBStillAbsent": true,
+    "conclusion": "修复有效：orphan 条目未进入同步，未触发重新登记（对照组另行证明了反弹机制真实存在）"
+  },
+  "finalCount": 4,
+  "restored": true
+}

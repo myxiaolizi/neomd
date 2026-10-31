@@ -1,0 +1,347 @@
+{
+  "meta": {
+    "agent": "subagent-A",
+    "role": "独立取证员 A（只读，零源码改动）",
+    "measuredAtLocal": "2026-10-30T23:40:16+08:00",
+    "measuredAtUtc": "2026-10-30T15:40:16.323Z",
+    "finishedAtUtc": "2026-10-30T15:40:30.878Z",
+    "viewport": {
+      "width": 1600,
+      "height": 950
+    },
+    "environment": {
+      "webUrl": "http://127.0.0.1:5178/app",
+      "apiUrl": "http://127.0.0.1:3200",
+      "browser": "Playwright Chromium headless (--disable-gpu)"
+    },
+    "fileMtimes": {
+      "apps/web/src/components/layout/ResizeHandle.vue": {
+        "mtimeLocal": "2026-10-26T21:42:54.9451348+08:00",
+        "mtimeUtc": "2026-10-26T13:42:54.945Z",
+        "mtimeMs": 1793022174945.1348,
+        "sizeBytes": 7254
+      },
+      "apps/web/src/views/EditorPage.vue": {
+        "mtimeLocal": "2026-10-30T19:11:41.3142535+08:00",
+        "mtimeUtc": "2026-10-30T11:11:41.314Z",
+        "mtimeMs": 1793358701314.2534,
+        "sizeBytes": 173497
+      },
+      "apps/web/src/lib/local-layout.ts": {
+        "mtimeLocal": "2026-10-28T13:04:10.0914654+08:00",
+        "mtimeUtc": "2026-10-28T05:04:10.091Z",
+        "mtimeMs": 1793163850091.4653,
+        "sizeBytes": 9873
+      },
+      "apps/web/src/components/panels/right/RightSection.vue": {
+        "mtimeLocal": "2026-10-28T23:45:20.8377958+08:00",
+        "mtimeUtc": "2026-10-28T15:45:20.838Z",
+        "mtimeMs": 1793202320837.796,
+        "sizeBytes": 12365
+      },
+      "apps/web/src/components/panels/AiPanel.vue": {
+        "mtimeLocal": "2026-10-28T23:44:31.6962368+08:00",
+        "mtimeUtc": "2026-10-28T15:44:31.696Z",
+        "mtimeMs": 1793202271696.2368,
+        "sizeBytes": 42540
+      },
+      "apps/web/src/views/SettingsPage.vue": {
+        "mtimeLocal": "2026-10-30T18:53:12.4239264+08:00",
+        "mtimeUtc": "2026-10-30T10:53:12.424Z",
+        "mtimeMs": 1793357592423.9265,
+        "sizeBytes": 149409
+      }
+    },
+    "screenshots": [
+      "docs/evidence-140/shots/subagentA-split-v-drag30.png",
+      "docs/evidence-140/shots/subagentA-split-v-drag70.png",
+      "docs/evidence-140/shots/subagentA-split-h-drag30.png",
+      "docs/evidence-140/shots/subagentA-split-h-drag70.png",
+      "docs/evidence-140/shots/subagentA-right-open-3.png",
+      "docs/evidence-140/shots/subagentA-right-open-8.png"
+    ]
+  },
+  "defect1_splitResizeHandle": {
+    "title": "左右分屏、上下分屏中间的分隔条拖动不跟随鼠标（且移动方向完全相反、灵敏度被放大 W/100 或 H/100 倍）",
+    "rootCause": "双重根因叠加：(1) 量纲错配（px 直接加到百分比上）：ResizeHandle.vue 的 onMouseMove 计算的是鼠标像素增量 delta = current - startPos (px)，直接与 startValue 相加 emit('update', clampValue(startValue + delta))；而 EditorPage.vue 传入的 splitHandleValue 是百分比整数 Math.round(splitRatio * 100)（20~80），在 onSplitHandleUpdate(value) 中又直接做 value / 100。结果鼠标每移动 1px，splitRatio 就改变 1%（0.01），在 1300px 宽容器里分隔条跳跃 13px（灵敏度放大 13 倍，仅移动 ±30px 即撞死 20%/80% 边界），且 Math.round 还会引入 1% 阶梯量化抖动。(2) 绑定目标与方向反转（未传 invert 或绑错了栏）：注释写明「splitRatio：第一栏占可用空间的比例」，但模板第 2806 行却把 `:style=\"{ flex: `0 0 ${splitRatio * 100}%` }\"` 绑在了第二栏 `.shell__splitpane` 上（主栏 `.shell__content` 为 `flex: 1 1 0%`），且 `<ResizeHandle>` 未传 `invert`（invert=false）。导致鼠标向右（或向下）拖动 +delta px 时，splitRatio 增大，第二栏（右栏/下栏）变大、第一栏（左栏/上栏）反而缩小，分隔条向鼠标反方向飞出！",
+    "directionVerification": {
+      "verticalSplit_v": "左右分屏（direction='vertical', invert=false）：鼠标向右移 +5px，splitRatio 从 50% 变为 55%，因 flex 绑在右栏（第二栏），右栏宽度从 650px 增至 715px，左栏（第一栏）宽度从 650px 缩至 585px，分隔条实际向左跳了 -65px（与鼠标方向完全相反，偏差 -70px）。当鼠标从 50% (x=950) 向左拖到容器 30% (x=690, delta=-260px) 时，第一步 delta=-32.5px 就把 splitRatio 夹死到下限 20%，右栏缩到 260px、左栏涨到 1040px，分隔条跳到 x=1340（容器 80% 处），与鼠标目标位置 x=690 偏差高达 +650px。",
+      "horizontalSplit_h": "上下分屏（direction='horizontal', invert=false）：预期鼠标下移（+deltaY）应当放大第一栏（上栏）、分隔条跟随鼠标下移。实际实测：鼠标从 y=499 下移 +5px 到 y=504，splitRatio 从 50% 升至 55%，因 flex 绑在下栏（第二栏），下栏高度从 421px 涨到 463.09px，第一栏（上栏）高度反而从 421px 缩小到 378.91px，分隔条向上跳到 y=456.91（移动了 -42.09px，与鼠标偏差 -47.09px）。当鼠标从 50% (y=499) 向下拖到容器 70% (y=667.4, delta=+168.4px) 时，第 2 步即撞死 80% 上限，第一栏被压到 168.41px (20%)，分隔条停在 y=246.41，与鼠标 y=667.4 偏差达 -420.99px。"
+    },
+    "affectedLines": [
+      {
+        "file": "apps/web/src/components/layout/ResizeHandle.vue",
+        "lines": "78-100",
+        "code": "startPos = isVertical.value ? e.clientX : e.clientY; startValue = props.value; ... let delta = current - startPos; if (props.invert) delta = -delta; const next = clampValue(startValue + delta);",
+        "issue": "ResizeHandle 硬编码假定 props.value 与鼠标坐标同为 px 单位（1:1 相加）且 clampValue 强制 Math.round 取整。"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "2068-2074, 2121-2127",
+        "code": "const SPLIT_HANDLE_MIN = 20; const SPLIT_HANDLE_MAX = 80; const splitHandleValue = computed(() => Math.round(splitRatio.value * 100)); function onSplitHandleUpdate(value: number): void { onSplitRatio(value / 100); }",
+        "issue": "把 0.2~0.8 的比例乘 100 变成 20~80 的百分比整数喂给只认 px 的 ResizeHandle，导致 1px 鼠标位移 = 1% 容器尺寸变化。"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "2656-2662, 2787-2808, 3590-3596, 3630-3636",
+        "code": "<ResizeHandle :direction=\"splitDirection === 'h' ? 'horizontal' : 'vertical'\" :value=\"splitHandleValue\" :min=\"SPLIT_HANDLE_MIN\" :max=\"SPLIT_HANDLE_MAX\" :default-value=\"50\" @update=\"onSplitHandleUpdate\" /> ... <div class=\"shell__splitpane\" :style=\"{ flex: `0 0 ${splitRatio * 100}%` }\">",
+        "issue": "`.shell__content` 设了 `flex: 1 1 0%`，而 `flex: 0 0 ${splitRatio * 100}%` 绑在第二栏 `.shell__splitpane` 上，且 ResizeHandle 未传 invert，导致不论左右分屏还是上下分屏，拖动方向都与鼠标完全相反。"
+      }
+    ],
+    "measurements": [
+      {
+        "caseId": "split-v-micro-5px-steps",
+        "description": "左右分屏（容器宽 1300px，x: 300..1600）：从 50% (x=950) 起鼠标每次向右移动 +5px，共 8 步 (+40px)",
+        "containerRect": { "x": 300, "y": 78, "width": 1300, "height": 842 },
+        "initialHandleCenterX": 950,
+        "steps": [
+          { "step": 1, "mouseClientX": 955, "mouseDeltaPx": 5, "handleCenterX": 885, "handleActualDeltaPx": -65, "deviationFromMousePx": -70, "ariaValueNow": 55, "primaryWidthPx": 585, "splitPaneWidthPx": 715 },
+          { "step": 2, "mouseClientX": 960, "mouseDeltaPx": 10, "handleCenterX": 820, "handleActualDeltaPx": -130, "deviationFromMousePx": -140, "ariaValueNow": 60, "primaryWidthPx": 520, "splitPaneWidthPx": 780 },
+          { "step": 3, "mouseClientX": 965, "mouseDeltaPx": 15, "handleCenterX": 755, "handleActualDeltaPx": -195, "deviationFromMousePx": -210, "ariaValueNow": 65, "primaryWidthPx": 455, "splitPaneWidthPx": 845 },
+          { "step": 4, "mouseClientX": 970, "mouseDeltaPx": 20, "handleCenterX": 690, "handleActualDeltaPx": -260, "deviationFromMousePx": -280, "ariaValueNow": 70, "primaryWidthPx": 390, "splitPaneWidthPx": 910 },
+          { "step": 5, "mouseClientX": 975, "mouseDeltaPx": 25, "handleCenterX": 625, "handleActualDeltaPx": -325, "deviationFromMousePx": -350, "ariaValueNow": 75, "primaryWidthPx": 325, "splitPaneWidthPx": 975 },
+          { "step": 6, "mouseClientX": 980, "mouseDeltaPx": 30, "handleCenterX": 560, "handleActualDeltaPx": -390, "deviationFromMousePx": -420, "ariaValueNow": 80, "primaryWidthPx": 260, "splitPaneWidthPx": 1040 },
+          { "step": 7, "mouseClientX": 985, "mouseDeltaPx": 35, "handleCenterX": 560, "handleActualDeltaPx": -390, "deviationFromMousePx": -425, "ariaValueNow": 80, "primaryWidthPx": 260, "splitPaneWidthPx": 1040 },
+          { "step": 8, "mouseClientX": 990, "mouseDeltaPx": 40, "handleCenterX": 560, "handleActualDeltaPx": -390, "deviationFromMousePx": -430, "ariaValueNow": 80, "primaryWidthPx": 260, "splitPaneWidthPx": 1040 }
+        ]
+      },
+      {
+        "caseId": "split-v-drag-to-30pct",
+        "description": "左右分屏：从容器 50% (x=950) 分 8 步向左拖到容器 30% (x=690, 总位移 -260px)",
+        "containerRect": { "x": 300, "y": 78, "width": 1300, "height": 842 },
+        "initialHandleCenterX": 950,
+        "targetMouseClientX": 690,
+        "steps": [
+          { "step": 1, "mouseClientX": 917.5, "mouseDeltaPx": -32.5, "handleCenterX": 1340, "handleActualDeltaPx": 390, "deviationFromMousePx": 422.5, "ariaValueNow": 20, "primaryWidthPx": 1040, "splitPaneWidthPx": 260 },
+          { "step": 2, "mouseClientX": 885, "mouseDeltaPx": -65, "handleCenterX": 1340, "handleActualDeltaPx": 390, "deviationFromMousePx": 455, "ariaValueNow": 20, "primaryWidthPx": 1040, "splitPaneWidthPx": 260 },
+          { "step": 4, "mouseClientX": 820, "mouseDeltaPx": -130, "handleCenterX": 1340, "handleActualDeltaPx": 390, "deviationFromMousePx": 520, "ariaValueNow": 20, "primaryWidthPx": 1040, "splitPaneWidthPx": 260 },
+          { "step": 8, "mouseClientX": 690, "mouseDeltaPx": -260, "handleCenterX": 1340, "handleActualDeltaPx": 390, "deviationFromMousePx": 650, "ariaValueNow": 20, "primaryWidthPx": 1040, "splitPaneWidthPx": 260 }
+        ]
+      },
+      {
+        "caseId": "split-v-drag-to-70pct",
+        "description": "左右分屏：从容器 50% (x=950) 分 8 步向右拖到容器 70% (x=1210, 总位移 +260px)",
+        "containerRect": { "x": 300, "y": 78, "width": 1300, "height": 842 },
+        "initialHandleCenterX": 950,
+        "targetMouseClientX": 1210,
+        "steps": [
+          { "step": 1, "mouseClientX": 982.5, "mouseDeltaPx": 32.5, "handleCenterX": 560, "handleActualDeltaPx": -390, "deviationFromMousePx": -422.5, "ariaValueNow": 80, "primaryWidthPx": 260, "splitPaneWidthPx": 1040 },
+          { "step": 2, "mouseClientX": 1015, "mouseDeltaPx": 65, "handleCenterX": 560, "handleActualDeltaPx": -390, "deviationFromMousePx": -455, "ariaValueNow": 80, "primaryWidthPx": 260, "splitPaneWidthPx": 1040 },
+          { "step": 4, "mouseClientX": 1080, "mouseDeltaPx": 130, "handleCenterX": 560, "handleActualDeltaPx": -390, "deviationFromMousePx": -520, "ariaValueNow": 80, "primaryWidthPx": 260, "splitPaneWidthPx": 1040 },
+          { "step": 8, "mouseClientX": 1210, "mouseDeltaPx": 260, "handleCenterX": 560, "handleActualDeltaPx": -390, "deviationFromMousePx": -650, "ariaValueNow": 80, "primaryWidthPx": 260, "splitPaneWidthPx": 1040 }
+        ]
+      },
+      {
+        "caseId": "split-h-micro-5px-steps",
+        "description": "上下分屏（容器高 842px，y: 78..920）：从 50% (y=499) 起鼠标每次向下移动 +5px，共 8 步 (+40px)",
+        "containerRect": { "x": 300, "y": 78, "width": 1300, "height": 842 },
+        "initialHandleCenterY": 499,
+        "steps": [
+          { "step": 1, "mouseClientY": 504, "mouseDeltaPx": 5, "handleCenterY": 456.91, "handleActualDeltaPx": -42.09, "deviationFromMousePx": -47.09, "ariaValueNow": 55, "primaryHeightPx": 378.91, "splitPaneHeightPx": 463.09 },
+          { "step": 2, "mouseClientY": 509, "mouseDeltaPx": 10, "handleCenterY": 414.81, "handleActualDeltaPx": -84.19, "deviationFromMousePx": -94.19, "ariaValueNow": 60, "primaryHeightPx": 336.81, "splitPaneHeightPx": 505.19 },
+          { "step": 3, "mouseClientY": 514, "mouseDeltaPx": 15, "handleCenterY": 372.7, "handleActualDeltaPx": -126.3, "deviationFromMousePx": -141.3, "ariaValueNow": 65, "primaryHeightPx": 294.7, "splitPaneHeightPx": 547.3 },
+          { "step": 4, "mouseClientY": 519, "mouseDeltaPx": 20, "handleCenterY": 330.61, "handleActualDeltaPx": -168.39, "deviationFromMousePx": -188.39, "ariaValueNow": 70, "primaryHeightPx": 252.61, "splitPaneHeightPx": 589.39 },
+          { "step": 5, "mouseClientY": 524, "mouseDeltaPx": 25, "handleCenterY": 288.5, "handleActualDeltaPx": -210.5, "deviationFromMousePx": -235.5, "ariaValueNow": 75, "primaryHeightPx": 210.5, "splitPaneHeightPx": 631.5 },
+          { "step": 6, "mouseClientY": 529, "mouseDeltaPx": 30, "handleCenterY": 246.41, "handleActualDeltaPx": -252.59, "deviationFromMousePx": -282.59, "ariaValueNow": 80, "primaryHeightPx": 168.41, "splitPaneHeightPx": 673.59 },
+          { "step": 8, "mouseClientY": 539, "mouseDeltaPx": 40, "handleCenterY": 246.41, "handleActualDeltaPx": -252.59, "deviationFromMousePx": -292.59, "ariaValueNow": 80, "primaryHeightPx": 168.41, "splitPaneHeightPx": 673.59 }
+        ]
+      },
+      {
+        "caseId": "split-h-drag-to-30pct",
+        "description": "上下分屏：从容器 50% (y=499) 分 8 步向上拖到容器 30% (y=330.6, 总位移 -168.4px)",
+        "containerRect": { "x": 300, "y": 78, "width": 1300, "height": 842 },
+        "initialHandleCenterY": 499,
+        "targetMouseClientY": 330.6,
+        "steps": [
+          { "step": 1, "mouseClientY": 477.95, "mouseDeltaPx": -21.05, "handleCenterY": 684.25, "handleActualDeltaPx": 185.25, "deviationFromMousePx": 206.3, "ariaValueNow": 28, "primaryHeightPx": 606.25, "splitPaneHeightPx": 235.75 },
+          { "step": 2, "mouseClientY": 456.9, "mouseDeltaPx": -42.1, "handleCenterY": 751.61, "handleActualDeltaPx": 252.61, "deviationFromMousePx": 294.71, "ariaValueNow": 20, "primaryHeightPx": 673.61, "splitPaneHeightPx": 168.39 },
+          { "step": 4, "mouseClientY": 414.8, "mouseDeltaPx": -84.2, "handleCenterY": 751.61, "handleActualDeltaPx": 252.61, "deviationFromMousePx": 336.81, "ariaValueNow": 20, "primaryHeightPx": 673.61, "splitPaneHeightPx": 168.39 },
+          { "step": 8, "mouseClientY": 330.6, "mouseDeltaPx": -168.4, "handleCenterY": 751.61, "handleActualDeltaPx": 252.61, "deviationFromMousePx": 421.01, "ariaValueNow": 20, "primaryHeightPx": 673.61, "splitPaneHeightPx": 168.39 }
+        ]
+      },
+      {
+        "caseId": "split-h-drag-to-70pct",
+        "description": "上下分屏：从容器 50% (y=499) 分 8 步向下拖到容器 70% (y=667.4, 总位移 +168.4px)",
+        "containerRect": { "x": 300, "y": 78, "width": 1300, "height": 842 },
+        "initialHandleCenterY": 499,
+        "targetMouseClientY": 667.4,
+        "steps": [
+          { "step": 1, "mouseClientY": 520.05, "mouseDeltaPx": 21.05, "handleCenterY": 322.19, "handleActualDeltaPx": -176.81, "deviationFromMousePx": -197.86, "ariaValueNow": 71, "primaryHeightPx": 244.19, "splitPaneHeightPx": 597.81 },
+          { "step": 2, "mouseClientY": 541.1, "mouseDeltaPx": 42.1, "handleCenterY": 246.41, "handleActualDeltaPx": -252.59, "deviationFromMousePx": -294.69, "ariaValueNow": 80, "primaryHeightPx": 168.41, "splitPaneHeightPx": 673.59 },
+          { "step": 4, "mouseClientY": 583.2, "mouseDeltaPx": 84.2, "handleCenterY": 246.41, "handleActualDeltaPx": -252.59, "deviationFromMousePx": -336.79, "ariaValueNow": 80, "primaryHeightPx": 168.41, "splitPaneHeightPx": 673.59 },
+          { "step": 8, "mouseClientY": 667.4, "mouseDeltaPx": 168.4, "handleCenterY": 246.41, "handleActualDeltaPx": -252.59, "deviationFromMousePx": -420.99, "ariaValueNow": 80, "primaryHeightPx": 168.41, "splitPaneHeightPx": 673.59 }
+        ]
+      }
+    ],
+    "suggestedFix": [
+      "方案 A（推荐，最精准且零量化误差）：在 EditorPage.vue 中为 `.shell__panes` 绑定 `ref=\"panesEl\"`，或者在分屏 `ResizeHandle` 拖拽时直接按容器 `.shell__panes` 的实际像素宽高（`clientWidth` / `clientHeight`）换算：传入 `:value=\"Math.round(splitRatio * panesSizePx)\"`、`:min=\"Math.round(SPLIT_RATIO_MIN * panesSizePx)\"`、`:max=\"Math.round(SPLIT_RATIO_MAX * panesSizePx)\"`，并在 `@update=\"(px) => onSplitRatio(px / panesSizePx)\"` 中将像素还原为浮点比例 `splitRatio`（或者在 ResizeHandle.vue 新增可选 prop `containerSize?: number` / `mode?: 'px' | 'ratio'`，当测量父容器 `el.parentElement.getBoundingClientRect()` 时直接用 `(e.clientX - rect.left) / rect.width` 计算比例）。",
+      "方案 B（修方向反转，必做）：统一 `splitRatio` 的语义——既可以按注释把 `:style=\"{ flex: `0 0 ${splitRatio * 100}%` }\"` 改绑到第一栏（或让第二栏用 `:style=\"{ flex: `0 0 ${(1 - splitRatio) * 100}%` }\"`），也可以给分屏 `<ResizeHandle>` 传 `invert`（但把 `1 - splitRatio` 或把 `splitRatio` 绑到第一栏更符合直觉，因为鼠标右移/下移时 `splitRatio` 增大，正好代表第一栏从 30% -> 50% -> 70%）。"
+    ]
+  },
+  "defect2_rightSidebar": {
+    "title": "右侧栏 toggleRightSection 无上限多选（可全开 8 个导致严重溢出/末位挤压至 80px）且 enabledRightSections 强制按常量顺序重排、无任何拖拽排序能力",
+    "rootCause": "三处设计/实现缺失叠加：(1) 无数量上限：EditorPage.vue 的 `toggleRightSection(id)`（第 2224-2230 行）与 SettingsPage.vue 的 `toggleRightSection(sec)`（第 995-1000 行）在开启新区块时直接 `list.push(id)`，没有任何最大数量（如 MAX=3）校验或淘汰策略；实测可同时打开全部 8 个区块。(2) 顺序被强制覆盖：`enabledRightSections`（第 2218-2221 行）写死 `RIGHT_SECTIONS.map(s => s.id).filter(id => enabled.includes(id))`，即便 `settings.layout.rightPanelSections` 数组里保存了用户的点击顺序或自定义顺序，渲染时也会被无条件重置为 `RIGHT_SECTIONS` 常量顺序。(3) 零拖拽基础设施：`.righttabs__btn`、`.rightstack__pane`、`.rsection__head`（RightSection.vue 第 101 行）与 `.ai__head`（AiPanel.vue 第 636 行）均无 `draggable=\"true\"` 属性（DOM 实测 `draggableAttr: null, draggableProp: false, cursor: auto`），也没有任何 `dragstart` / `dragover` / `drop` 或 `mousedown` 排序事件处理。",
+    "affectedLines": [
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "2201-2230",
+        "code": "const enabledRightSections = computed<RightPanelSection[]>(() => { const enabled = settingsStore.settings.layout.rightPanelSections ?? []; return RIGHT_SECTIONS.map((s) => s.id).filter((id) => enabled.includes(id)); }); function toggleRightSection(id: RightPanelSection): void { ... if (idx >= 0) list.splice(idx, 1); else list.push(id); settingsStore.updateLayout({ rightPanelSections: list }); }",
+        "issue": "enabledRightSections 用 RIGHT_SECTIONS.map 过滤丢弃了 enabled 数组的顺序；toggleRightSection 直接 push 无上限控制。"
+      },
+      {
+        "file": "apps/web/src/views/EditorPage.vue",
+        "lines": "2274-2282, 3008-3109",
+        "code": "function rightPaneStyle(id: RightPanelSection, idx: number) ... <div class=\"rightstack nm-scroll\"><template v-for=\"(secId, idx) in enabledRightSections\" :key=\"secId\"><div class=\"rightstack__pane\" ...>",
+        "issue": "非末位区块全是 `flex: 0 0 auto` + 固定高度（380/300/220px），末位区块是 `flex: 1 1 0; min-height: 80px`；开满 8 个时总高度达 1860px（容器高 850px，溢出 1010px），末位区块（calendar）被死死压在 80px（扣掉 28px 标题栏只剩 52px 内容区）；且 `.rightstack__pane` 无任何 drag 事件。"
+      },
+      {
+        "file": "apps/web/src/components/panels/right/RightSection.vue",
+        "lines": "100-117",
+        "code": "<section class=\"rsection\"><header class=\"rsection__head\">...",
+        "issue": "子窗口标题栏 `.rsection__head` 无 `draggable` 属性、无拖拽手柄样式或拖拽事件转发。"
+      },
+      {
+        "file": "apps/web/src/components/panels/AiPanel.vue",
+        "lines": "635-680",
+        "code": "<aside class=\"ai\" ...><header class=\"ai__head\" :class=\"{ 'ai__head--section': Boolean(props.activeTab) }\">...",
+        "issue": "AI 助手与文件操作子窗口标题栏 `.ai__head--section` 同样无 `draggable` 属性或拖拽事件。"
+      },
+      {
+        "file": "apps/web/src/views/SettingsPage.vue",
+        "lines": "995-1000, 2216-2230",
+        "code": "function toggleRightSection(sec: RightPanelSection): void { const cur = rightPanelSections.value; const next = cur.includes(sec) ? cur.filter((x) => x !== sec) : [...cur, sec]; settingsStore.updateLayout({ rightPanelSections: next }); }",
+        "issue": "设置页「界面布局 → 右侧面板」有完全独立的第二个 `toggleRightSection` 入口，同样没有上限 3 限制，若只改 EditorPage 会被设置页绕过。"
+      }
+    ],
+    "measurements": [
+      {
+        "caseId": "right-panel-progressive-open-1-to-8",
+        "description": "在 1600x950 视口（.rightstack 容器可视高度 clientHeight = 850px）下，故意按逆序 [calendar, stats, history, tags, backlinks, outline, file, ai] 逐个点开全部 8 个区块",
+        "stackClientHeightPx": 850,
+        "records": [
+          {
+            "step": 1,
+            "clickedId": "calendar",
+            "activeCount": 1,
+            "storedOrderInSettings": ["calendar"],
+            "renderedDomOrder": ["calendar"],
+            "orderMatchesUserOrder": true,
+            "stackScrollHeightPx": 850,
+            "stackOverflowPx": 0,
+            "lastPaneHeightPx": 850
+          },
+          {
+            "step": 2,
+            "clickedId": "stats",
+            "activeCount": 2,
+            "storedOrderInSettings": ["calendar", "stats"],
+            "renderedDomOrder": ["stats", "calendar"],
+            "orderMatchesUserOrder": false,
+            "stackScrollHeightPx": 850,
+            "stackOverflowPx": 0,
+            "lastPaneHeightPx": 630
+          },
+          {
+            "step": 3,
+            "clickedId": "history",
+            "activeCount": 3,
+            "storedOrderInSettings": ["calendar", "stats", "history"],
+            "renderedDomOrder": ["history", "stats", "calendar"],
+            "orderMatchesUserOrder": false,
+            "stackScrollHeightPx": 850,
+            "stackOverflowPx": 0,
+            "lastPaneHeightPx": 410
+          },
+          {
+            "step": 4,
+            "clickedId": "tags",
+            "activeCount": 4,
+            "storedOrderInSettings": ["calendar", "stats", "history", "tags"],
+            "renderedDomOrder": ["tags", "history", "stats", "calendar"],
+            "orderMatchesUserOrder": false,
+            "stackScrollHeightPx": 850,
+            "stackOverflowPx": 0,
+            "lastPaneHeightPx": 190
+          },
+          {
+            "step": 5,
+            "clickedId": "backlinks",
+            "activeCount": 5,
+            "storedOrderInSettings": ["calendar", "stats", "history", "tags", "backlinks"],
+            "renderedDomOrder": ["backlinks", "tags", "history", "stats", "calendar"],
+            "orderMatchesUserOrder": false,
+            "stackScrollHeightPx": 960,
+            "stackOverflowPx": 110,
+            "lastPaneHeightPx": 80
+          },
+          {
+            "step": 6,
+            "clickedId": "outline",
+            "activeCount": 6,
+            "storedOrderInSettings": ["calendar", "stats", "history", "tags", "backlinks", "outline"],
+            "renderedDomOrder": ["outline", "backlinks", "tags", "history", "stats", "calendar"],
+            "orderMatchesUserOrder": false,
+            "stackScrollHeightPx": 1180,
+            "stackOverflowPx": 330,
+            "lastPaneHeightPx": 80
+          },
+          {
+            "step": 7,
+            "clickedId": "file",
+            "activeCount": 7,
+            "storedOrderInSettings": ["calendar", "stats", "history", "tags", "backlinks", "outline", "file"],
+            "renderedDomOrder": ["file", "outline", "backlinks", "tags", "history", "stats", "calendar"],
+            "orderMatchesUserOrder": false,
+            "stackScrollHeightPx": 1480,
+            "stackOverflowPx": 630,
+            "lastPaneHeightPx": 80
+          },
+          {
+            "step": 8,
+            "clickedId": "ai",
+            "activeCount": 8,
+            "storedOrderInSettings": ["calendar", "stats", "history", "tags", "backlinks", "outline", "file", "ai"],
+            "renderedDomOrder": ["ai", "file", "outline", "backlinks", "tags", "history", "stats", "calendar"],
+            "orderMatchesUserOrder": false,
+            "stackScrollHeightPx": 1860,
+            "stackOverflowPx": 1010,
+            "lastPaneHeightPx": 80,
+            "allPaneHeightsPx": {
+              "ai": 380,
+              "file": 300,
+              "outline": 220,
+              "backlinks": 220,
+              "tags": 220,
+              "history": 220,
+              "stats": 220,
+              "calendar": 80
+            }
+          }
+        ]
+      },
+      {
+        "caseId": "right-panel-drag-capability-audit",
+        "description": "检查右侧栏顶部 8 个图标按钮与下方 8 个子窗口标题栏的拖拽属性与样式",
+        "topToolbarButtonsDraggable": false,
+        "paneContainersDraggable": false,
+        "paneHeadersDraggable": false,
+        "details": "8 个 .righttabs__btn 的 getAttribute('draggable') 全为 null (draggable=false, cursor=pointer)；8 个 .rightstack__pane 及其内部 .rsection__head / .ai__head--section 的 getAttribute('draggable') 全为 null (draggable=false, cursor=auto)。没有任何 dragstart/dragover/drop 或 mousedown 排序绑定。"
+      }
+    ],
+    "suggestedFix": {
+      "prerequisites": [
+        "前提 1（数据源顺序保真）：`enabledRightSections`（EditorPage.vue:2218）必须改为以 `settingsStore.settings.layout.rightPanelSections` 的数组元素顺序为准（只用 `VALID_SET` 过滤合法 `RightPanelSection` 并去重），绝不能再用 `RIGHT_SECTIONS.map(s => s.id).filter(...)`！否则任何拖拽修改 `rightPanelSections` 顺序的操作都会在 computed 求值时被瞬间抹平。",
+        "前提 2（老数据与超限数据归一化）：老用户的 localStorage 或云端同步下来的 `rightPanelSections` 可能已经有 >3 个元素，读取/合并或 `enabledRightSections` 计算时需确定截断或兼容策略（例如 `.slice(0, 3)` 或在开启第 4 个时淘汰最早/最末项，或給出 toast 提示）。",
+        "前提 3（避免与 ResizeHandle 及内部交互冲突）：拖拽排序只能由子窗口标题栏（`.rsection__head` / `.ai__head--section`）或外层封套的头部触发，不能在整个 `.rightstack__pane` 上无条件开启 `draggable=\"true\"`（否则用户在 AI 输入框选文字、拖滚动条或拖下方 `ResizeHandle` 时会被 HTML5 drag 抢走事件）。并且参考 `EditorBar.vue:181` 的教训：标题栏的 `@mousedown` **绝不能调用 `preventDefault()`**，否则 Chromium/Electron 不会触发 `dragstart`。",
+        "前提 4（末位区块高度自适应规则复核）：`rightPaneStyle(secId, idx)`（EditorPage.vue:2274）对 `idx === enabledRightSections.length - 1` 使用 `flex: 1 1 0`（无下方的 `ResizeHandle`），而非末位使用 `getRightSectionHeight(secId)` 固定像素高度。当用户把原本在末位的区块拖到中间、或把中间区块拖到末位时，样式和手柄会根据新 `idx` 自动切换，这一点由于模板用 `:key=\"secId\"` + `idx` 判断是天然兼容的，但需确保被拖到非末位的新区块有合理的默认/记忆高度。"
+      ],
+      "functionsToModify": [
+        "1. `apps/web/src/views/EditorPage.vue` -> `enabledRightSections`（第 2218-2221 行）：改为按 `settingsStore.settings.layout.rightPanelSections` 原顺序映射并过滤合法 ID（如 `(settingsStore.settings.layout.rightPanelSections ?? []).filter(id => RIGHT_SECTIONS.some(s => s.id === id))`）。",
+        "2. `apps/web/src/views/EditorPage.vue` -> `toggleRightSection(id)`（第 2224-2230 行）：增加上限 3 逻辑（例如 `MAX_RIGHT_SECTIONS = 3`；当 `idx < 0` 且当前已满 3 个时，按产品要求阻止开启并 `app.notify('右侧栏最多同时开启 3 个窗口', 'info')` 或自动移除最早开启的一项 `list.shift()` 后再 `list.push(id)`）。",
+        "3. `apps/web/src/views/SettingsPage.vue` -> `toggleRightSection(sec)`（第 995-1000 行）及设置页文案（第 2216, 2229 行）：同步加上相同的上限 3 校验，防止用户从「设置 → 界面布局 → 右侧面板」绕过限制开满 8 个。",
+        "4. `apps/web/src/views/EditorPage.vue` -> 新增拖拽排序状态与处理函数（参考 `EditorBar.vue` 第 154-260 行的 `dragId` / `dropId` / `dropSide` 模式）：新增 `rightDragId`、`rightDropId`、`rightDropSide ('before' | 'after')` 及 `onRightPaneDragStart(secId, e)`、`onRightPaneDragOver(secId, e)`、`onRightPaneDrop(secId)`、`onRightPaneDragEnd()`，在 drop 时重排 `rightPanelSections` 数组并调用 `settingsStore.updateLayout({ rightPanelSections: nextOrder })`（若顶部图标栏 `.righttabs__btn` 也需跟随或可拖，可一并绑定）。",
+        "5. `apps/web/src/components/panels/right/RightSection.vue`（第 101 行 `.rsection__head`）与 `apps/web/src/components/panels/AiPanel.vue`（第 636 行 `.ai__head--section`）或 `EditorPage.vue` 的 `.rightstack__pane`（第 3032 行）：在标题栏加上 `draggable=\"true\"`、`cursor: grab`（关闭按钮 `@mousedown.stop` / `:draggable=\"false\"`），将 `dragstart` / `dragend` 抛给 `EditorPage.vue`，并在 `.rightstack__pane` 上处理 `dragover.prevent` 与 `drop` 高亮指示线。"
+      ]
+    }
+  }
+}

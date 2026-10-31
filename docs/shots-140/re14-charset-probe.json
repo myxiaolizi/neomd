@@ -1,0 +1,568 @@
+{
+  "at": "2026-10-30T16:12:27.997Z",
+  "diagnosis": "writepath-healthy",
+  "backup": {
+    "version": 350,
+    "naming": {
+      "mode": "datetime-input",
+      "template": "YY?MM?DD?HHMM-?input?",
+      "fallback": "???",
+      "confirmBeforeRename": true,
+      "aiPrompt": "????????????????? Markdown ??,???????????????\n??:\n1. ???????,????????????????;\n2. ?? 6-24 ???(?????????);\n3. ????????,????????;\n4. ???? / \\ : * ? \" < > | ?????????",
+      "appendAiSummary": true
+    },
+    "at": "2026-10-30T16:12:27.496Z"
+  },
+  "results": [
+    {
+      "id": "ascii-alnum",
+      "value": "ABC123",
+      "expectIntact": true,
+      "note": "基线：纯字母数字",
+      "actual": "ABC123",
+      "intact": true,
+      "cells": [
+        {
+          "i": 0,
+          "expected": "A",
+          "expectedCp": 65,
+          "actual": "A",
+          "same": true
+        },
+        {
+          "i": 1,
+          "expected": "B",
+          "expectedCp": 66,
+          "actual": "B",
+          "same": true
+        },
+        {
+          "i": 2,
+          "expected": "C",
+          "expectedCp": 67,
+          "actual": "C",
+          "same": true
+        },
+        {
+          "i": 3,
+          "expected": "1",
+          "expectedCp": 49,
+          "actual": "1",
+          "same": true
+        },
+        {
+          "i": 4,
+          "expected": "2",
+          "expectedCp": 50,
+          "actual": "2",
+          "same": true
+        },
+        {
+          "i": 5,
+          "expected": "3",
+          "expectedCp": 51,
+          "actual": "3",
+          "same": true
+        }
+      ],
+      "survived": [
+        "A",
+        "B",
+        "C",
+        "1",
+        "2",
+        "3"
+      ],
+      "replaced": [],
+      "putStatus": 200
+    },
+    {
+      "id": "ascii-braces",
+      "value": "AB{CD}EF",
+      "expectIntact": true,
+      "note": "花括号是 ASCII，字符集不会动它",
+      "actual": "AB{CD}EF",
+      "intact": true,
+      "cells": [
+        {
+          "i": 0,
+          "expected": "A",
+          "expectedCp": 65,
+          "actual": "A",
+          "same": true
+        },
+        {
+          "i": 1,
+          "expected": "B",
+          "expectedCp": 66,
+          "actual": "B",
+          "same": true
+        },
+        {
+          "i": 2,
+          "expected": "{",
+          "expectedCp": 123,
+          "actual": "{",
+          "same": true
+        },
+        {
+          "i": 3,
+          "expected": "C",
+          "expectedCp": 67,
+          "actual": "C",
+          "same": true
+        },
+        {
+          "i": 4,
+          "expected": "D",
+          "expectedCp": 68,
+          "actual": "D",
+          "same": true
+        },
+        {
+          "i": 5,
+          "expected": "}",
+          "expectedCp": 125,
+          "actual": "}",
+          "same": true
+        },
+        {
+          "i": 6,
+          "expected": "E",
+          "expectedCp": 69,
+          "actual": "E",
+          "same": true
+        },
+        {
+          "i": 7,
+          "expected": "F",
+          "expectedCp": 70,
+          "actual": "F",
+          "same": true
+        }
+      ],
+      "survived": [
+        "A",
+        "B",
+        "{",
+        "C",
+        "D",
+        "}",
+        "E",
+        "F"
+      ],
+      "replaced": [],
+      "putStatus": 200
+    },
+    {
+      "id": "cjk",
+      "value": "AB日CD",
+      "expectIntact": true,
+      "note": "中文",
+      "actual": "AB日CD",
+      "intact": true,
+      "cells": [
+        {
+          "i": 0,
+          "expected": "A",
+          "expectedCp": 65,
+          "actual": "A",
+          "same": true
+        },
+        {
+          "i": 1,
+          "expected": "B",
+          "expectedCp": 66,
+          "actual": "B",
+          "same": true
+        },
+        {
+          "i": 2,
+          "expected": "日",
+          "expectedCp": 26085,
+          "actual": "日",
+          "same": true
+        },
+        {
+          "i": 3,
+          "expected": "C",
+          "expectedCp": 67,
+          "actual": "C",
+          "same": true
+        },
+        {
+          "i": 4,
+          "expected": "D",
+          "expectedCp": 68,
+          "actual": "D",
+          "same": true
+        }
+      ],
+      "survived": [
+        "A",
+        "B",
+        "日",
+        "C",
+        "D"
+      ],
+      "replaced": [],
+      "putStatus": 200
+    },
+    {
+      "id": "filename-symbols",
+      "value": "AB-CD_EF.G",
+      "expectIntact": true,
+      "note": "常见文件名符号 - _ .",
+      "actual": "AB-CD_EF.G",
+      "intact": true,
+      "cells": [
+        {
+          "i": 0,
+          "expected": "A",
+          "expectedCp": 65,
+          "actual": "A",
+          "same": true
+        },
+        {
+          "i": 1,
+          "expected": "B",
+          "expectedCp": 66,
+          "actual": "B",
+          "same": true
+        },
+        {
+          "i": 2,
+          "expected": "-",
+          "expectedCp": 45,
+          "actual": "-",
+          "same": true
+        },
+        {
+          "i": 3,
+          "expected": "C",
+          "expectedCp": 67,
+          "actual": "C",
+          "same": true
+        },
+        {
+          "i": 4,
+          "expected": "D",
+          "expectedCp": 68,
+          "actual": "D",
+          "same": true
+        },
+        {
+          "i": 5,
+          "expected": "_",
+          "expectedCp": 95,
+          "actual": "_",
+          "same": true
+        },
+        {
+          "i": 6,
+          "expected": "E",
+          "expectedCp": 69,
+          "actual": "E",
+          "same": true
+        },
+        {
+          "i": 7,
+          "expected": "F",
+          "expectedCp": 70,
+          "actual": "F",
+          "same": true
+        },
+        {
+          "i": 8,
+          "expected": ".",
+          "expectedCp": 46,
+          "actual": ".",
+          "same": true
+        },
+        {
+          "i": 9,
+          "expected": "G",
+          "expectedCp": 71,
+          "actual": "G",
+          "same": true
+        }
+      ],
+      "survived": [
+        "A",
+        "B",
+        "-",
+        "C",
+        "D",
+        "_",
+        "E",
+        "F",
+        ".",
+        "G"
+      ],
+      "replaced": [],
+      "putStatus": 200
+    },
+    {
+      "id": "real-template",
+      "value": "YYMMDD日HHMM-{input}",
+      "expectIntact": true,
+      "note": "真实默认模板",
+      "actual": "YYMMDD日HHMM-{input}",
+      "intact": true,
+      "cells": [
+        {
+          "i": 0,
+          "expected": "Y",
+          "expectedCp": 89,
+          "actual": "Y",
+          "same": true
+        },
+        {
+          "i": 1,
+          "expected": "Y",
+          "expectedCp": 89,
+          "actual": "Y",
+          "same": true
+        },
+        {
+          "i": 2,
+          "expected": "M",
+          "expectedCp": 77,
+          "actual": "M",
+          "same": true
+        },
+        {
+          "i": 3,
+          "expected": "M",
+          "expectedCp": 77,
+          "actual": "M",
+          "same": true
+        },
+        {
+          "i": 4,
+          "expected": "D",
+          "expectedCp": 68,
+          "actual": "D",
+          "same": true
+        },
+        {
+          "i": 5,
+          "expected": "D",
+          "expectedCp": 68,
+          "actual": "D",
+          "same": true
+        },
+        {
+          "i": 6,
+          "expected": "日",
+          "expectedCp": 26085,
+          "actual": "日",
+          "same": true
+        },
+        {
+          "i": 7,
+          "expected": "H",
+          "expectedCp": 72,
+          "actual": "H",
+          "same": true
+        },
+        {
+          "i": 8,
+          "expected": "H",
+          "expectedCp": 72,
+          "actual": "H",
+          "same": true
+        },
+        {
+          "i": 9,
+          "expected": "M",
+          "expectedCp": 77,
+          "actual": "M",
+          "same": true
+        },
+        {
+          "i": 10,
+          "expected": "M",
+          "expectedCp": 77,
+          "actual": "M",
+          "same": true
+        },
+        {
+          "i": 11,
+          "expected": "-",
+          "expectedCp": 45,
+          "actual": "-",
+          "same": true
+        },
+        {
+          "i": 12,
+          "expected": "{",
+          "expectedCp": 123,
+          "actual": "{",
+          "same": true
+        },
+        {
+          "i": 13,
+          "expected": "i",
+          "expectedCp": 105,
+          "actual": "i",
+          "same": true
+        },
+        {
+          "i": 14,
+          "expected": "n",
+          "expectedCp": 110,
+          "actual": "n",
+          "same": true
+        },
+        {
+          "i": 15,
+          "expected": "p",
+          "expectedCp": 112,
+          "actual": "p",
+          "same": true
+        },
+        {
+          "i": 16,
+          "expected": "u",
+          "expectedCp": 117,
+          "actual": "u",
+          "same": true
+        },
+        {
+          "i": 17,
+          "expected": "t",
+          "expectedCp": 116,
+          "actual": "t",
+          "same": true
+        },
+        {
+          "i": 18,
+          "expected": "}",
+          "expectedCp": 125,
+          "actual": "}",
+          "same": true
+        }
+      ],
+      "survived": [
+        "Y",
+        "M",
+        "D",
+        "日",
+        "H",
+        "-",
+        "{",
+        "i",
+        "n",
+        "p",
+        "u",
+        "t",
+        "}"
+      ],
+      "replaced": [],
+      "putStatus": 200
+    },
+    {
+      "id": "ascii-punct",
+      "value": "AB CD:E*F?G",
+      "expectIntact": null,
+      "note": "空格与更多标点（对照组）",
+      "actual": "AB CD:E*F?G",
+      "intact": true,
+      "cells": [
+        {
+          "i": 0,
+          "expected": "A",
+          "expectedCp": 65,
+          "actual": "A",
+          "same": true
+        },
+        {
+          "i": 1,
+          "expected": "B",
+          "expectedCp": 66,
+          "actual": "B",
+          "same": true
+        },
+        {
+          "i": 2,
+          "expected": " ",
+          "expectedCp": 32,
+          "actual": " ",
+          "same": true
+        },
+        {
+          "i": 3,
+          "expected": "C",
+          "expectedCp": 67,
+          "actual": "C",
+          "same": true
+        },
+        {
+          "i": 4,
+          "expected": "D",
+          "expectedCp": 68,
+          "actual": "D",
+          "same": true
+        },
+        {
+          "i": 5,
+          "expected": ":",
+          "expectedCp": 58,
+          "actual": ":",
+          "same": true
+        },
+        {
+          "i": 6,
+          "expected": "E",
+          "expectedCp": 69,
+          "actual": "E",
+          "same": true
+        },
+        {
+          "i": 7,
+          "expected": "*",
+          "expectedCp": 42,
+          "actual": "*",
+          "same": true
+        },
+        {
+          "i": 8,
+          "expected": "F",
+          "expectedCp": 70,
+          "actual": "F",
+          "same": true
+        },
+        {
+          "i": 9,
+          "expected": "?",
+          "expectedCp": 63,
+          "actual": "?",
+          "same": true
+        },
+        {
+          "i": 10,
+          "expected": "G",
+          "expectedCp": 71,
+          "actual": "G",
+          "same": true
+        }
+      ],
+      "survived": [
+        "A",
+        "B",
+        " ",
+        "C",
+        "D",
+        ":",
+        "E",
+        "*",
+        "F",
+        "?",
+        "G"
+      ],
+      "replaced": [],
+      "putStatus": 200
+    }
+  ]
+}

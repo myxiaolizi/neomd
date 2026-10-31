@@ -1,0 +1,421 @@
+{
+  "at": "2026-10-30T18:45:03.933Z",
+  "user": {
+    "id": 1,
+    "username": "admin"
+  },
+  "reason": "1.4.0 需求10 清理前的 user_vaults 全表备份",
+  "rowCount": 10,
+  "rows": [
+    {
+      "vault_id": "vaultmvuqt3rn8ubd9num",
+      "name": "笔记本",
+      "doc_count": 700,
+      "bytes": 4021982,
+      "status": "active",
+      "last_synced_at": "2026-10-30 14:47:36",
+      "created_at": "2026-10-30 17:01:15",
+      "auto_registered": 0,
+      "auto_registered_at": null
+    },
+    {
+      "vault_id": "vaultmvs9ey2vkpj8q5jy",
+      "name": "Neo MD",
+      "doc_count": 436,
+      "bytes": 4302589,
+      "status": "active",
+      "last_synced_at": null,
+      "created_at": "2026-10-30 17:05:46",
+      "auto_registered": 0,
+      "auto_registered_at": null
+    },
+    {
+      "vault_id": "vaultmvp3augl2m72a0nw",
+      "name": "vaultmvp3augl2m72a0nw",
+      "doc_count": 298,
+      "bytes": 2184414,
+      "status": "active",
+      "last_synced_at": null,
+      "created_at": "2026-10-30 17:07:20",
+      "auto_registered": 0,
+      "auto_registered_at": null
+    },
+    {
+      "vault_id": "admin",
+      "name": "admin",
+      "doc_count": 192,
+      "bytes": 20581,
+      "status": "active",
+      "last_synced_at": "2026-10-30 18:35:54",
+      "created_at": "2026-10-30 17:25:20",
+      "auto_registered": 0,
+      "auto_registered_at": null
+    },
+    {
+      "vault_id": "vaultmvuu8x1gibxqzo06",
+      "name": "vaultmvuu8x1gibxqzo06",
+      "doc_count": 0,
+      "bytes": 0,
+      "status": "active",
+      "last_synced_at": null,
+      "created_at": "2026-10-31 02:20:17",
+      "auto_registered": 1,
+      "auto_registered_at": "2026-10-31 02:20:17"
+    },
+    {
+      "vault_id": "vaultmvuu69foaszoa8u9",
+      "name": "vaultmvuu69foaszoa8u9",
+      "doc_count": 0,
+      "bytes": 0,
+      "status": "active",
+      "last_synced_at": null,
+      "created_at": "2026-10-31 02:20:17",
+      "auto_registered": 1,
+      "auto_registered_at": "2026-10-31 02:20:17"
+    },
+    {
+      "vault_id": "vaultmvuvit17zdnnk53h",
+      "name": "vaultmvuvit17zdnnk53h",
+      "doc_count": 0,
+      "bytes": 0,
+      "status": "active",
+      "last_synced_at": null,
+      "created_at": "2026-10-31 02:20:17",
+      "auto_registered": 1,
+      "auto_registered_at": "2026-10-31 02:20:17"
+    },
+    {
+      "vault_id": "vaultmvuvie3ow1lmima1",
+      "name": "vaultmvuvie3ow1lmima1",
+      "doc_count": 0,
+      "bytes": 0,
+      "status": "active",
+      "last_synced_at": null,
+      "created_at": "2026-10-31 02:20:17",
+      "auto_registered": 1,
+      "auto_registered_at": "2026-10-31 02:20:17"
+    },
+    {
+      "vault_id": "vaultmvuwmdvqjn2nx9ua",
+      "name": "vaultmvuwmdvqjn2nx9ua",
+      "doc_count": 0,
+      "bytes": 0,
+      "status": "active",
+      "last_synced_at": null,
+      "created_at": "2026-10-31 02:20:17",
+      "auto_registered": 1,
+      "auto_registered_at": "2026-10-31 02:20:17"
+    },
+    {
+      "vault_id": "vaultmvuwofkdujt0qkd1",
+      "name": "vaultmvuwofkdujt0qkd1",
+      "doc_count": 0,
+      "bytes": 0,
+      "status": "active",
+      "last_synced_at": null,
+      "created_at": "2026-10-31 02:20:18",
+      "auto_registered": 1,
+      "auto_registered_at": "2026-10-31 02:20:18"
+    }
+  ],
+  "profiles": [
+    {
+      "vaultId": "vaultmvuqt3rn8ubd9num",
+      "name": "笔记本",
+      "docCount": 700,
+      "bytes": 4021982,
+      "status": "active",
+      "lastSyncedAt": "2026-10-30 14:47:36",
+      "createdAt": "2026-10-30 17:01:15",
+      "autoRegistered": 0,
+      "autoRegisteredAt": null,
+      "cloudObjectCount": null,
+      "allKeys": [],
+      "sampleKeys": [],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": true,
+      "nameEqualsId": false,
+      "verdict": "keep",
+      "reasons": [
+        "在硬编码保护名单（已知真实仓库）"
+      ]
+    },
+    {
+      "vaultId": "vaultmvs9ey2vkpj8q5jy",
+      "name": "Neo MD",
+      "docCount": 436,
+      "bytes": 4302589,
+      "status": "active",
+      "lastSyncedAt": null,
+      "createdAt": "2026-10-30 17:05:46",
+      "autoRegistered": 0,
+      "autoRegisteredAt": null,
+      "cloudObjectCount": null,
+      "allKeys": [],
+      "sampleKeys": [],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": false,
+      "verdict": "keep",
+      "reasons": [
+        "在硬编码保护名单（已知真实仓库）"
+      ]
+    },
+    {
+      "vaultId": "vaultmvp3augl2m72a0nw",
+      "name": "vaultmvp3augl2m72a0nw",
+      "docCount": 298,
+      "bytes": 2184414,
+      "status": "active",
+      "lastSyncedAt": null,
+      "createdAt": "2026-10-30 17:07:20",
+      "autoRegistered": 0,
+      "autoRegisteredAt": null,
+      "cloudObjectCount": null,
+      "allKeys": [],
+      "sampleKeys": [],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": true,
+      "verdict": "keep",
+      "reasons": [
+        "在硬编码保护名单（已知真实仓库）"
+      ]
+    },
+    {
+      "vaultId": "admin",
+      "name": "admin",
+      "docCount": 192,
+      "bytes": 20581,
+      "status": "active",
+      "lastSyncedAt": "2026-10-30 18:35:54",
+      "createdAt": "2026-10-30 17:25:20",
+      "autoRegistered": 0,
+      "autoRegisteredAt": null,
+      "cloudObjectCount": null,
+      "allKeys": [],
+      "sampleKeys": [],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": true,
+      "verdict": "keep",
+      "reasons": [
+        "在硬编码保护名单（已知真实仓库）"
+      ]
+    },
+    {
+      "vaultId": "vaultmvuu8x1gibxqzo06",
+      "name": "vaultmvuu8x1gibxqzo06",
+      "docCount": 0,
+      "bytes": 0,
+      "status": "active",
+      "lastSyncedAt": null,
+      "createdAt": "2026-10-31 02:20:17",
+      "autoRegistered": 1,
+      "autoRegisteredAt": "2026-10-31 02:20:17",
+      "cloudObjectCount": 3,
+      "allKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "sampleKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": true,
+      "verdict": "residue",
+      "reasons": [
+        "doc_count=0 且 bytes=0",
+        "云端 3 个对象，去掉系统文件后**只剩测试假数据**",
+        "无任何 manifest.json（真实仓库同步过必有）",
+        "无任何 versions/ 对象（真实编辑过必有历史版本）",
+        "从未有过真实内容（last_synced_at 来自测试脚本的同步调用，非用户编辑）",
+        "名称是自动生成形态 \"vaultmvuu8x1gibxqzo06\""
+      ]
+    },
+    {
+      "vaultId": "vaultmvuu69foaszoa8u9",
+      "name": "vaultmvuu69foaszoa8u9",
+      "docCount": 0,
+      "bytes": 0,
+      "status": "active",
+      "lastSyncedAt": null,
+      "createdAt": "2026-10-31 02:20:17",
+      "autoRegistered": 1,
+      "autoRegisteredAt": "2026-10-31 02:20:17",
+      "cloudObjectCount": 3,
+      "allKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "sampleKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": true,
+      "verdict": "residue",
+      "reasons": [
+        "doc_count=0 且 bytes=0",
+        "云端 3 个对象，去掉系统文件后**只剩测试假数据**",
+        "无任何 manifest.json（真实仓库同步过必有）",
+        "无任何 versions/ 对象（真实编辑过必有历史版本）",
+        "从未有过真实内容（last_synced_at 来自测试脚本的同步调用，非用户编辑）",
+        "名称是自动生成形态 \"vaultmvuu69foaszoa8u9\""
+      ]
+    },
+    {
+      "vaultId": "vaultmvuvit17zdnnk53h",
+      "name": "vaultmvuvit17zdnnk53h",
+      "docCount": 0,
+      "bytes": 0,
+      "status": "active",
+      "lastSyncedAt": null,
+      "createdAt": "2026-10-31 02:20:17",
+      "autoRegistered": 1,
+      "autoRegisteredAt": "2026-10-31 02:20:17",
+      "cloudObjectCount": 3,
+      "allKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "sampleKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": true,
+      "verdict": "residue",
+      "reasons": [
+        "doc_count=0 且 bytes=0",
+        "云端 3 个对象，去掉系统文件后**只剩测试假数据**",
+        "无任何 manifest.json（真实仓库同步过必有）",
+        "无任何 versions/ 对象（真实编辑过必有历史版本）",
+        "从未有过真实内容（last_synced_at 来自测试脚本的同步调用，非用户编辑）",
+        "名称是自动生成形态 \"vaultmvuvit17zdnnk53h\""
+      ]
+    },
+    {
+      "vaultId": "vaultmvuvie3ow1lmima1",
+      "name": "vaultmvuvie3ow1lmima1",
+      "docCount": 0,
+      "bytes": 0,
+      "status": "active",
+      "lastSyncedAt": null,
+      "createdAt": "2026-10-31 02:20:17",
+      "autoRegistered": 1,
+      "autoRegisteredAt": "2026-10-31 02:20:17",
+      "cloudObjectCount": 3,
+      "allKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "sampleKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": true,
+      "verdict": "residue",
+      "reasons": [
+        "doc_count=0 且 bytes=0",
+        "云端 3 个对象，去掉系统文件后**只剩测试假数据**",
+        "无任何 manifest.json（真实仓库同步过必有）",
+        "无任何 versions/ 对象（真实编辑过必有历史版本）",
+        "从未有过真实内容（last_synced_at 来自测试脚本的同步调用，非用户编辑）",
+        "名称是自动生成形态 \"vaultmvuvie3ow1lmima1\""
+      ]
+    },
+    {
+      "vaultId": "vaultmvuwmdvqjn2nx9ua",
+      "name": "vaultmvuwmdvqjn2nx9ua",
+      "docCount": 0,
+      "bytes": 0,
+      "status": "active",
+      "lastSyncedAt": null,
+      "createdAt": "2026-10-31 02:20:17",
+      "autoRegistered": 1,
+      "autoRegisteredAt": "2026-10-31 02:20:17",
+      "cloudObjectCount": 3,
+      "allKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "sampleKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": true,
+      "verdict": "residue",
+      "reasons": [
+        "doc_count=0 且 bytes=0",
+        "云端 3 个对象，去掉系统文件后**只剩测试假数据**",
+        "无任何 manifest.json（真实仓库同步过必有）",
+        "无任何 versions/ 对象（真实编辑过必有历史版本）",
+        "从未有过真实内容（last_synced_at 来自测试脚本的同步调用，非用户编辑）",
+        "名称是自动生成形态 \"vaultmvuwmdvqjn2nx9ua\""
+      ]
+    },
+    {
+      "vaultId": "vaultmvuwofkdujt0qkd1",
+      "name": "vaultmvuwofkdujt0qkd1",
+      "docCount": 0,
+      "bytes": 0,
+      "status": "active",
+      "lastSyncedAt": null,
+      "createdAt": "2026-10-31 02:20:18",
+      "autoRegistered": 1,
+      "autoRegisteredAt": "2026-10-31 02:20:18",
+      "cloudObjectCount": 3,
+      "allKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "sampleKeys": [
+        ".migrated",
+        "docs/selftest/1-deadbeef.md",
+        "docs/selftest/upload.md"
+      ],
+      "listOk": true,
+      "listError": null,
+      "nameHasCjk": false,
+      "nameEqualsId": true,
+      "verdict": "residue",
+      "reasons": [
+        "doc_count=0 且 bytes=0",
+        "云端 3 个对象，去掉系统文件后**只剩测试假数据**",
+        "无任何 manifest.json（真实仓库同步过必有）",
+        "无任何 versions/ 对象（真实编辑过必有历史版本）",
+        "从未有过真实内容（last_synced_at 来自测试脚本的同步调用，非用户编辑）",
+        "名称是自动生成形态 \"vaultmvuwofkdujt0qkd1\""
+      ]
+    }
+  ]
+}

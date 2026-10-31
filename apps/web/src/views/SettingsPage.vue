@@ -7,7 +7,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useAppStore } from '@/stores/app';
 import { AIClient, detectRuntime, getBridge, defaultSettings, DEFAULT_TOOLBAR_ITEMS, DEFAULT_AI_TITLE_PROMPT } from '@neomd/core';
 import { AI_PRESETS, STORAGE_PRESETS, getStoragePreset, getAIPreset, type RightPanelSection, type Settings } from '@neomd/shared';
-import { useLocalLayout } from '@/lib/local-layout';
+import { RIGHT_SECTION_LIMIT, toggleRightSectionWithLimit, useLocalLayout } from '@/lib/local-layout';
 import {
   settingsApi,
   profileApi,
@@ -31,11 +31,14 @@ import {
   allThemes,
   blankCustomTheme,
   createThemeId,
+  findTheme,
   getTheme,
   isCustomTheme,
   normalizeTheme,
   resolveTheme,
+  scopedThemeVars,
   themeVars,
+  type EditorColorScheme,
   type ThemePreset,
 } from '@neomd/shared';
 
@@ -161,21 +164,101 @@ onBeforeUnmount(() => {
   narrowQuery?.removeEventListener?.('change', onNarrowChange);
 });
 
-/* --------------------------- 设置对象兜底读取 --------------------------- */
+/* ------------------------------------------------------------------ */
+/* 草稿模式（1.4.0，需求 16）                                          */
+/*                                                                     */
+/* ## 语义                                                             */
+/*                                                                     */
+/* 1. 进入设置页 → 把当前 `settings` **深拷贝**成 `draft`（快照）；      */
+/* 2. 所有控件只改 `draft`，**不写 store、不推云端**；                   */
+/* 3. 底部固定「取消 / 保存」栏：                                      */
+/*    - 保存 → `commitDraft()` 一次性合并进 store（含 applyTheme + 云推送）*/
+/*    - 取消 → 丢弃草稿，界面回到 store 里的正式值；                    */
+/* 4. 有未保存改动时关闭标签页会提示（`beforeunload` + 页面内确认）。     */
+/*                                                                     */
+/* ## 「实时预览」开关（默认开）                                        */
+/*                                                                     */
+/* 主题类改动需要「所见即所调」，否则调色盘毫无意义。预览走              */
+/* `settingsStore.previewAppearance(draft.appearance)`：只改 `<html>` 上的 */
+/* CSS 变量，**不进 store、不推云端**。关掉预览后必须点保存才看得到效果。  */
+/* ------------------------------------------------------------------ */
 
-const storage = computed(() => settingsStore.settings.storage ?? FALLBACK.storage);
-const ai = computed(() => settingsStore.settings.ai ?? FALLBACK.ai);
-const appearance = computed(() => settingsStore.settings.appearance ?? FALLBACK.appearance);
-const naming = computed(() => settingsStore.settings.naming ?? FALLBACK.naming);
+/** 深拷贝设置（草稿与 store 必须彻底隔离，否则改了 draft 就等于改了 store） */
+function cloneSettings(source: Settings): Settings {
+  return JSON.parse(JSON.stringify(source)) as Settings;
+}
+
+/**
+ * 从 store 生成「完整可编辑的草稿」。
+ *
+ * 为什么要把 `secrets` 合进来：网页端密钥类字段**只留在内存**
+ * （`persist()` 写 localStorage 前会清空 `accessKeySecret` / `aiKey`），
+ * 因此 `settings.storage.accessKeySecret` 读回来总是空串，密钥输入框会空白 ——
+ * 它们的真实值在 store 的 `secrets` 里。
+ */
+function draftFromStore(): Settings {
+  const draftValue = cloneSettings(settingsStore.settings);
+  const secrets = settingsStore.secrets;
+  draftValue.storage.accessKeySecret = secrets.storageSecret ?? draftValue.storage.accessKeySecret ?? '';
+  draftValue.storage.accessKeyId = secrets.storageKeyId || draftValue.storage.accessKeyId || '';
+  draftValue.ai.apiKey = secrets.aiKey ?? draftValue.ai.apiKey ?? '';
+  return draftValue;
+}
+
+/** 当前编辑中的草稿（onMounted 时快照；永远不会是 null，初始化给一份空结构兜底） */
+const draft = ref<Settings>(draftFromStore());
+/** 「保存成功时的基线」：用于判断草稿是否有未保存改动 */
+const draftBaseline = ref<string>(JSON.stringify(draft.value));
+
+/** 实时预览开关（主题类改动是否即时反映到界面，不进 store） */
+const livePreview = ref(true);
+
+/** 草稿相对基线的差异（逐分区比对，便于提示「改了哪几块」） */
+const draftDiffKeys = computed<string[]>(() => {
+  const before = JSON.parse(draftBaseline.value) as Settings;
+  const now = draft.value;
+  const keys: string[] = [];
+  const labels: Record<string, string> = {
+    appearance: '外观与主题',
+    layout: '界面布局',
+    naming: '新建命名',
+    autosave: '自动保存',
+    storage: '对象存储',
+    ai: 'AI',
+    sync: '同步与版本',
+    shortcuts: '快捷键',
+    localVault: '本地仓库',
+    knowledge: '知识库',
+    shareStyle: '分享样式',
+    diagram: '图表',
+  };
+  for (const key of Object.keys(labels)) {
+    const a = JSON.stringify((before as unknown as Record<string, unknown>)[key]);
+    const b = JSON.stringify((now as unknown as Record<string, unknown>)[key]);
+    if (a !== b) keys.push(labels[key] as string);
+  }
+  return keys;
+});
+
+/** 是否有未保存改动 */
+const draftDirty = computed(() => draftDiffKeys.value.length > 0);
+
+/* --------------------------- 设置对象兜底读取 --------------------------- */
+/* 所有读取都走草稿：控件显示的是「将要保存的值」，不是「已经保存的值」。 */
+
+const storage = computed(() => draft.value.storage ?? FALLBACK.storage);
+const ai = computed(() => draft.value.ai ?? FALLBACK.ai);
+const appearance = computed(() => draft.value.appearance ?? FALLBACK.appearance);
+const naming = computed(() => draft.value.naming ?? FALLBACK.naming);
 const autosave = computed(
-  () => settingsStore.settings.autosave ?? FALLBACK.autosave ?? { enabled: true, versionMinutes: 5, versionChars: 300 },
+  () => draft.value.autosave ?? FALLBACK.autosave ?? { enabled: true, versionMinutes: 5, versionChars: 300 },
 );
-const layout = computed(() => settingsStore.settings.layout ?? FALLBACK.layout);
-const sync = computed(() => settingsStore.settings.sync ?? FALLBACK.sync);
-const shortcuts = computed(() => settingsStore.settings.shortcuts ?? []);
+const layout = computed(() => draft.value.layout ?? FALLBACK.layout);
+const sync = computed(() => draft.value.sync ?? FALLBACK.sync);
+const shortcuts = computed(() => draft.value.shortcuts ?? []);
 
 /** 本地仓库落盘策略（仅 PC 端有效） */
-const localVault = computed(() => settingsStore.settings.localVault ?? FALLBACK.localVault ?? { root: '', keepVersions: false });
+const localVault = computed(() => draft.value.localVault ?? FALLBACK.localVault ?? { root: '', keepVersions: false });
 const activeVaultPath = computed(() => app.vaultLocation ?? '');
 const canPickDirectory = computed(() => runtime.platform === 'desktop' && Boolean(getBridge()?.dialog?.pickDirectory));
 
@@ -272,8 +355,7 @@ const orderedToolbarDefs = computed(() => {
 function toggleToolbarItem(id: string): void {
   const cur = [...toolbarItems.value];
   const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-  settingsStore.updateLayout({ toolbarItems: next });
-  flashSaved();
+  patchLayout({ toolbarItems: next });
 }
 
 /** 设置页工具栏按钮拖拽排序（1.1.9：移除点击上下箭头调整，统一改为拖拽调整） */
@@ -315,8 +397,8 @@ function onTbDrop(_e: DragEvent, targetId: string): void {
     const insertAt = side === 'after' ? targetIdx + 1 : targetIdx;
     cur.splice(insertAt, 0, from);
   }
-  settingsStore.updateLayout({ toolbarItems: cur });
-  flashSaved('已调整工具栏顺序');
+  patchLayout({ toolbarItems: cur });
+  flashSaved('已调整工具栏顺序（点「保存」生效）');
 }
 
 function onTbDragEnd(): void {
@@ -326,31 +408,258 @@ function onTbDragEnd(): void {
 }
 
 function resetToolbarItems(): void {
-  settingsStore.updateLayout({ toolbarItems: [...DEFAULT_TOOLBAR_ITEMS] });
-  flashSaved('已恢复默认工具栏顺序');
+  patchLayout({ toolbarItems: [...DEFAULT_TOOLBAR_ITEMS] });
+  flashSaved('已恢复默认工具栏顺序（点「保存」生效）');
 }
 
 function updateAutosave(patch: Partial<{ enabled: boolean; versionMinutes: number; versionChars: number }>): void {
-  settingsStore.update({ autosave: { ...autosave.value, ...patch } });
-  flashSaved();
+  draft.value.autosave = { ...autosave.value, ...patch };
+  flashSaved('草稿已更新，点「保存」生效');
 }
 
-/** 统一的外观改动入口：写入 + 即时反馈 */
+/**
+ * 统一的外观改动入口（**只写草稿**，需求 16）。
+ *
+ * 改完由 `scheduleLivePreview()` 决定要不要立刻把草稿反映到 CSS 变量上 ——
+ * 那一步只碰 `<html>` 的变量，不写 store、不推云端。
+ */
 function patchAppearance(patch: Partial<typeof appearance.value>): void {
-  settingsStore.updateAppearance(patch);
-  flashSaved();
+  draft.value.appearance = { ...appearance.value, ...patch };
+  scheduleLivePreview();
+  flashSaved('草稿已更新，点「保存」生效');
 }
 
-/** 统一的布局改动入口：写入 + 即时反馈 */
+/** 统一的布局改动入口（只写草稿） */
 function patchLayout(patch: Partial<typeof layout.value>): void {
-  settingsStore.updateLayout(patch);
-  flashSaved();
+  draft.value.layout = { ...layout.value, ...patch };
+  flashSaved('草稿已更新，点「保存」生效');
 }
 
-/** 统一的设置改动入口：写入 + 即时反馈 */
-function patchSettings(patch: Parameters<typeof settingsStore.update>[0]): void {
-  settingsStore.update(patch);
-  flashSaved();
+/** 统一的设置改动入口（只写草稿） */
+function patchSettings(patch: Partial<Settings>): void {
+  draft.value = mergeDraftPatch(draft.value, patch);
+  flashSaved('草稿已更新，点「保存」生效');
+}
+
+/**
+ * 把 `Partial<Settings>` 浅合并进草稿（嵌套分区逐键合并，数组整体替换）。
+ *
+ * 不复用 `@neomd/core` 的 `mergeSettings()`：那个函数带「保留本地密钥不被空值覆盖」
+ * 与「naming 乱码纠偏」等**同步语义**，用在草稿上会导致「清空密钥」这类操作
+ * 在草稿里被静默撤销，用户点了保存却发现密钥还在。
+ */
+function mergeDraftPatch(base: Settings, patch: Partial<Settings>): Settings {
+  const out = { ...base } as Settings;
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined || value === null) continue;
+    const current = (base as unknown as Record<string, unknown>)[key];
+    if (
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value) &&
+      current &&
+      typeof current === 'object' &&
+      !Array.isArray(current)
+    ) {
+      (out as unknown as Record<string, unknown>)[key] = {
+        ...(current as Record<string, unknown>),
+        ...(value as Record<string, unknown>),
+      };
+    } else {
+      (out as unknown as Record<string, unknown>)[key] = value;
+    }
+  }
+  return out;
+}
+
+/* --------------------- 草稿：预览 / 保存 / 取消（需求 16） --------------------- */
+
+/**
+ * 深比较两个值（数组按整体比较，对象逐键递归）。
+ *
+ * 用途：算出「草稿相对基线真正改了什么」。见 `buildDraftDelta()` 的注释。
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== typeof b) return false;
+  if (a === null || b === null) return false;
+  if (typeof a !== 'object') return false;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return false;
+    if (a.length !== b.length) return false;
+    return a.every((v, i) => deepEqual(v, b[i]));
+  }
+  const ao = a as Record<string, unknown>;
+  const bo = b as Record<string, unknown>;
+  const keys = new Set([...Object.keys(ao), ...Object.keys(bo)]);
+  for (const k of keys) {
+    if (!deepEqual(ao[k], bo[k])) return false;
+  }
+  return true;
+}
+
+/**
+ * 递归取差集：只保留 `next` 与 `base` 不同的叶子。
+ *
+ * ## 为什么必须只提交差集（不能整份提交草稿）
+ *
+ * 草稿是「进入设置页时的快照」，而 `onMounted` 里同时会调
+ * `settingsStore.requestCloudPull()` —— 拉取通常在这之后完成。
+ * 也就是说：**草稿从诞生那一刻起就可能是旧的**。
+ *
+ * 如果保存时把整份草稿 merge 回 store，会带来两个后果：
+ *   1. 拉取刚下来的云端值（另一台设备改的字体/主题/布局）被本端旧快照覆盖；
+ *   2. 更糟的是这些字段还会因为「与保存前的 store 值不同」被 `commitDraft()`
+ *      标进 pending 集合、反过来推回云端 —— 等于把别人的改动抹掉。
+ *
+ * 只提交差集就等价于「用户真的动过的那几项」，其余一切尊重当前 store（含云端新值）。
+ */
+function diffObjects(base: unknown, next: unknown): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (
+    !next ||
+    typeof next !== 'object' ||
+    Array.isArray(next) ||
+    !base ||
+    typeof base !== 'object' ||
+    Array.isArray(base)
+  ) {
+    return out;
+  }
+  const bo = base as Record<string, unknown>;
+  const no = next as Record<string, unknown>;
+  for (const key of Object.keys(no)) {
+    const bv = bo[key];
+    const nv = no[key];
+    if (deepEqual(bv, nv)) continue;
+    // 两侧都是普通对象 → 继续下钻；否则当作叶子整体写入
+    const bothPlainObjects =
+      nv &&
+      typeof nv === 'object' &&
+      !Array.isArray(nv) &&
+      bv &&
+      typeof bv === 'object' &&
+      !Array.isArray(bv);
+    if (bothPlainObjects) {
+      const sub = diffObjects(bv, nv);
+      if (Object.keys(sub).length) out[key] = sub;
+    } else {
+      out[key] = nv;
+    }
+  }
+  return out;
+}
+
+/** 草稿相对基线的差集（顶层键 + 各分区内变化的字段） */
+function buildDraftDelta(): Partial<Settings> {
+  const base = JSON.parse(draftBaseline.value) as unknown;
+  const delta = diffObjects(base, draft.value) as Partial<Settings>;
+  // 运行期字段不参与提交：cloudVersion 由 store 维护，updatedAt 由 store 打时间戳
+  delete (delta as Record<string, unknown>).cloudVersion;
+  delete (delta as Record<string, unknown>).updatedAt;
+  return delta;
+}
+
+/**
+ * 是否允许实时预览当前改动。
+ *
+ * 只有 `appearance` 的变化值得预览（就是那些 CSS 变量）。布局/命名/存储等
+ * 改动即使预览了也看不出来，所以这里只对 appearance 走预览通道。
+ */
+let previewTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** 防抖预览：连续调色时不要每一帧都重算 26 个变量 */
+function scheduleLivePreview(): void {
+  if (!livePreview.value) return;
+  if (previewTimer) clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => {
+    previewTimer = null;
+    settingsStore.previewAppearance(draft.value.appearance);
+  }, 60);
+}
+
+/** 立即把当前草稿外观刷新到 CSS 变量（开启预览时） */
+function refreshLivePreview(): void {
+  if (previewTimer) {
+    clearTimeout(previewTimer);
+    previewTimer = null;
+  }
+  if (livePreview.value) settingsStore.previewAppearance(draft.value.appearance);
+  else settingsStore.previewAppearance(null);
+}
+
+watch(livePreview, () => refreshLivePreview());
+
+/**
+ * 保存草稿：把**差集**提交到 store（`commitDraft` 内部负责 applyTheme + 云推送）。
+ *
+ * 敏感字段单独传：草稿里的 `accessKeySecret` / `aiKey` 是从 `secrets` 合并进来的，
+ * 提交时也要同步回 `secrets`，否则「改完密钥点保存」在网页端会丢（只在内存里）。
+ * 它们只在**确实被改过**时才传，避免没动密钥的一次保存把 store 里的密钥写空。
+ */
+function saveDraft(): void {
+  const delta = buildDraftDelta();
+  const base = JSON.parse(draftBaseline.value) as Settings;
+  /*
+   * 密钥类字段：`commitDraft` 走 secretsPatch 通道写入，避免被 mergeSettings 的
+   * 「保留本地密钥不被空值覆盖」语义吃掉（清空密钥是个合法操作）。
+   * 只有变化时才传 —— 否则「保存一个只改了字体的草稿」会把密钥重置成草稿里那份
+   * （草稿那份来自 mount 时的 secrets，若期间重新登录过就是旧值）。
+   */
+  const secretsChanged: {
+    storageKeyId?: string;
+    storageSecret?: string;
+    aiKey?: string;
+  } = {};
+  if (!deepEqual(base.storage?.accessKeyId, draft.value.storage?.accessKeyId)) {
+    secretsChanged.storageKeyId = draft.value.storage?.accessKeyId ?? '';
+  }
+  if (!deepEqual(base.storage?.accessKeySecret, draft.value.storage?.accessKeySecret)) {
+    secretsChanged.storageSecret = draft.value.storage?.accessKeySecret ?? '';
+  }
+  if (!deepEqual(base.ai?.apiKey, draft.value.ai?.apiKey)) {
+    secretsChanged.aiKey = draft.value.ai?.apiKey ?? '';
+  }
+  delete (delta.storage as Partial<Settings['storage']> | undefined)?.accessKeySecret;
+  delete (delta.ai as Partial<Settings['ai']> | undefined)?.apiKey;
+
+  settingsStore.commitDraft(delta, Object.keys(secretsChanged).length ? secretsChanged : undefined);
+  // 回落一份「干净的草稿」：重新从 store 快照一次（含刚拉取的云端新值），
+  // 保证基线 = 当前正式值，脏标记归零
+  draft.value = draftFromStore();
+  draftBaseline.value = JSON.stringify(draft.value);
+  settingsStore.previewAppearance(null);
+  flashSaved('设置已保存');
+}
+
+/** 取消：丢弃草稿，界面回到 store 里的正式值 */
+function cancelDraft(): void {
+  draft.value = draftFromStore();
+  draftBaseline.value = JSON.stringify(draft.value);
+  // 取消后界面必须回到「已保存」的外观（预览期间 <html> 上是草稿色）
+  settingsStore.previewAppearance(null);
+  flashSaved('已放弃未保存的改动');
+}
+
+/** 恢复本页草稿为出厂默认（只改草稿，仍需点保存才生效） */
+function resetDraftToDefault(): void {
+  const fresh = draftFromStore();
+  const defaults = defaultSettings();
+  // 只重置「设置项」，保留严格本地 / 运行期字段
+  draft.value = {
+    ...fresh,
+    appearance: { ...defaults.appearance, customThemes: fresh.appearance.customThemes },
+    layout: { ...defaults.layout },
+    naming: { ...defaults.naming },
+    autosave: {
+      enabled: defaults.autosave?.enabled ?? fresh.autosave?.enabled ?? true,
+      versionMinutes: defaults.autosave?.versionMinutes ?? fresh.autosave?.versionMinutes ?? 5,
+      versionChars: defaults.autosave?.versionChars ?? fresh.autosave?.versionChars ?? 300,
+    },
+    shortcuts: [...defaults.shortcuts],
+  };
+  refreshLivePreview();
+  flashSaved('草稿已恢复默认，点「保存」生效');
 }
 
 /* ------------------------------ 表单校验 ------------------------------ */
@@ -438,7 +747,7 @@ function openWebAccountCenter(): void {
 function onProviderChange(id: string): void {
   const preset = getStoragePreset(id as typeof storage.value.provider);
   const region = preset.regions[0]?.id ?? '';
-  settingsStore.update({
+  patchSettings({
     storage: {
       ...storage.value,
       provider: id as typeof storage.value.provider,
@@ -449,19 +758,18 @@ function onProviderChange(id: string): void {
   });
   probeResult.value = '';
   probeSteps.value = [];
-  flashSaved('已切换服务商');
+  flashSaved('已切换服务商（点「保存」生效）');
 }
 
 function onRegionChange(region: string): void {
   const preset = getStoragePreset(storage.value.provider);
-  settingsStore.update({ storage: { ...storage.value, region, endpoint: preset.endpointFor(region) } });
-  flashSaved();
+  patchSettings({ storage: { ...storage.value, region, endpoint: preset.endpointFor(region) } });
 }
 
 function onAIProviderChange(id: string): void {
   const preset = getAIPreset(id as typeof ai.value.provider);
   const isPlatform = id === 'platform';
-  settingsStore.update({
+  patchSettings({
     ai: {
       ...ai.value,
       provider: id as typeof ai.value.provider,
@@ -474,7 +782,7 @@ function onAIProviderChange(id: string): void {
   modelList.value = [];
   modelSource.value = '';
   aiTestResult.value = '';
-  flashSaved('已切换供应商');
+  flashSaved('已切换供应商（点「保存」生效）');
 }
 
 /* ---------------------------- AI 供应商展示元数据（1.1.7） ---------------------------- */
@@ -617,7 +925,7 @@ const platformEstimate = computed(() => {
 
 /** 切换平台模型：写入 ai.model，并同步一个安全范围内的温度 / maxTokens */
 function onPlatformModelChange(m: PlatformModelDto): void {
-  settingsStore.update({
+  patchSettings({
     ai: {
       ...ai.value,
       provider: 'platform',
@@ -628,7 +936,7 @@ function onPlatformModelChange(m: PlatformModelDto): void {
       maxTokens: Math.min(Number(ai.value.maxTokens ?? 4096), m.maxTokens),
     },
   });
-  flashSaved(`已切换到 ${m.model}`);
+  flashSaved(`已切换到 ${m.model}（点「保存」生效）`);
 }
 
 /** 展示用的模型数量 */
@@ -715,14 +1023,14 @@ function applyModelList(models: string[], message: string): void {
   const existing = ai.value.models.filter((m) => models.includes(m));
   const defaultM = models.includes(ai.value.model) ? ai.value.model : (models[0] ?? ai.value.model);
   const nextSelected = existing.length ? existing : defaultM ? [defaultM] : [];
-  settingsStore.update({ ai: { ...ai.value, models: nextSelected, model: defaultM } });
+  settingsStore.previewAppearance(null);
+  draft.value = mergeDraftPatch(draft.value, { ai: { ...ai.value, models: nextSelected, model: defaultM } });
 }
 
 function toggleModel(m: string): void {
   const cur = ai.value.models ?? [];
   const list = cur.includes(m) ? cur.filter((x) => x !== m) : [...cur, m];
-  settingsStore.update({ ai: { ...ai.value, models: list } });
-  flashSaved();
+  patchSettings({ ai: { ...ai.value, models: list } });
 }
 
 /* --------------------------- 对象存储检测 --------------------------- */
@@ -920,6 +1228,14 @@ async function pullFromCloud(): Promise<void> {
     if (sensitive?.storage?.accessKeySecret) settingsStore.setSecret('storage', sensitive.storage.accessKeySecret);
     if (sensitive?.storage?.accessKeyId) settingsStore.setStorageKeyId(sensitive.storage.accessKeyId);
     if (sensitive?.ai?.apiKey) settingsStore.setSecret('ai', sensitive.ai.apiKey);
+    /*
+     * 云端恢复是「整份覆盖」动作：草稿必须跟着刷新，否则页面还显示旧值、
+     * 用户再点一次「保存」会把刚恢复的云端设置又推回本端旧值。
+     * 这里同时把基线推进到新值，脏标记归零。
+     */
+    draft.value = draftFromStore();
+    draftBaseline.value = JSON.stringify(draft.value);
+    settingsStore.previewAppearance(null);
     saveMessageOk.value = true;
     saveMessage.value = '已从云端恢复设置。';
   } catch (e) {
@@ -977,7 +1293,7 @@ function toggleRibbonItem(id: string): void {
   const items = ribbonItems.value.includes(id)
     ? ribbonItems.value.filter((x) => x !== id)
     : [...ribbonItems.value, id];
-  settingsStore.updateLayout({ ribbonItems: items });
+  patchLayout({ ribbonItems: items });
   flashSaved();
 }
 
@@ -992,74 +1308,78 @@ const RIGHT_SECTION_OPTIONS: Array<{ id: RightPanelSection; label: string }> = [
   { id: 'calendar', label: '日历' },
 ];
 
+/**
+ * 切换右侧栏区块的开启状态。
+ *
+ * 1.4.0：改为走 `toggleRightSectionWithLimit()`，与 EditorPage 的右侧栏开关条
+ * **共用同一份上限语义**（最多 `RIGHT_SECTION_LIMIT` 个、超出时挤掉最上方一个）。
+ * 改前这里是无上限 push，用户能在设置页把 8 个区块全打开，绕过编辑器那边的限制 ——
+ * `.rightstack` 溢出后末位区块只剩 52px 可见，等于开了也用不了。
+ */
 function toggleRightSection(sec: RightPanelSection): void {
-  const cur = rightPanelSections.value;
-  const next = cur.includes(sec) ? cur.filter((x) => x !== sec) : [...cur, sec];
-  settingsStore.updateLayout({ rightPanelSections: next });
-  flashSaved();
+  const { list, evicted } = toggleRightSectionWithLimit(rightPanelSections.value, sec, RIGHT_SECTION_LIMIT);
+  patchLayout({ rightPanelSections: list });
+  if (evicted) {
+    const label = RIGHT_SECTION_OPTIONS.find((o) => o.id === evicted)?.label ?? evicted;
+    app.notify(
+      `右侧栏最多同时显示 ${RIGHT_SECTION_LIMIT} 个，已自动关闭最上方的「${label}」以腾出位置`,
+      'info',
+      3600,
+    );
+  }
 }
 
 /* --------------------------- 危险操作（需确认） --------------------------- */
 
-/** 清空对象存储密钥 */
+/** 清空对象存储密钥（只改草稿，保存后生效） */
 function clearStorageSecrets(): void {
   askConfirm({
     title: '清空对象存储密钥',
     message: '将清空已保存的 AccessKey ID 与 AccessKey Secret，云端同步的密钥也会被覆盖。确定继续？',
     confirmText: '清空密钥',
     action: () => {
-      settingsStore.setStorageKeyId('');
-      settingsStore.setSecret('storage', '');
+      draft.value.storage = { ...draft.value.storage, accessKeyId: '', accessKeySecret: '' };
       resetProbe();
-      flashSaved('已清空存储密钥');
+      flashSaved('已清空存储密钥（点「保存」生效）');
     },
   });
 }
 
-/** 清空 AI API Key */
+/** 清空 AI API Key（只改草稿，保存后生效） */
 function clearAiKey(): void {
   askConfirm({
     title: '清空 AI API Key',
     message: '将清空已保存的 AI API Key，之后无法再调用第三方 AI 服务（平台积分模式不受影响）。确定继续？',
     confirmText: '清空 Key',
     action: () => {
-      settingsStore.setSecret('ai', '');
+      draft.value.ai = { ...draft.value.ai, apiKey: '' };
       resetAiTest();
-      flashSaved('已清空 AI Key');
+      flashSaved('已清空 AI Key（点「保存」生效）');
     },
   });
 }
 
-/** 重置全部快捷键 */
+/** 重置全部快捷键（只改草稿，保存后生效） */
 function resetShortcuts(): void {
   askConfirm({
     title: '重置快捷键',
-    message: '将清空所有自定义快捷键绑定，恢复为默认组合键。此操作不可撤销。',
+    message: '将清空所有自定义快捷键绑定，恢复为默认组合键。此操作在点「保存」后生效。',
     confirmText: '重置快捷键',
     action: () => {
-      settingsStore.update({ shortcuts: FALLBACK.shortcuts });
-      flashSaved('已重置快捷键');
+      draft.value.shortcuts = [...FALLBACK.shortcuts];
+      flashSaved('已重置快捷键（点「保存」生效）');
     },
   });
 }
 
-/** 恢复全部设置为默认值（保留账号与密钥） */
+/** 恢复全部设置为默认值（保留账号与密钥；只改草稿，保存后生效） */
 function resetAllSettings(): void {
   askConfirm({
     title: '恢复默认设置',
     message: '将把外观、命名、布局、快捷键、插件开关等全部恢复为默认值；对象存储与 AI 的账号密钥不会被清除。确定继续？',
     confirmText: '恢复默认',
     action: () => {
-      settingsStore.update({
-        appearance: FALLBACK.appearance,
-        naming: FALLBACK.naming,
-        autosave: FALLBACK.autosave,
-        layout: FALLBACK.layout,
-        shortcuts: FALLBACK.shortcuts,
-        enabledPlugins: { ...FALLBACK.enabledPlugins },
-        sync: { ...sync.value },
-      });
-      flashSaved('已恢复默认设置');
+      resetDraftToDefault();
     },
   });
 }
@@ -1114,11 +1434,9 @@ function onCaptureKey(e: KeyboardEvent, command: string): void {
   else if (main.length === 1) main = main.toUpperCase();
   parts.push(main);
   const combo = parts.join('+');
-  settingsStore.update({
-    shortcuts: shortcuts.value.map((s) => (s.command === command ? { ...s, keys: [combo] } : s)),
-  });
+  draft.value.shortcuts = shortcuts.value.map((s) => (s.command === command ? { ...s, keys: [combo] } : s));
   captureCommand.value = null;
-  flashSaved('快捷键已更新');
+  flashSaved('快捷键已更新（点「保存」生效）');
 }
 
 /**
@@ -1265,31 +1583,84 @@ function resetFontSettings(): void {
 
 /* ------------------------ 主题（1.1.1 重构为可操作版） ------------------------ */
 
-/** 选中并应用某个主题预设 */
+/**
+ * 选中某个主题预设。
+ *
+ * 1.4.0：只写**草稿**（含「主题 accent 镜像到 appearance.accent」），
+ * 由 `scheduleLivePreview()` 立即预览；点「保存」才真正落 store + 推云端。
+ *
+ * 为什么不再调 `settingsStore.applyThemePreset()`：那个方法会立刻写 store、
+ * 落 localStorage、推云端，与「保存按钮」语义直接冲突（需求 16）。
+ * 它内部做的四件事这里逐项搬到草稿上：
+ *   1. `theme` 跟随主题明暗；
+ *   2. `themePresetId` 指向新主题；
+ *   3. `accent` 镜像主题强调色；
+ *   4. 旧版正文字段（editorColorScheme / customEditorBg / customEditorFg）同步，
+ *      否则 EditorPage 里残留的旧内联色会盖住新主题变量。
+ */
 function applyTheme(id: string): void {
-  settingsStore.applyThemePreset(id);
-  flashSaved('主题已应用');
+  const theme = findTheme(id, appearance.value.customThemes);
+  if (!theme) return;
+  patchAppearance({
+    theme: theme.mode,
+    themePresetId: theme.id,
+    accent: theme.accent,
+    editorColorScheme: PRESET_TO_LEGACY_SCHEME[theme.id] ?? 'custom',
+    customEditorBg: theme.contentBg,
+    customEditorFg: theme.contentFg,
+  });
+  flashSaved(`已选择「${theme.name}」（点「保存」生效）`);
 }
 
-/** 删除自定义主题（内置主题不可删） */
+/** 删除自定义主题（内置主题不可删；只改草稿） */
 function removeTheme(t: ThemePreset): void {
   if (!isCustomTheme(t)) return;
-  const list = (settingsStore.settings.appearance.customThemes ?? []).filter((x) => x.id !== t.id);
-  settingsStore.updateAppearance({ customThemes: list });
-  // 若删的是当前主题，回退到内置默认
-  if (settingsStore.activeTheme.id === t.id) settingsStore.applyThemePreset(DEFAULT_THEME_ID);
-  flashSaved('已删除自定义主题');
+  const list = (appearance.value.customThemes ?? []).filter((x) => x.id !== t.id);
+  const wasActive = currentTheme.value.id === t.id;
+  if (wasActive) {
+    const fallback = getTheme(DEFAULT_THEME_ID);
+    draft.value.appearance = {
+      ...appearance.value,
+      customThemes: list,
+      ...(fallback
+        ? {
+            theme: fallback.mode,
+            themePresetId: fallback.id,
+            accent: fallback.accent,
+            editorColorScheme: PRESET_TO_LEGACY_SCHEME[fallback.id] ?? 'custom',
+            customEditorBg: fallback.contentBg,
+            customEditorFg: fallback.contentFg,
+          }
+        : {}),
+    };
+  } else {
+    draft.value.appearance = { ...appearance.value, customThemes: list };
+  }
+  scheduleLivePreview();
+  flashSaved('已删除自定义主题（点「保存」生效）');
 }
 
 const customThemeOpen = ref(false);
 const themeImportOpen = ref(false);
 const themeImportText = ref('');
 
-/** 当前生效主题（内置或自定义） */
-const currentTheme = computed<ThemePreset>(() => settingsStore.activeTheme);
+/**
+ * 当前生效主题（内置或自定义）—— **按草稿计算**。
+ *
+ * 这里不再读 `settingsStore.activeTheme`：草稿模式下用户点了主题卡片但还没保存，
+ * 预览区、卡片高亮、颜色细化面板都必须显示「草稿里选中的那套」，
+ * 否则界面自相矛盾（卡片高亮已变、预览还是旧主题）。
+ */
+const currentTheme = computed<ThemePreset>(() => {
+  const prefersDark =
+    typeof window !== 'undefined'
+      ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false)
+      : false;
+  return resolveTheme(appearance.value, { prefersDark });
+});
 
-/** 主题库（内置 + 自定义） */
-const themeCards = computed<ThemePreset[]>(() => allThemes(settingsStore.settings.appearance.customThemes));
+/** 主题库（内置 + 自定义；按草稿的 customThemes） */
+const themeCards = computed<ThemePreset[]>(() => allThemes(appearance.value.customThemes));
 
 /** 当前主题是否为自定义（可编辑颜色 / 可删除） */
 const currentIsCustom = computed(() => isCustomTheme(currentTheme.value));
@@ -1297,10 +1668,10 @@ const currentIsCustom = computed(() => isCustomTheme(currentTheme.value));
 /**
  * 颜色细化编辑的**本地草稿**。
  *
- * 为什么用草稿而不是直接改 settings：
- * - 内置主题不可写（用户改内置主题不该污染内置定义），必须「复制为新主题」才落地；
- * - 自定义主题改色时逐字符输入，直接写 store 会让主题卡片频繁重排；
- * - 草稿让「实时预览」与「保存」解耦：预览用草稿，落盘走显式保存。
+ * 为什么在「设置草稿」之上还要再来一层颜色草稿：
+ * - 内置主题不可写（用户改内置主题不该污染内置定义），必须「存为新主题」才落地；
+ * - 自定义主题改色时逐字符输入，直接改外层草稿会让主题卡片频繁重排；
+ * - 这层草稿让「颜色预览」与「写入主题」解耦：预览用这一层，落盘走显式按钮。
  */
 interface ColorDraft {
   contentBg: string;
@@ -1322,7 +1693,7 @@ function draftFromTheme(t: ThemePreset): ColorDraft {
 
 const colorDraft = ref<ColorDraft>(draftFromTheme(resolveTheme(settingsStore.settings.appearance)));
 
-/** 切换主题后把草稿同步为新主题的值（否则预览与卡片不一致） */
+/** 切换主题后把颜色草稿同步为新主题的值（否则预览与卡片不一致） */
 watch(
   () => currentTheme.value.id,
   () => {
@@ -1330,8 +1701,13 @@ watch(
   },
 );
 
-/** 草稿是否有未保存改动 */
-const draftDirty = computed(() => {
+/**
+ * 颜色草稿是否有未保存改动（相对当前主题）。
+ *
+ * 注意与设置页顶层的 `draftDirty`（整份设置的脏标记）区分开：
+ * 那个决定底部「保存」按钮是否可用，这个决定「存为新主题 / 保存配色」按钮是否可用。
+ */
+const colorDraftDirty = computed(() => {
   const t = currentTheme.value;
   const d = colorDraft.value;
   return (
@@ -1351,11 +1727,25 @@ function resetDraftColors(): void {
 }
 
 /**
+ * 主色调预设色板（1.4.0 从「通用」页签搬到「主题」，见需求 14）。
+ *
+ * 为什么保留这几个固定色而不是给自由取色器：主色调要驱动
+ * `--accent-hover` / `--accent-weak` / `--bg-active` / `--sky` 等一串派生变量，
+ * 任意色相都可能与某些主题的纸张色撞在一起（对比度崩掉）；
+ * 这 5 个是跨 10 套内置主题都验过可用的。
+ */
+const ACCENT_SWATCHES: readonly string[] = ['#1677FF', '#0E9F6E', '#7C4DFF', '#FF8A3D', '#E5484D'];
+
+/**
  * 应用范围：主题影响哪些部分。
  *
  * 存储位置说明：这是**本机 UI 偏好**（不改颜色本身），因此只放 localStorage，
  * 不进 settings（避免为了一个开关就触发云端推送）。默认「整体」。
  * key 与 `stores/settings.ts` 的 `THEME_SCOPE_STORAGE_KEY` 共用，保证 store 重算时读到同一份值。
+ *
+ * 1.4.0：切换范围属于「必须立即生效」的本机偏好（它决定配色覆盖到哪儿，
+ * 与草稿里「选了哪套主题」是两件事），因此仍即时重算，不进草稿。
+ * 重算时把**草稿外观**一起带上，避免「预览中切范围」被正式值覆盖。
  */
 const themeScope = ref<ThemeScope>(readThemeScope());
 watch(themeScope, (v) => {
@@ -1364,23 +1754,35 @@ watch(themeScope, (v) => {
   } catch {
     /* 忽略 */
   }
-  // 写 data 属性便于排查；真正的覆盖范围由 store 的 applyThemeVars() 决定
+  // 写 data 属性便于排查；真正的覆盖范围由 store 的 scopedThemeVars() 决定
   if (typeof document !== 'undefined') document.documentElement.dataset.themeScope = v;
-  // 立即重算（先清空再按新范围写），否则界面上看不到范围切换效果
-  settingsStore.reapplyTheme();
+  // 立即重算：按新范围把「主题值 / 中性基线」重新写到 <html>
+  settingsStore.previewAppearance(draft.value.appearance);
 });
 
-/** 把草稿颜色落地：内置主题 → 复制为新自定义主题；自定义主题 → 原地更新 */
+/**
+ * 把颜色草稿落地到**设置草稿**：内置主题 → 复制为新自定义主题；
+ * 自定义主题 → 原地更新。仍需点底部「保存」才真正写 store + 推云端。
+ *
+ * ## 需求 13 的根因在这里
+ *
+ * 改前这里调 `settingsStore.applyThemePreset(currentTheme.value.id)`，
+ * 而 `applyThemePreset()` 会把 `appearance.accent` **覆写成主题自带 accent**；
+ * 随后 `applyThemeVars()` 又「只要 appearance.accent 有值就拿它覆盖主题 accent」——
+ * 于是颜色细化里改的强调色被上一轮的主题值吞掉。
+ * 现在强调色的优先级在 store 里已经区分「用户显式改色 vs 主题镜像」，
+ * 并且这里写完草稿会立刻走 `scheduleLivePreview()`，改完就能看见效果。
+ */
 function saveDraftColors(): void {
   const d = colorDraft.value;
-  const list = [...(settingsStore.settings.appearance.customThemes ?? [])];
+  const list = [...(appearance.value.customThemes ?? [])];
   if (currentIsCustom.value) {
     const idx = list.findIndex((t) => t.id === currentTheme.value.id);
     if (idx >= 0) {
       list[idx] = { ...list[idx]!, ...d };
-      settingsStore.updateAppearance({ customThemes: list });
-      settingsStore.applyThemePreset(currentTheme.value.id);
-      flashSaved('已保存自定义主题配色');
+      draft.value.appearance = { ...appearance.value, customThemes: list, accent: d.accent };
+      scheduleLivePreview();
+      flashSaved('配色已写入草稿，点「保存」生效');
       return;
     }
   }
@@ -1394,12 +1796,21 @@ function saveDraftColors(): void {
     builtin: false,
   };
   list.push(theme);
-  settingsStore.updateAppearance({ customThemes: list });
-  settingsStore.applyThemePreset(theme.id);
-  flashSaved('已保存为新的自定义主题');
+  draft.value.appearance = {
+    ...appearance.value,
+    customThemes: list,
+    theme: theme.mode,
+    themePresetId: theme.id,
+    accent: theme.accent,
+    editorColorScheme: PRESET_TO_LEGACY_SCHEME[theme.id] ?? 'custom',
+    customEditorBg: theme.contentBg,
+    customEditorFg: theme.contentFg,
+  };
+  scheduleLivePreview();
+  flashSaved('已存为新主题（草稿），点「保存」生效');
 }
 
-/** 把当前配色存为新主题（复制一份，不动原主题） */
+/** 把当前配色存为新主题（复制一份，不动原主题；写入草稿） */
 function duplicateAsTheme(): void {
   const base = { ...currentTheme.value, ...colorDraft.value };
   const theme: ThemePreset = {
@@ -1408,17 +1819,23 @@ function duplicateAsTheme(): void {
     name: `${currentTheme.value.name} 副本`,
     builtin: false,
   };
-  settingsStore.updateAppearance({
-    customThemes: [...(settingsStore.settings.appearance.customThemes ?? []), theme],
-  });
-  settingsStore.applyThemePreset(theme.id);
-  flashSaved('已复制为新主题');
+  draft.value.appearance = {
+    ...appearance.value,
+    customThemes: [...(appearance.value.customThemes ?? []), theme],
+    theme: theme.mode,
+    themePresetId: theme.id,
+    accent: theme.accent,
+    editorColorScheme: PRESET_TO_LEGACY_SCHEME[theme.id] ?? 'custom',
+    customEditorBg: theme.contentBg,
+    customEditorFg: theme.contentFg,
+  };
+  scheduleLivePreview();
+  flashSaved('已复制为新主题（草稿），点「保存」生效');
 }
 
-/** 重置为内置默认主题（日光白） */
+/** 重置为内置默认主题（日光白；只改草稿） */
 function resetToDefaultTheme(): void {
-  settingsStore.applyThemePreset(DEFAULT_THEME_ID);
-  flashSaved('已重置为内置默认主题');
+  applyTheme(DEFAULT_THEME_ID);
 }
 
 const themeDraft = ref<ThemePreset>(blankCustomTheme(BUILTIN_THEMES[0]));
@@ -1429,7 +1846,7 @@ function openNewTheme(): void {
   customThemeOpen.value = true;
 }
 
-/** 保存自定义主题并立即应用 */
+/** 保存自定义主题（写入草稿，仍需点底部「保存」） */
 function saveCustomTheme(): void {
   const name = themeDraft.value.name.trim();
   if (!name) {
@@ -1437,16 +1854,25 @@ function saveCustomTheme(): void {
     return;
   }
   const theme: ThemePreset = { ...themeDraft.value, name, builtin: false };
-  const list = [...(settingsStore.settings.appearance.customThemes ?? []), theme];
-  settingsStore.updateAppearance({ customThemes: list });
-  settingsStore.applyThemePreset(theme.id);
+  draft.value.appearance = {
+    ...appearance.value,
+    customThemes: [...(appearance.value.customThemes ?? []), theme],
+    theme: theme.mode,
+    themePresetId: theme.id,
+    accent: theme.accent,
+    editorColorScheme: PRESET_TO_LEGACY_SCHEME[theme.id] ?? 'custom',
+    customEditorBg: theme.contentBg,
+    customEditorFg: theme.contentFg,
+  };
+  colorDraft.value = draftFromTheme(theme);
+  scheduleLivePreview();
   customThemeOpen.value = false;
-  flashSaved('已保存并应用自定义主题');
+  flashSaved('已保存并应用自定义主题（草稿），点「保存」生效');
 }
 
-/** 导出全部自定义主题为 JSON（下载文件） */
+/** 导出全部自定义主题为 JSON（下载文件；以草稿为准） */
 function exportThemes(): void {
-  const list = settingsStore.settings.appearance.customThemes ?? [];
+  const list = appearance.value.customThemes ?? [];
   if (!list.length) {
     flashSaved('还没有自定义主题可导出');
     return;
@@ -1461,7 +1887,7 @@ function exportThemes(): void {
   flashSaved('主题已导出');
 }
 
-/** 从粘贴的 JSON 导入自定义主题（走 normalizeTheme 容错，脏数据不写库） */
+/** 从粘贴的 JSON 导入自定义主题（走 normalizeTheme 容错，脏数据不进草稿） */
 function importThemes(): void {
   try {
     const parsed = JSON.parse(themeImportText.value) as unknown;
@@ -1471,36 +1897,31 @@ function importThemes(): void {
       flashSaved('JSON 里没有有效的主题');
       return;
     }
-    const existing = settingsStore.settings.appearance.customThemes ?? [];
+    const existing = appearance.value.customThemes ?? [];
     const merged = [...existing.filter((e) => !valid.some((v) => v.id === e.id)), ...valid];
-    settingsStore.updateAppearance({ customThemes: merged });
+    draft.value.appearance = { ...appearance.value, customThemes: merged };
     themeImportOpen.value = false;
     themeImportText.value = '';
-    flashSaved(`已导入 ${valid.length} 个主题`);
+    flashSaved(`已导入 ${valid.length} 个主题（点「保存」生效）`);
   } catch {
     flashSaved('JSON 解析失败，请检查格式');
   }
 }
 
 /**
- * 预览区样式：把草稿颜色按 `themeVars()` 展开成一套 CSS 变量。
+ * 预览区样式：把草稿颜色按 `scopedThemeVars()` 展开成一套 CSS 变量。
  *
  * 关键点：预览必须与真实渲染**用同一个函数**产出变量，
  * 否则「预览好看、实际难看」。这里把变量挂在预览容器的 :style 上，
  * 容器内部所有元素用 var(--xxx) 取色，等价于真实界面。
+ *
+ * 1.4.0：「应用范围」不再靠「删掉另一侧变量」实现（那样会回落到 themes.css 的
+ * 同一套主题静态值、看起来没生效），而是与 store 一致地调 `scopedThemeVars()`，
+ * 让被排除的一侧取中性基线 —— 预览区与真实界面同源。
  */
 const previewStyle = computed<Record<string, string>>(() => {
-  const t: ThemePreset = { ...currentTheme.value, ...colorDraft.value };
-  const vars = themeVars(t);
-  // 应用范围：仅正文 / 仅界面时，另一侧的变量回落到当前生效主题
-  if (themeScope.value !== 'all') {
-    const live = themeVars(currentTheme.value);
-    const contentKeys = ['--content-bg', '--content-fg', '--code-block-bg', '--quote-bg', '--table-border'];
-    const keys = themeScope.value === 'content' ? Object.keys(vars).filter((k) => !contentKeys.includes(k)) : contentKeys;
-    for (const k of keys) {
-      if (live[k] !== undefined) vars[k] = live[k]!;
-    }
-  }
+  const themed: ThemePreset = { ...currentTheme.value, ...colorDraft.value };
+  const vars = scopedThemeVars(themed, themeScope.value);
   const zoom = Math.min(300, Math.max(50, Number(appearance.value.zoom ?? 100)));
   const scaledFont = Math.round((appearance.value.fontSize || 16) * (zoom / 100) * 100) / 100;
   vars['--preview-font-family'] = appearance.value.fontFamily?.trim() || 'var(--font-ui)';
@@ -1509,15 +1930,71 @@ const previewStyle = computed<Record<string, string>>(() => {
   return vars;
 });
 
+/**
+ * 主题 id → 旧版「正文配色方案」的反向映射。
+ *
+ * `EditorPage.vue` 仍读 `editorColorScheme` 生成正文内联样式（该文件不属本任务），
+ * 因此应用主题时必须把老字段写成等价方案，否则旧内联色会盖住新的主题变量。
+ * store 里有一份同名常量（`PRESET_TO_LEGACY_SCHEME`），但它是模块私有的；
+ * 这里保留同一份映射供草稿计算使用 —— 两处改动必须同步（审计脚本会比对）。
+ */
+const PRESET_TO_LEGACY_SCHEME: Record<string, EditorColorScheme> = {
+  daylight: 'white',
+  graphite: 'gray',
+  midnight: 'black',
+  'eyecare-green': 'green',
+  'ocean-blue': 'lightblue',
+};
+
+/**
+ * 有未保存改动时离开页面的浏览器级提醒。
+ *
+ * 为什么必须加：设置是**标签页**，用户很可能直接点 × 或按 Ctrl+W，
+ * 而「取消 / 保存」栏在页面底部，容易被忽略。`beforeunload` 是唯一能拦住
+ * 「直接关窗口」的钩子；标签页关闭由 `onBeforeUnmount` + 页面内确认条兜底。
+ */
+function onBeforeUnload(e: BeforeUnloadEvent): void {
+  if (!draftDirty.value) return;
+  e.preventDefault();
+  // 现代浏览器忽略自定义文案，但设置 returnValue 才会真的弹确认框
+  e.returnValue = '设置里有未保存的改动，确定离开？';
+}
+
+onMounted(() => {
+  if (typeof window !== 'undefined') window.addEventListener('beforeunload', onBeforeUnload);
+});
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') window.removeEventListener('beforeunload', onBeforeUnload);
+  // 离开设置页时把预览态的 CSS 变量还原成 store 里的正式值，
+  // 否则未保存的配色会「残留」到编辑器界面上（看起来像真的生效了）
+  settingsStore.previewAppearance(null);
+  if (previewTimer) {
+    clearTimeout(previewTimer);
+    previewTimer = null;
+  }
+});
+
 void app;
+
 </script>
 <template>
   <div class="settings-page" :class="{ 'is-narrow': isNarrow }">
     <header class="settings-page__head">
       <h2 class="settings-page__title">设置</h2>
       <div class="settings-page__head-actions">
-        <!-- 1.1.7：设置是标签页，关闭走标签页 ×，不再提供独立的「关闭」按钮 -->
-        <span class="settings-page__hint">改动即时生效并自动同步，关闭标签页即可退出</span>
+        <!--
+          1.4.0（需求16）：设置改为草稿模式，文案必须跟着改。
+          改前写的是「改动即时生效并自动同步」，与「保存按钮」语义直接矛盾 ——
+          用户按旧文案的预期直接关标签页，改动就静默丢了。
+        -->
+        <span class="settings-page__hint">
+          改动先进入草稿，点底部「保存」才会生效并同步到云端
+        </span>
+        <label class="settings-page__preview-toggle" title="开启后，配色/主题类改动立即预览，但保存前不会写入设置">
+          <input v-model="livePreview" type="checkbox" data-testid="live-preview-toggle" />
+          <span>实时预览</span>
+        </label>
       </div>
     </header>
     <div class="settings-page__wrap">
@@ -1549,7 +2026,7 @@ void app;
 
         <!-- 通用 -->
         <section v-if="tab === 'general'" class="pane">
-          <h3 class="pane__title">外观</h3>
+          <h3 class="pane__title">明暗外观</h3>
           <div class="field">
             <label class="nm-label">主题</label>
             <div class="seg">
@@ -1565,22 +2042,15 @@ void app;
                 {{ t === 'system' ? '跟随系统' : t === 'light' ? '浅色' : '深色' }}
               </button>
             </div>
-          </div>
-          <div class="field">
-            <label class="nm-label">主色调</label>
-            <div class="swatches">
-              <button
-                v-for="c in ['#1677FF', '#0E9F6E', '#7C4DFF', '#FF8A3D', '#E5484D']"
-                :key="c"
-                type="button"
-                class="swatch"
-                :class="{ 'is-active': appearance.accent === c }"
-                :style="{ background: c }"
-                :title="`主色调 ${c}`"
-                :aria-label="`主色调 ${c}`"
-                @click="patchAppearance({ accent: c })"
-              />
-            </div>
+            <!--
+              1.4.0（需求14）：「主色调」已从本页签移到「主题」页签。
+              它是**配色**，和主题预设/颜色细化在一起才找得到；留在「通用」里
+              既不符合语义，也让同一件事散落在两个页签（1.2.1 收敛过的老问题）。
+              这里只留一句指引，避免老用户找不到。
+            -->
+            <p class="nm-hint">
+              主色调与配色细化已移到「主题」页签；明暗只是主题的明暗基调，选中后仍需点「保存」。
+            </p>
           </div>
 
           <h3 class="pane__title">新建命名</h3>
@@ -1727,7 +2197,34 @@ void app;
             </button>
           </div>
 
-          <!-- ③ 应用范围 -->
+          <!--
+            ③ 主色调（1.4.0 需求14：从「通用」页签移到这里）。
+            它是纯配色项，必须与主题预设/颜色细化放在同一页签；
+            同时修掉「改了不生效」—— 见 store 的 applyThemeVars() 里强调色优先级逻辑。
+          -->
+          <div class="nm-divider" />
+          <h3 class="pane__title">主色调</h3>
+          <div class="field">
+            <div class="swatches" data-testid="accent-swatches">
+              <button
+                v-for="c in ACCENT_SWATCHES"
+                :key="c"
+                type="button"
+                class="swatch"
+                :class="{ 'is-active': (appearance.accent ?? '').toLowerCase() === c.toLowerCase() }"
+                :style="{ background: c }"
+                :title="`主色调 ${c}`"
+                :aria-label="`主色调 ${c}`"
+                @click="patchAppearance({ accent: c })"
+              />
+            </div>
+            <p class="nm-hint">
+              主色调决定按钮、链接、选中态、聚焦边框与引用块底色。默认跟随所选主题；
+              在这里选一个颜色会覆盖主题自带的强调色（颜色细化的「强调色」与此项同源）。
+            </p>
+          </div>
+
+          <!-- ④ 应用范围 -->
           <div class="nm-divider" />
           <h3 class="pane__title">应用范围</h3>
           <div class="field">
@@ -1751,7 +2248,10 @@ void app;
                 @click="themeScope = 'chrome'"
               >仅界面</button>
             </div>
-            <p class="nm-hint">「仅正文 / 仅界面」只影响覆盖范围，不改变主题本身的配色定义。</p>
+            <p class="nm-hint">
+              「仅正文」只让正文纸张/文字跟随主题，侧栏、工具栏、标题栏回到中性配色；
+              「仅界面」反之。被排除的一侧会显式写入中性值，不会残留主题色。
+            </p>
           </div>
 
           <!-- ④ 颜色细化编辑 -->
@@ -1806,16 +2306,17 @@ void app;
             <button
               type="button"
               class="nm-btn nm-btn--primary nm-btn--sm"
-              :disabled="!draftDirty && currentIsCustom"
-              :title="currentIsCustom ? '保存到当前自定义主题' : '内置主题不能直接改，将另存为新自定义主题'"
+              data-testid="theme-colors-apply"
+              :disabled="!colorDraftDirty"
+              :title="currentIsCustom ? '写入当前自定义主题（仍需点底部保存）' : '内置主题不能直接改，将另存为新自定义主题（仍需点底部保存）'"
               @click="saveDraftColors"
             >
               {{ currentIsCustom ? '保存配色' : '存为新主题' }}
             </button>
-            <button type="button" class="nm-btn nm-btn--sm" title="把当前配色复制成一套新主题" @click="duplicateAsTheme">
+            <button type="button" class="nm-btn nm-btn--sm" data-testid="theme-duplicate" title="把当前配色复制成一套新主题" @click="duplicateAsTheme">
               复制为新主题
             </button>
-            <button type="button" class="nm-btn nm-btn--sm" title="重置为内置默认主题" @click="resetToDefaultTheme">
+            <button type="button" class="nm-btn nm-btn--sm" data-testid="theme-reset-default" title="重置为内置默认主题" @click="resetToDefaultTheme">
               重置为默认
             </button>
           </div>
@@ -2226,7 +2727,10 @@ void app;
                 {{ sec.label }}
               </button>
             </div>
-            <p class="nm-hint">右侧栏支持同时打开多个操作区窗口上下排列，拖动窗口间的分隔线即可自由调整每个操作区的高度。</p>
+            <p class="nm-hint">
+              右侧栏支持同时打开多个操作区窗口上下排列，拖动窗口间的分隔线即可自由调整每个操作区的高度；
+              最多同时显示 {{ RIGHT_SECTION_LIMIT }} 个，开第 {{ RIGHT_SECTION_LIMIT + 1 }} 个时会自动关闭最上方那个。
+            </p>
           </div>
 
           <h3 class="pane__title">功能区</h3>
@@ -3000,6 +3504,57 @@ void app;
       </div>
     </div>
     </div>
+
+    <!--
+      底部固定操作栏（1.4.0，需求16）。
+      为什么固定在容器底部而不是内容流末尾：设置页有 12 个页签、内容很长，
+      放末尾等于「用户永远看不到保存按钮」；固定在底部才能支撑「改完随手保存」。
+      它同时承担「未保存改动」的提示职责，所以有改动时会变色并显示改了哪几块。
+    -->
+    <footer class="settings-savebar" data-testid="settings-save-bar" :class="{ 'is-dirty': draftDirty }">
+      <span class="settings-savebar__state" role="status" aria-live="polite">
+        <template v-if="draftDirty">
+          <NmIcon name="alert" :size="13" />
+          <span>有未保存的改动：{{ draftDiffKeys.join('、') }}</span>
+        </template>
+        <template v-else>
+          <NmIcon name="check" :size="13" />
+          <span>全部改动已保存</span>
+        </template>
+      </span>
+      <div class="settings-savebar__actions">
+        <button
+          type="button"
+          class="nm-btn nm-btn--sm"
+          data-testid="settings-reset-default"
+          title="把本页草稿恢复为出厂默认值（仍需点保存才生效）"
+          @click="resetAllSettings"
+        >
+          恢复默认
+        </button>
+        <button
+          type="button"
+          class="nm-btn nm-btn--sm"
+          data-testid="settings-cancel"
+          :disabled="!draftDirty"
+          title="放弃未保存的改动，界面回到上次保存的设置"
+          @click="cancelDraft"
+        >
+          取消
+        </button>
+        <button
+          type="button"
+          class="nm-btn nm-btn--primary nm-btn--sm"
+          data-testid="settings-save"
+          :disabled="!draftDirty"
+          title="保存全部改动（写入设置并同步到云端）"
+          @click="saveDraft"
+        >
+          <NmIcon name="check" :size="13" />
+          保存
+        </button>
+      </div>
+    </footer>
 
     <!-- 危险操作二次确认 -->
     <NmModal v-model="confirmDialog.open" :title="confirmDialog.title" :width="440">
@@ -3802,6 +4357,69 @@ code {
 .settings-page__hint {
   font-size: 11.5px;
   color: var(--fg-3);
+}
+
+/* 实时预览开关（1.4.0 需求16）：与页面提示同排，放在标题栏右侧 */
+.settings-page__preview-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--fg-2);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.settings-page__preview-toggle input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/*
+ * 底部固定保存栏（1.4.0 需求16）。
+ *
+ * 为什么用 sticky 而不是 fixed：父容器是 `.shell__panes` 里的整页面板，
+ * fixed 会相对视口定位、盖在标签栏上；sticky 相对滚动容器底部吸附，
+ * 内容滚到哪它都贴在底部，且不影响上方布局。
+ * 显式背景 + 上边框是必需的：它会盖住正文内容的最后一行，
+ * 半透明会让文字透过来显得脏。
+ */
+.settings-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  border-top: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-2);
+}
+.settings-savebar.is-dirty .settings-savebar__state {
+  color: var(--accent);
+  font-weight: 600;
+}
+.settings-savebar__state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-3);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-savebar__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 .settings-page__wrap {
   flex: 1 1 auto;

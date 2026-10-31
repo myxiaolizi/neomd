@@ -1,0 +1,6 @@
+{
+  "rowId": 54,
+  "pluginId": "sync-brief",
+  "name": "同步简报",
+  "codeJs": "export default { id: \"b06-probe\", name: \"B06 探针\", version: \"1.0.0\", setup() {} };"
+}

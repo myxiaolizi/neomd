@@ -6,6 +6,12 @@ import { z } from 'zod';
 // 1.1.7 数据看板需要数据库连通性探测（ping）与对象存储连通性自检（probePlatformStorage）
 import { execute, ping, query, queryOne, tx } from '../db/pool.js';
 import config from '../config.js';
+// 1.4.0 客户端分发：后台必须与客户端**同源**，直接复用 download.js 的清单与历史 APK 枚举
+// （绝不在本文件里重写目录扫描 + 正则 —— 那就是「第二份清单」，1.3.1 已因此踩过坑）
+import { DOWNLOAD_FILES, listHistoricalApks } from './download.js';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { hashPassword, randomPassword, randomToken } from '../lib/crypto.js';
 import { badRequest, conflict, forbidden, notFound, ok } from '../lib/http.js';
 import { parse, parseId, paginationSchema } from '../lib/validate.js';
@@ -75,6 +81,101 @@ const adjustCreditsSchema = z.object({
     .refine((value) => value !== 0, { message: '调整数量不能为 0' })
     .refine((value) => Math.abs(value) <= 1_000_000_000_000, { message: '调整数量超出允许范围' }),
   reason: z.string().trim().max(120, { message: '备注最多 120 个字符' }).optional().default(''),
+});
+
+/* ------------------------------------------------------------------ */
+/* 1.4.0 后台用户管理增强：封禁 / 批量 / 角色 / 登录记录 / 概览 / 导出   */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 封禁用户。
+ *
+ * `until` 是「封禁到期时间」：不传或传 null 表示**永久封禁**。
+ * 到期后的处理是**惰性解封**（见 `sweepExpiredBans`），不依赖定时任务 ——
+ * 理由：本服务没有调度器，引入 cron 会多一个可能失效的组件；
+ * 而「到期」这个事实可以直接由 `ban_until < NOW()` 判定，读时顺手纠正即可。
+ */
+const banUserSchema = z.object({
+  reason: z
+    .string({ error: '请填写封禁原因' })
+    .trim()
+    .min(2, { message: '封禁原因至少 2 个字符' })
+    .max(255, { message: '封禁原因最多 255 个字符' }),
+  /** 封禁时长（小时）；与 until 二选一，都不传 = 永久 */
+  hours: z.coerce.number().int().min(1).max(24 * 365 * 10).optional(),
+  /** 绝对到期时间（ISO 字符串）；优先级高于 hours */
+  until: z.string().trim().max(40).optional(),
+});
+
+const USER_ROLES = ['user', 'admin'];
+
+/**
+ * 统一状态变更（`PUT /api/admin/users/:id/status`）。
+ *
+ * `status='disabled'` 时可选带 `banReason`：带了就是「封禁」（可再带 `banUntil`/`hours` 设到期），
+ * 不带就是「人工停用」。与 `POST /:id/ban` / `POST /:id/unban` 共用同一套数据约定。
+ */
+const userStatusSchema = z
+  .object({
+    status: z.enum(['active', 'disabled'], { message: '状态必须是 active 或 disabled' }),
+    banReason: z.string().trim().max(255, { message: '封禁原因最多 255 个字符' }).optional(),
+    /** 绝对到期时间（ISO）；与 hours 二选一 */
+    banUntil: z.string().trim().max(40).optional(),
+    hours: z.coerce.number().int().min(1).max(24 * 365 * 10).optional(),
+  })
+  .refine((v) => v.status === 'active' || v.banReason === undefined || v.banReason.trim().length >= 2, {
+    message: '封禁原因至少 2 个字符',
+  });
+
+/** 角色调整：单独一个接口，审计动作更精确（与「改状态」区分开） */
+const userRoleSchema = z.object({
+  role: z.enum(USER_ROLES, { message: '角色必须是 user 或 admin' }),
+});
+
+/**
+ * 批量操作。
+ *
+ * 三种动作共用一次请求，是为了让「勾选 20 个用户 → 一次执行」在服务端也是原子的
+ * （要么全部生效，要么明确的逐条结果），避免前端发 20 个请求导致部分失败难以收拾。
+ * 返回 `results` 逐条给出成功/失败原因，前端据此提示。
+ */
+const batchUserSchema = z
+  .object({
+    ids: z
+      .array(z.coerce.number().int().min(1))
+      .min(1, { message: '请至少选择一个用户' })
+      .max(100, { message: '单次最多操作 100 个用户' }),
+    action: z.enum(['disable', 'enable', 'grant', 'role'], { message: '不支持的批量操作' }),
+    /** action=grant 时必填：每人发放的积分数（可为负 = 批量扣减） */
+    amount: z.coerce
+      .number()
+      .int({ message: '积分必须是整数' })
+      .refine((v) => v !== 0, { message: '积分不能为 0' })
+      .refine((v) => Math.abs(v) <= 1_000_000_000, { message: '积分超出允许范围' })
+      .optional(),
+    reason: z.string().trim().max(120).optional().default(''),
+    /** action=role 时必填 */
+    role: z.enum(USER_ROLES).optional(),
+  })
+  .refine((v) => v.action !== 'grant' || v.amount !== undefined, { message: '批量发放积分时必须填写 amount' })
+  .refine((v) => v.action !== 'role' || v.role !== undefined, { message: '批量调整角色时必须填写 role' });
+
+/** 导出 CSV 的筛选条件（与列表页保持同一套，导出的就是「当前筛选结果」） */
+const exportUsersQuerySchema = z.object({
+  search: z.string().trim().max(120).optional().default(''),
+  status: z.enum(['active', 'disabled']).optional(),
+  role: z.enum(USER_ROLES).optional(),
+  sort: z.enum(['created', 'lastLogin', 'credits', 'documents']).optional().default('created'),
+});
+
+/** 登录记录查询 */
+const loginHistoryQuerySchema = paginationSchema.extend({
+  /** 只看失败记录 */
+  failuresOnly: z
+    .union([z.boolean(), z.enum(['true', 'false', '1', '0'])])
+    .transform((v) => v === true || v === 'true' || v === '1')
+    .optional()
+    .default(false),
 });
 
 const aiProviderSchema = z
@@ -334,8 +435,108 @@ const adminPasswordSchema = z.object({
 /** 兑换码字符集：去掉容易混淆的 I / O / 0 / 1 */
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
-/** 用户行投影（不含 pass_hash） */
+/**
+ * 随服务部署的本地安装包目录（与 download.js 的 `LOCAL_DIR` 指向同一处）。
+ *
+ * 这里只用于「后台展示本地有哪些文件 / 大小多少」，**不重复实现 APK 型号识别与排序** ——
+ * 那部分一律走 download.js 的 `listHistoricalApks()`，保证与客户端同源。
+ */
+const LOCAL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'releases');
+
+/**
+ * 当前产品版本号。
+ *
+ * 事实源：`services/api/package.json` 的 `version`（与 download.js 的 APP_VERSION 同源，
+ * 也与 `config.version` 同源）。后台「当前版本」列必须与它严格相等，
+ * 因此这里直接复用 `config.version`，不再读一次文件（避免两处解析出不同结果）。
+ */
+const APP_VERSION = config.version;
+
+/** 文件名里的型号识别（仅用于给 OSS 上未被清单认领的遗留文件反推版本，与 download.js 的 APK_RE 独立） */
+const APK_RE = /^NeoMD-(\d+(?:\.\d+)*)\.apk$/;
+
+/**
+ * 判断一条封禁是否已到期 —— **仅在拿不到 SQL 计算列时兜底使用**。
+ *
+ * 语义约定（与 `banUserSchema` 一致）：`ban_until` 为 NULL = 永久封禁，永不到期。
+ *
+ * ## 为什么不能直接 `new Date(banUntil)`（1.4.0 实测踩到的真缺陷）
+ *
+ * 连接池配置是 `timezone: 'Z'` + `dateStrings: true`（见 db/pool.js）：
+ *   - 写入时按 **UTC** 存进 DATETIME 列；
+ *   - 读出时因为 `dateStrings`，拿到的是**裸字符串**（如 `2026-10-30 20:00:45`，无时区后缀）。
+ * 而 `new Date('2026-10-30 20:00:45')` 在 JS 里按**本地时区**解析（东八区 +08:00），
+ * 于是同一个值被偏移了 8 小时 —— 刚封禁 2 小时的账号会被误判成「已到期」，
+ * 表现为后台显示「已解封」但账号实际仍是 disabled。
+ *
+ * 因此**权威判定一律由 MySQL 做**（用 `UTC_TIMESTAMP()`，与 UTC 存储口径一致——
+ * 用 `NOW()` 会因服务器本地时区 +08:00 而偏移 8 小时）：
+ * `USER_SELECT_COLUMNS` 里已算好 `ban_expired` / `ban_active` 两个计算列。
+ * 本函数只在下游拿到原始行、没有计算列时兜底，并显式按 UTC 解释裸字符串。
+ *
+ * @param {string|Date|null|undefined} banUntil
+ * @param {number} [now] 便于测试注入的时间戳
+ * @returns {boolean}
+ */
+function isBanExpired(banUntil, now = Date.now()) {
+  if (!banUntil) return false;
+  let t;
+  if (banUntil instanceof Date) {
+    t = banUntil.getTime();
+  } else {
+    const raw = String(banUntil).trim();
+    // 裸 'YYYY-MM-DD HH:mm:ss' 必须按 UTC 解释（与连接池 timezone:'Z' 一致）；
+    // 已带 Z 或 ±hh:mm 后缀的 ISO 串交给 Date 自己解析。
+    const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+    t = new Date(hasZone ? raw : `${raw.replace(' ', 'T')}Z`).getTime();
+  }
+  if (!Number.isFinite(t)) return false;
+  return t <= now;
+}
+
+/**
+ * 把 MySQL 的 DATETIME 裸字符串（连接池 timezone:'Z'，即 UTC）转成带时区的 ISO 字符串。
+ *
+ * 为什么 1.4.0 新增字段要转：`dateStrings: true` 让 DATETIME 以 `2026-10-30 20:00:45`
+ * 这种**无时区**形式返回，前端 `new Date('2026-10-30 20:00:45')` 会按本地时区解析，
+ * 东八区下显示时间偏 8 小时（「封禁到 X」显示错误会直接引发使用者误解）。
+ * 转成 `...Z` 后前端无需任何约定即可正确显示。
+ *
+ * 注意：**只用于 1.4.0 新增的字段**（bannedAt / banUntil）。
+ * 既有字段（createdAt / lastLoginAt 等）保持原样 —— 它们已被多处消费，
+ * 擅自改格式属于跨模块行为变更，不在本组范围内。
+ *
+ * @param {string|Date|null|undefined} value
+ * @returns {string|null}
+ */
+function toIsoUtc(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  const raw = String(value).trim();
+  const hasZone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(raw);
+  const d = new Date(hasZone ? raw : `${raw.replace(' ', 'T')}Z`);
+  return Number.isFinite(d.getTime()) ? d.toISOString() : null;
+}
+
+/**
+ * 用户行投影（不含 pass_hash）。
+ *
+ * 1.4.0 新增：封禁三列 + `lastActiveAt`（审计表聚合的最后活跃时间）+ `banned` 派生标志。
+ *
+ * 为什么要有 `banned` 这个派生字段，而不是让前端自己判断：
+ * 「封禁」在数据层是 `status='disabled'` **且** `ban_reason` 非空，这个复合条件
+ * 如果让每个消费方（列表/详情/CSV/批量结果）各自拼一遍，迟早会有一处漏判，
+ * 表现为「有的地方显示封禁、有的地方显示已禁用」。统一在这里派生一次。
+ *
+ * `ban_expired` / `ban_active` 优先取 SQL 计算列（时区权威），缺失时才回落到 JS 判断。
+ */
 function adminUser(row) {
+  const banReason = row.ban_reason ?? null;
+  const banUntil = row.ban_until ?? null;
+  const hasSqlExpired = row.ban_expired !== undefined && row.ban_expired !== null;
+  const expired = hasSqlExpired ? Number(row.ban_expired) === 1 : isBanExpired(banUntil);
+  const hasSqlActive = row.ban_active !== undefined && row.ban_active !== null;
+  const banned = hasSqlActive ? Number(row.ban_active) === 1 : Boolean(banReason) && row.status !== 'active' && !expired;
   return {
     id: Number(row.id),
     email: row.email,
@@ -349,12 +550,94 @@ function adminUser(row) {
     createdAt: row.created_at ?? null,
     lastLoginAt: row.last_login_at ?? null,
     lastLoginIp: row.last_login_ip ?? null,
+    /* 1.4.0 封禁：expired=true 时前端按「已自动解封」展示（惰性解封见 sweepExpiredBans） */
+    banReason,
+    bannedAt: toIsoUtc(row.banned_at),
+    banUntil: toIsoUtc(banUntil),
+    banExpired: expired,
+    banned,
+    /** 最后活跃（审计表里该用户最近一条事件的时间，没有则为 null） */
+    lastActiveAt: row.last_active_at ?? null,
     shareCount: Number(row.share_count ?? 0),
     publishCount: Number(row.publish_count ?? 0),
     documentCount: Number(row.doc_count ?? 0),
     storageBytes: Number(row.storage_bytes ?? 0),
   };
 }
+
+/**
+ * 惰性解封：把「已过封禁到期时间」的用户真正改回 active 并清空封禁三列。
+ *
+ * ## 为什么用惰性而不是定时任务
+ *
+ * 本服务没有调度器（见 `/api/admin/status` 的 `queue: null`），引入 cron 会多一个
+ * 可能悄悄失效、且难以观测的组件。而「封禁到期」这个事实完全可以直接由
+ * `ban_until IS NOT NULL AND ban_until <= NOW()` 判定 —— **读的时候顺手纠正**，
+ * 不需要任何人记得去跑任务。所有会展示/写入用户状态的接口入口调用本函数。
+ *
+ * ## 幂等与安全
+ *
+ * 只更新「确有到期封禁」的行，条件由 SQL 精确表达，重复调用无副作用；
+ * 只在**确实改动过**时才写审计（避免每次列表刷新都刷一条审计）。
+ *
+ * @param {object} req Fastify 请求（用于审计）
+ * @returns {Promise<number>} 实际解封的用户数
+ */
+async function sweepExpiredBans(req) {
+  let rows;
+  try {
+    rows = await query(
+      `SELECT id, username, ban_reason, ban_until FROM users
+       WHERE ban_until IS NOT NULL AND ban_until <= UTC_TIMESTAMP() AND status <> 'active'`,
+    );
+  } catch {
+    return 0;
+  }
+  if (!rows.length) return 0;
+  const ids = rows.map((r) => Number(r.id));
+  await execute(
+    `UPDATE users SET status = 'active', ban_reason = NULL, banned_at = NULL, ban_until = NULL
+     WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ids,
+  );
+  for (const id of ids) invalidateUserCache(id);
+  await audit(req, 'admin.user.ban_expired', `users:${ids.join(',')}`, {
+    count: ids.length,
+    users: rows.map((r) => ({ id: Number(r.id), username: r.username, reason: r.ban_reason, until: r.ban_until })),
+    note: '封禁到期自动解封（惰性）',
+  });
+  return ids.length;
+}
+
+/**
+ * 用户列表/详情的统一 SQL 片段（避免两个接口的字段与统计口径漂移）。
+ *
+ * `last_active_at` 用审计表的 MAX(created_at) 聚合。这里依赖 1.4.0 新增的
+ * `idx_audit_logs_user_created(user_id, created_at)`，是索引内的取最大值，不会扫全表。
+ *
+ * ## `ban_expired` / `ban_active` 为什么在 SQL 里算（关键）
+ *
+ * 封禁到期判断**必须**由 MySQL 做，且**必须用 `UTC_TIMESTAMP()` 而不是 `NOW()`**：
+ *
+ *  - 连接池是 `timezone: 'Z'`，JS `Date` 写进 DATETIME 时被格式化成 **UTC** 字符串；
+ *  - 但 MySQL 的 `NOW()` 返回**服务器本地时间**（本机 SYSTEM 时区是 +08:00）；
+ *  - 两者相差 8 小时 → 用 `NOW()` 比较会把「刚封禁 2 小时」判成「已到期」。
+ *
+ * 改用 `UTC_TIMESTAMP()` 后，比较双方都在 UTC 时钟里，天然正确。
+ * 同理 `banned_at` 也用 `UTC_TIMESTAMP()` 写入，保证封禁三列口径一致。
+ * 若改回 JS 侧 `new Date(ban_until) > Date.now()`，则会踩另一个坑：
+ * `dateStrings: true` 让 DATETIME 以无时区裸字符串返回，JS 按本地时区解析，同样偏 8 小时。
+ */
+const USER_SELECT_COLUMNS = `u.id, u.email, u.username, u.nickname, u.avatar_url, u.role, u.status, u.quota_bytes, u.credits,
+        u.created_at, u.last_login_at, u.last_login_ip, u.ban_reason, u.banned_at, u.ban_until,
+        (u.ban_until IS NOT NULL AND u.ban_until <= UTC_TIMESTAMP()) AS ban_expired,
+        (u.ban_reason IS NOT NULL AND u.ban_reason <> '' AND u.status <> 'active'
+         AND (u.ban_until IS NULL OR u.ban_until > UTC_TIMESTAMP())) AS ban_active,
+        (SELECT COUNT(*) FROM shares s WHERE s.user_id = u.id AND s.revoked_at IS NULL) AS share_count,
+        (SELECT COUNT(*) FROM publishes p WHERE p.user_id = u.id AND p.revoked_at IS NULL) AS publish_count,
+        (SELECT COALESCE(SUM(v.doc_count), 0) FROM user_vaults v WHERE v.user_id = u.id) AS doc_count,
+        (SELECT COALESCE(SUM(v.bytes), 0) FROM user_vaults v WHERE v.user_id = u.id) AS storage_bytes,
+        (SELECT MAX(a.created_at) FROM audit_logs a WHERE a.user_id = u.id) AS last_active_at`;
 
 /** 分享对外投影（含公开访问地址） */
 function adminShareItem(row) {
@@ -562,6 +845,9 @@ export async function adminRoutes(app) {
   /* ------------------------------ 用户 ------------------------------ */
 
   app.get('/api/admin/users', adminOnly, async (req, reply) => {
+    // 惰性解封：先把已到期的封禁改回 active，保证列表与现实一致（幂等，无到期则零开销）
+    await sweepExpiredBans(req);
+
     const { page, pageSize, search, sort, status } = parse(usersQuerySchema, req.query, '分页参数');
     const filters = [];
     const params = [];
@@ -584,13 +870,7 @@ export async function adminRoutes(app) {
     }[sort] ?? 'u.created_at DESC, u.id DESC';
 
     const rows = await query(
-      `SELECT u.id, u.email, u.username, u.nickname, u.avatar_url, u.role, u.status, u.quota_bytes, u.credits,
-              u.created_at, u.last_login_at, u.last_login_ip,
-              (SELECT COUNT(*) FROM shares s WHERE s.user_id = u.id AND s.revoked_at IS NULL) AS share_count,
-              (SELECT COUNT(*) FROM publishes p WHERE p.user_id = u.id AND p.revoked_at IS NULL) AS publish_count,
-              (SELECT COALESCE(SUM(v.doc_count), 0) FROM user_vaults v WHERE v.user_id = u.id) AS doc_count,
-              (SELECT COALESCE(SUM(v.bytes), 0) FROM user_vaults v WHERE v.user_id = u.id) AS storage_bytes
-       FROM users u ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
+      `SELECT ${USER_SELECT_COLUMNS} FROM users u ${where} ORDER BY ${orderBy} LIMIT ? OFFSET ?`,
       [...params, pageSize, offset],
     );
     const totalRow = await queryOne(`SELECT COUNT(*) AS total FROM users u ${where}`, params);
@@ -609,13 +889,7 @@ export async function adminRoutes(app) {
   app.get('/api/admin/users/:id', adminOnly, async (req, reply) => {
     const id = parseId(req.params.id, '用户编号');
     const row = await queryOne(
-      `SELECT u.id, u.email, u.username, u.nickname, u.avatar_url, u.role, u.status, u.quota_bytes, u.credits,
-              u.created_at, u.last_login_at, u.last_login_ip,
-              (SELECT COUNT(*) FROM shares s WHERE s.user_id = u.id AND s.revoked_at IS NULL) AS share_count,
-              (SELECT COUNT(*) FROM publishes p WHERE p.user_id = u.id AND p.revoked_at IS NULL) AS publish_count,
-              (SELECT COALESCE(SUM(v.doc_count), 0) FROM user_vaults v WHERE v.user_id = u.id) AS doc_count,
-              (SELECT COALESCE(SUM(v.bytes), 0) FROM user_vaults v WHERE v.user_id = u.id) AS storage_bytes
-       FROM users u WHERE u.id = ? LIMIT 1`,
+      `SELECT ${USER_SELECT_COLUMNS} FROM users u WHERE u.id = ? LIMIT 1`,
       [id],
     );
     if (!row) throw notFound('用户不存在', 'USER_NOT_FOUND');
@@ -765,6 +1039,632 @@ export async function adminRoutes(app) {
     invalidateUserCache(id);
     await audit(req, 'admin.user.delete', `user:${id}`, { email: target.email, username: target.username });
     return ok(reply, { id, deleted: true });
+  });
+
+  /* ---------------- 1.4.0 用户管理增强（第 1 项：封禁 / 解封） ---------------- */
+
+  /**
+   * 封禁用户。
+   *
+   * 语义：`status='disabled'` + `ban_reason` 非空（理由见 migrate-v2.js 的列注释，
+   * 不新增 ENUM 值以免破坏既有消费方）。可选 `hours` / `until` 指定到期时间，不传 = 永久。
+   *
+   * 副作用：吊销该用户全部 refresh token（与「禁用」一致），使其立即掉线。
+   */
+  app.post('/api/admin/users/:id/ban', adminOnly, async (req, reply) => {
+    const id = parseId(req.params.id, '用户编号');
+    const body = parse(banUserSchema, req.body, '封禁信息');
+    if (id === req.user.id) throw forbidden('不能封禁自己的账号', 'SELF_BAN');
+
+    const target = await queryOne('SELECT id, username, role, status, ban_reason FROM users WHERE id = ? LIMIT 1', [id]);
+    if (!target) throw notFound('用户不存在', 'USER_NOT_FOUND');
+    if (target.role === 'admin') {
+      const adminCount = await queryOne("SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND status = 'active'");
+      if (Number(adminCount?.total ?? 0) <= 1) throw conflict('系统至少需要保留一个可用的管理员', 'LAST_ADMIN');
+    }
+
+    // 到期时间：until 优先于 hours；都不传则永久（NULL）
+    let banUntil = null;
+    if (body.until) {
+      const parsed = new Date(body.until);
+      if (Number.isNaN(parsed.getTime())) throw badRequest('封禁到期时间格式不正确', 'VALIDATION_ERROR');
+      banUntil = parsed;
+      if (parsed.getTime() <= Date.now()) throw badRequest('封禁到期时间必须晚于当前时间', 'VALIDATION_ERROR');
+    } else if (body.hours) {
+      banUntil = new Date(Date.now() + body.hours * 60 * 60 * 1000);
+    }
+
+    await execute(
+      "UPDATE users SET status = 'disabled', ban_reason = ?, banned_at = UTC_TIMESTAMP(), ban_until = ? WHERE id = ?",
+      [body.reason, banUntil, id],
+    );
+    await execute('UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL', [id]);
+    invalidateUserCache(id);
+    await audit(req, 'admin.user.ban', `user:${id}`, {
+      reason: body.reason,
+      banUntil: banUntil ? banUntil.toISOString() : null,
+      permanent: !banUntil,
+      before: { status: target.status, banReason: target.ban_reason ?? null },
+    });
+
+    const updated = await queryOne(`SELECT ${USER_SELECT_COLUMNS} FROM users u WHERE u.id = ? LIMIT 1`, [id]);
+    return ok(reply, {
+      user: adminUser(updated),
+      message: banUntil
+        ? `已封禁 ${target.username}，至 ${banUntil.toISOString()}`
+        : `已永久封禁 ${target.username}`,
+    });
+  });
+
+  /** 解封用户：status→active，清空封禁三列（幂等：未封禁也返回成功） */
+  app.post('/api/admin/users/:id/unban', adminOnly, async (req, reply) => {
+    const id = parseId(req.params.id, '用户编号');
+    const target = await queryOne('SELECT id, username, status, ban_reason, ban_until FROM users WHERE id = ? LIMIT 1', [id]);
+    if (!target) throw notFound('用户不存在', 'USER_NOT_FOUND');
+
+    await execute(
+      "UPDATE users SET status = 'active', ban_reason = NULL, banned_at = NULL, ban_until = NULL WHERE id = ?",
+      [id],
+    );
+    invalidateUserCache(id);
+    await audit(req, 'admin.user.unban', `user:${id}`, {
+      before: { status: target.status, banReason: target.ban_reason ?? null, banUntil: target.ban_until ?? null },
+    });
+
+    const updated = await queryOne(`SELECT ${USER_SELECT_COLUMNS} FROM users u WHERE u.id = ? LIMIT 1`, [id]);
+    return ok(reply, { user: adminUser(updated), message: `${target.username} 已解封` });
+  });
+
+  /* ---------------- 第 2 项：批量操作 ---------------- */
+
+  /**
+   * 批量操作：批量禁用 / 启用 / 发放积分 / 调整角色。
+   *
+   * ## 为什么逐条返回结果而不是「一个事务全成或全败」
+   *
+   * 勾选里很可能混着「自己」和「最后一个管理员」这类**按规则必须跳过**的项。
+   * 若用单一事务，一条不合规就让另外 19 条也失败，运营只能一个个试。
+   * 因此这里逐条执行、逐条记录结果，前端展示「成功 N 条 / 跳过 M 条（原因）」。
+   *
+   * 安全性：每条都独立走与单个接口相同的护栏（不能停用自己、不能取消最后一个管理员）。
+   */
+  app.post('/api/admin/users/batch', adminOnly, async (req, reply) => {
+    const body = parse(batchUserSchema, req.body, '批量操作内容');
+    // 去重，避免同一个 id 传两次导致积分翻倍
+    const ids = [...new Set(body.ids)];
+    const results = [];
+    let succeeded = 0;
+    let skipped = 0;
+
+    for (const id of ids) {
+      try {
+        const target = await queryOne('SELECT id, username, role, status, credits FROM users WHERE id = ? LIMIT 1', [id]);
+        if (!target) {
+          results.push({ id, ok: false, reason: '用户不存在' });
+          skipped += 1;
+          continue;
+        }
+
+        if (body.action === 'disable') {
+          if (id === req.user.id) {
+            results.push({ id, username: target.username, ok: false, reason: '不能停用自己的账号' });
+            skipped += 1;
+            continue;
+          }
+          if (target.role === 'admin') {
+            const adminCount = await queryOne(
+              "SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND status = 'active'",
+            );
+            if (Number(adminCount?.total ?? 0) <= 1) {
+              results.push({ id, username: target.username, ok: false, reason: '系统至少需要保留一个可用管理员' });
+              skipped += 1;
+              continue;
+            }
+          }
+          await execute("UPDATE users SET status = 'disabled' WHERE id = ?", [id]);
+          await execute('UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL', [id]);
+          invalidateUserCache(id);
+          results.push({ id, username: target.username, ok: true });
+          succeeded += 1;
+          continue;
+        }
+
+        if (body.action === 'enable') {
+          // 启用同时清空封禁信息：批量「启用」的运营语义是「恢复可用」，不该残留封禁原因
+          await execute(
+            "UPDATE users SET status = 'active', ban_reason = NULL, banned_at = NULL, ban_until = NULL WHERE id = ?",
+            [id],
+          );
+          invalidateUserCache(id);
+          results.push({ id, username: target.username, ok: true });
+          succeeded += 1;
+          continue;
+        }
+
+        if (body.action === 'grant') {
+          const before = Number(target.credits ?? 0);
+          const res = await addCredits(id, body.amount, {
+            kind: 'grant',
+            ref: body.reason || `admin-batch:${req.user.id}`,
+            detail: { reason: body.reason || null, adminId: req.user.id, batch: true, before, after: before + Number(body.amount) },
+          });
+          if (!res) {
+            results.push({ id, username: target.username, ok: false, reason: '发放失败' });
+            skipped += 1;
+            continue;
+          }
+          results.push({ id, username: target.username, ok: true, delta: res.delta, balance: res.balance });
+          succeeded += 1;
+          continue;
+        }
+
+        // role
+        if (id === req.user.id && body.role !== 'admin') {
+          results.push({ id, username: target.username, ok: false, reason: '不能取消自己的管理员身份' });
+          skipped += 1;
+          continue;
+        }
+        if (target.role === 'admin' && body.role === 'user') {
+          const adminCount = await queryOne("SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND status = 'active'");
+          if (Number(adminCount?.total ?? 0) <= 1) {
+            results.push({ id, username: target.username, ok: false, reason: '系统至少需要保留一个管理员' });
+            skipped += 1;
+            continue;
+          }
+        }
+        await execute('UPDATE users SET role = ? WHERE id = ?', [body.role, id]);
+        invalidateUserCache(id);
+        results.push({ id, username: target.username, ok: true, role: body.role });
+        succeeded += 1;
+      } catch (err) {
+        results.push({ id, ok: false, reason: err?.message ?? '执行失败' });
+        skipped += 1;
+      }
+    }
+
+    await audit(req, 'admin.user.batch', `users:${ids.join(',')}`, {
+      action: body.action,
+      amount: body.amount ?? null,
+      role: body.role ?? null,
+      reason: body.reason || null,
+      requested: ids.length,
+      succeeded,
+      skipped,
+    });
+
+    return ok(reply, {
+      action: body.action,
+      requested: ids.length,
+      succeeded,
+      skipped,
+      results,
+      message: `批量${body.action === 'disable' ? '禁用' : body.action === 'enable' ? '启用' : body.action === 'grant' ? '发放积分' : '调整角色'}：成功 ${succeeded} 个，跳过 ${skipped} 个`,
+    });
+  });
+
+  /* ---------------- 用户状态统一入口（PUT /:id/status） ---------------- */
+
+  /**
+   * 统一的用户状态变更入口。
+   *
+   * ## 为什么在已经有 ban / unban 之外再加这一个
+   *
+   * `ban` / `unban` 是**语义化动作**（内部知道「封禁 = disabled + 写原因」），
+   * 后台 UI 用它最直接；但对外/对 QA 来说，一个 `PUT /api/admin/users/:id/status`
+   * 的 REST 语义更自然，也更适合脚本化调用（一次请求表达「停用并附封禁信息」）。
+   *
+   * 两者**共用同一套数据约定**，不是两套实现：
+   *   - `status='disabled'` + 有 `banReason` → 封禁（可带 `banUntil` 到期）；
+   *   - `status='disabled'` 无 `banReason` → 人工停用（并清空任何残留封禁字段）；
+   *   - `status='active'` → 解封/启用（同时清空封禁三列）。
+   *
+   * 护栏与 ban/unban 完全一致（不能停用自己、不能移除最后一个可用管理员）。
+   * 审计动作统一记为 `admin.user.status`，detail 里带 before/after，便于回溯。
+   */
+  app.put('/api/admin/users/:id/status', adminOnly, async (req, reply) => {
+    const id = parseId(req.params.id, '用户编号');
+    const body = parse(userStatusSchema, req.body, '用户状态');
+    if (id === req.user.id && body.status !== 'active') {
+      throw forbidden('不能停用自己的账号', 'SELF_DISABLE');
+    }
+
+    const target = await queryOne(
+      'SELECT id, username, role, status, ban_reason, ban_until FROM users WHERE id = ? LIMIT 1',
+      [id],
+    );
+    if (!target) throw notFound('用户不存在', 'USER_NOT_FOUND');
+
+    if (body.status !== 'active' && target.role === 'admin') {
+      const adminCount = await queryOne("SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND status = 'active'");
+      if (Number(adminCount?.total ?? 0) <= 1) {
+        throw conflict('系统至少需要保留一个可用的管理员', 'LAST_ADMIN');
+      }
+    }
+
+    let banUntil = null;
+    if (body.status !== 'active') {
+      if (body.banUntil) {
+        const parsed = new Date(body.banUntil);
+        if (Number.isNaN(parsed.getTime())) throw badRequest('封禁到期时间格式不正确', 'VALIDATION_ERROR');
+        if (parsed.getTime() <= Date.now()) throw badRequest('封禁到期时间必须晚于当前时间', 'VALIDATION_ERROR');
+        banUntil = parsed;
+      } else if (body.hours) {
+        banUntil = new Date(Date.now() + body.hours * 60 * 60 * 1000);
+      }
+    }
+
+    if (body.status === 'active') {
+      await execute(
+        "UPDATE users SET status = 'active', ban_reason = NULL, banned_at = NULL, ban_until = NULL WHERE id = ?",
+        [id],
+      );
+    } else {
+      const reason = (body.banReason ?? '').trim();
+      if (reason) {
+        await execute(
+          "UPDATE users SET status = 'disabled', ban_reason = ?, banned_at = UTC_TIMESTAMP(), ban_until = ? WHERE id = ?",
+          [reason, banUntil, id],
+        );
+      } else {
+        // 人工停用：不写封禁原因，并清掉可能残留的封禁字段（避免「已解封却还显示封禁」）
+        await execute(
+          "UPDATE users SET status = 'disabled', ban_reason = NULL, banned_at = NULL, ban_until = NULL WHERE id = ?",
+          [id],
+        );
+      }
+      await execute('UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL', [id]);
+    }
+    invalidateUserCache(id);
+
+    await audit(req, 'admin.user.status', `user:${id}`, {
+      before: { status: target.status, banReason: target.ban_reason ?? null, banUntil: target.ban_until ?? null },
+      after: { status: body.status, banReason: body.banReason ?? null, banUntil: banUntil ? banUntil.toISOString() : null },
+      username: target.username,
+    });
+
+    const updated = await queryOne(`SELECT ${USER_SELECT_COLUMNS} FROM users u WHERE u.id = ? LIMIT 1`, [id]);
+    return ok(reply, {
+      user: adminUser(updated),
+      message:
+        body.status === 'active'
+          ? `${target.username} 已启用`
+          : body.banReason
+            ? `${target.username} 已封禁${banUntil ? `至 ${banUntil.toISOString()}` : '（永久）'}`
+            : `${target.username} 已停用`,
+    });
+  });
+
+  /* ---------------- 第 3 项：角色调整（独立接口） ---------------- */
+  /**
+   * 单独的角色调整接口。
+   *
+   * 为什么不直接复用 `PUT /api/admin/users/:id`：那个接口一次能改 role/status/quota，
+   * 审计里只能记成一条笼统的 `admin.user.update`。角色是高权限变更，
+   * 需要独立、可筛选的审计动作（`admin.user.role`），事后审计才能一眼看出
+   * 「谁在什么时候把谁提成了管理员」。护栏与原来保持一致。
+   */
+  app.post('/api/admin/users/:id/role', adminOnly, async (req, reply) => {
+    const id = parseId(req.params.id, '用户编号');
+    const body = parse(userRoleSchema, req.body, '角色信息');
+    const target = await queryOne('SELECT id, username, role FROM users WHERE id = ? LIMIT 1', [id]);
+    if (!target) throw notFound('用户不存在', 'USER_NOT_FOUND');
+
+    if (id === req.user.id && body.role !== 'admin') throw forbidden('不能取消自己的管理员身份', 'SELF_DEMOTE');
+    if (target.role === 'admin' && body.role === 'user') {
+      const adminCount = await queryOne("SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND status = 'active'");
+      if (Number(adminCount?.total ?? 0) <= 1) throw conflict('系统至少需要保留一个管理员', 'LAST_ADMIN');
+    }
+
+    if (target.role !== body.role) {
+      await execute('UPDATE users SET role = ? WHERE id = ?', [body.role, id]);
+      invalidateUserCache(id);
+    }
+    await audit(req, 'admin.user.role', `user:${id}`, { before: target.role, after: body.role, username: target.username });
+
+    const updated = await queryOne(`SELECT ${USER_SELECT_COLUMNS} FROM users u WHERE u.id = ? LIMIT 1`, [id]);
+    return ok(reply, {
+      user: adminUser(updated),
+      changed: target.role !== body.role,
+      message: target.role === body.role ? `${target.username} 已是该角色` : `${target.username} 的角色已更新`,
+    });
+  });
+
+  /* ---------------- 第 4 项：登录记录 / 最后活跃 ---------------- */
+
+  /**
+   * 用户登录记录（来自审计表聚合，不新增表）。
+   *
+   * 数据源：`audit_logs` 里 `action='auth.login'`（成功）与 `'auth.login_failed'`（失败），
+   * 这两类事件 auth.js 一直在写，只是此前没有后台入口去读。
+   * `detail_json` 里的 `reason` 字段解释了失败原因（not_found / bad_password / disabled）。
+   */
+  app.get('/api/admin/users/:id/logins', adminOnly, async (req, reply) => {
+    const id = parseId(req.params.id, '用户编号');
+    const { page, pageSize, failuresOnly } = parse(loginHistoryQuerySchema, req.query, '登录记录查询参数');
+    const target = await queryOne('SELECT id, username, email, last_login_at, last_login_ip FROM users WHERE id = ? LIMIT 1', [id]);
+    if (!target) throw notFound('用户不存在', 'USER_NOT_FOUND');
+
+    const actions = failuresOnly ? ['auth.login_failed'] : ['auth.login', 'auth.login_failed'];
+    const where = `WHERE user_id = ? AND action IN (${actions.map(() => '?').join(',')})`;
+    const params = [id, ...actions];
+    const offset = (page - 1) * pageSize;
+
+    const [rows, totalRow, summaryRow] = await Promise.all([
+      query(
+        `SELECT id, action, detail_json, ip, created_at FROM audit_logs ${where}
+         ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`,
+        [...params, pageSize, offset],
+      ),
+      queryOne(`SELECT COUNT(*) AS total FROM audit_logs ${where}`, params),
+      queryOne(
+        `SELECT
+           SUM(CASE WHEN action = 'auth.login' THEN 1 ELSE 0 END) AS success,
+           SUM(CASE WHEN action = 'auth.login_failed' THEN 1 ELSE 0 END) AS failed,
+           MAX(CASE WHEN action = 'auth.login' THEN created_at END) AS last_success_at
+         FROM audit_logs WHERE user_id = ? AND action IN ('auth.login','auth.login_failed')`,
+        [id],
+      ),
+    ]);
+
+    return ok(reply, {
+      user: {
+        id: Number(target.id),
+        username: target.username,
+        email: target.email,
+        lastLoginAt: target.last_login_at ?? null,
+        lastLoginIp: target.last_login_ip ?? null,
+      },
+      items: rows.map((r) => {
+        let detail = null;
+        try {
+          detail = r.detail_json ? JSON.parse(r.detail_json) : null;
+        } catch {
+          detail = null;
+        }
+        return {
+          id: Number(r.id),
+          action: r.action,
+          success: r.action === 'auth.login',
+          reason: detail?.reason ?? null,
+          deviceId: detail?.deviceId ?? null,
+          ip: r.ip ?? null,
+          createdAt: r.created_at ?? null,
+        };
+      }),
+      page,
+      pageSize,
+      total: Number(totalRow?.total ?? 0),
+      summary: {
+        success: Number(summaryRow?.success ?? 0),
+        failed: Number(summaryRow?.failed ?? 0),
+        lastSuccessAt: summaryRow?.last_success_at ?? null,
+      },
+    });
+  });
+
+  /* ---------------- 第 5 项：用户数据概览 ---------------- */
+
+  /**
+   * 用户数据概览：仓库 / 文档 / 分享 / 发布 / AI 用量 / 积分 / 存储。
+   *
+   * 与 `/api/admin/users/:id` 的区别：那个接口返回**明细列表**（最近 50 条流水/分享/发布），
+   * 适合「点进去逐个看」；本接口返回**聚合数字**，适合在弹窗顶部快速判断
+   * 「这个用户是重度用户还是空号」，避免为了看 4 个数字拉几百行明细。
+   */
+  app.get('/api/admin/users/:id/overview', adminOnly, async (req, reply) => {
+    const id = parseId(req.params.id, '用户编号');
+    const row = await queryOne(`SELECT ${USER_SELECT_COLUMNS} FROM users u WHERE u.id = ? LIMIT 1`, [id]);
+    if (!row) throw notFound('用户不存在', 'USER_NOT_FOUND');
+
+    const [vaultAgg, shareAgg, publishAgg, aiAgg, ledgerAgg, commentAgg, loginAgg] = await Promise.all([
+      queryOne(
+        `SELECT COUNT(*) AS vaults,
+                COALESCE(SUM(doc_count), 0) AS docs,
+                COALESCE(SUM(bytes), 0) AS bytes,
+                SUM(CASE WHEN status = 'disabled' THEN 1 ELSE 0 END) AS disabled_vaults
+         FROM user_vaults WHERE user_id = ?`,
+        [id],
+      ),
+      queryOne(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) AS active,
+                COALESCE(SUM(view_count), 0) AS views
+         FROM shares WHERE user_id = ?`,
+        [id],
+      ),
+      queryOne(
+        `SELECT COUNT(*) AS total, SUM(CASE WHEN revoked_at IS NULL THEN 1 ELSE 0 END) AS active
+         FROM publishes WHERE user_id = ?`,
+        [id],
+      ),
+      queryOne(
+        `SELECT COUNT(*) AS calls,
+                COALESCE(SUM(in_tokens), 0) AS in_tokens,
+                COALESCE(SUM(out_tokens), 0) AS out_tokens,
+                COALESCE(SUM(cost), 0) AS cost,
+                SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS errors,
+                MAX(created_at) AS last_at
+         FROM ai_usage WHERE user_id = ?`,
+        [id],
+      ),
+      queryOne(
+        `SELECT COUNT(*) AS entries,
+                COALESCE(SUM(CASE WHEN delta > 0 THEN delta ELSE 0 END), 0) AS inflow,
+                COALESCE(SUM(CASE WHEN delta < 0 THEN -delta ELSE 0 END), 0) AS outflow
+         FROM credit_ledger WHERE user_id = ?`,
+        [id],
+      ),
+      queryOne('SELECT COUNT(*) AS total FROM share_comments WHERE user_id = ?', [id]).catch(() => null),
+      queryOne(
+        `SELECT MAX(CASE WHEN action = 'auth.login' THEN created_at END) AS last_login_event,
+                MAX(created_at) AS last_active
+         FROM audit_logs WHERE user_id = ?`,
+        [id],
+      ),
+    ]);
+
+    const user = adminUser(row);
+    return ok(reply, {
+      user,
+      overview: {
+        vaults: {
+          total: Number(vaultAgg?.vaults ?? 0),
+          disabled: Number(vaultAgg?.disabled_vaults ?? 0),
+          documents: Number(vaultAgg?.docs ?? 0),
+          bytes: Number(vaultAgg?.bytes ?? 0),
+        },
+        shares: {
+          total: Number(shareAgg?.total ?? 0),
+          active: Number(shareAgg?.active ?? 0),
+          views: Number(shareAgg?.views ?? 0),
+          comments: Number(commentAgg?.total ?? 0),
+        },
+        publishes: { total: Number(publishAgg?.total ?? 0), active: Number(publishAgg?.active ?? 0) },
+        ai: {
+          calls: Number(aiAgg?.calls ?? 0),
+          inTokens: Number(aiAgg?.in_tokens ?? 0),
+          outTokens: Number(aiAgg?.out_tokens ?? 0),
+          cost: Number(aiAgg?.cost ?? 0),
+          errors: Number(aiAgg?.errors ?? 0),
+          lastUsedAt: aiAgg?.last_at ?? null,
+        },
+        credits: {
+          balance: user.credits,
+          inflow: Number(ledgerAgg?.inflow ?? 0),
+          outflow: Number(ledgerAgg?.outflow ?? 0),
+          entries: Number(ledgerAgg?.entries ?? 0),
+        },
+        activity: {
+          lastLoginAt: loginAgg?.last_login_event ?? user.lastLoginAt,
+          lastActiveAt: loginAgg?.last_active ?? user.lastActiveAt,
+        },
+        quota: {
+          quotaBytes: user.quotaBytes,
+          storageBytes: user.storageBytes,
+          usageRatio:
+            user.quotaBytes > 0 ? Math.min(1, Number((user.storageBytes / user.quotaBytes).toFixed(4))) : 0,
+        },
+      },
+    });
+  });
+
+  /* ---------------- 第 6 项：导出用户列表 CSV ---------------- */
+
+  /**
+   * 导出用户列表 CSV。
+   *
+   * ## 为什么带 BOM
+   *
+   * 导出的是中文表头与中文昵称，Excel 在 Windows 上默认按系统 ANSI（GBK）解码 CSV，
+   * 没有 UTF-8 BOM 就会整片乱码 —— 这是中文 CSV 导出最常见的投诉。
+   * 加 `\uFEFF` 前缀后 Excel 能正确识别 UTF-8。
+   *
+   * ## 为什么不用流式
+   *
+   * 用户量级（当前 3 个，即使上万）一次性拼字符串完全可承受，代码也更简单可审计。
+   * 若将来达到十万级再改流式，届时导出本身也该换成异步任务。
+   *
+   * ## CSV 注入防护
+   *
+   * 以 `= + - @` 开头的单元格会被 Excel 当成公式执行。用单引号前缀强制当文本。
+   */
+  app.get('/api/admin/users/export.csv', adminOnly, async (req, reply) => {
+    const q = parse(exportUsersQuerySchema, req.query, '导出筛选条件');
+    const filters = [];
+    const params = [];
+    if (q.search) {
+      filters.push('(u.email LIKE ? OR u.username LIKE ? OR u.nickname LIKE ?)');
+      params.push(`%${q.search}%`, `%${q.search}%`, `%${q.search}%`);
+    }
+    if (q.status) {
+      filters.push('u.status = ?');
+      params.push(q.status);
+    }
+    if (q.role) {
+      filters.push('u.role = ?');
+      params.push(q.role);
+    }
+    const where = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+    const orderBy = {
+      created: 'u.created_at DESC, u.id DESC',
+      lastLogin: 'u.last_login_at DESC, u.id DESC',
+      credits: 'u.credits DESC, u.id DESC',
+      documents: 'doc_count DESC, u.id DESC',
+    }[q.sort] ?? 'u.created_at DESC, u.id DESC';
+
+    const rows = await query(
+      `SELECT ${USER_SELECT_COLUMNS},
+              (SELECT COUNT(*) FROM user_vaults v2 WHERE v2.user_id = u.id) AS vault_total
+       FROM users u ${where} ORDER BY ${orderBy} LIMIT 50000`,
+      params,
+    );
+
+    const header = [
+      'ID',
+      '用户名',
+      '邮箱',
+      '昵称',
+      '角色',
+      '状态',
+      '封禁原因',
+      '封禁到期',
+      '积分',
+      '仓库数',
+      '文档数',
+      '分享数',
+      '发布数',
+      '存储字节',
+      '注册时间',
+      '最后登录',
+      '最后活跃',
+    ];
+
+    /** CSV 单元格转义：防公式注入 + 双引号包裹 + 内部引号翻倍 */
+    const cell = (value) => {
+      let s = value === null || value === undefined ? '' : String(value);
+      if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+
+    const lines = [header.map(cell).join(',')];
+    for (const r of rows) {
+      const u = adminUser(r);
+      lines.push(
+        [
+          cell(u.id),
+          cell(u.username),
+          cell(u.email),
+          cell(u.nickname),
+          cell(u.role === 'admin' ? '管理员' : '普通用户'),
+          cell(u.banned ? '已封禁' : u.status === 'active' ? '正常' : '已禁用'),
+          cell(u.banReason),
+          cell(u.banUntil),
+          cell(u.credits),
+          cell(Number(r.vault_total ?? 0)),
+          cell(u.documentCount),
+          cell(u.shareCount),
+          cell(u.publishCount),
+          cell(u.storageBytes),
+          cell(u.createdAt),
+          cell(u.lastLoginAt),
+          cell(u.lastActiveAt),
+        ].join(','),
+      );
+    }
+
+    const csv = `\uFEFF${lines.join('\r\n')}\r\n`;
+    await audit(req, 'admin.user.export', 'users:export', {
+      rows: rows.length,
+      filters: { search: q.search || null, status: q.status ?? null, role: q.role ?? null, sort: q.sort },
+    });
+
+    reply.header('content-type', 'text/csv; charset=utf-8');
+    reply.header(
+      'content-disposition',
+      `attachment; filename="neomd-users-${new Date().toISOString().slice(0, 10)}.csv"`,
+    );
+    reply.header('cache-control', 'no-store');
+    return reply.send(csv);
   });
 
   /* ------------------------------ 分享 ------------------------------ */
@@ -1200,28 +2100,310 @@ export async function adminRoutes(app) {
 
   /* ------------------------------ 发布包 ------------------------------ */
 
-  // 对象存储 mdadmin/releases/ 下的安装包清单
+  /**
+   * 客户端分发清单（1.4.0 重做）。
+   *
+   * ## 1.4.0 之前的三个真实问题（这就是「后台看不到最新版本」的根因）
+   *
+   * 1. **只列对象存储**：老实现只 `listObjects(mdadmin/releases/)`，完全没有引用
+   *    `download.js` 的 `DOWNLOAD_FILES`。于是本地 `services/api/releases/` 里的
+   *    历史 APK（1.1.8 及更早**只存在于本地磁盘**，从未上传 OSS）在后台**完全不可见**；
+   *    管理员会以为「那些版本没发过」。
+   * 2. **没有「当前版本」概念**：列表按 lastModified 倒序，但没有一处说明
+   *    「哪个才是现在该发出去的版本」。当前版本的事实源只有
+   *    `services/api/package.json` 的 `version`，老代码没有读它。
+   * 3. **拿不到 version / 下载次数 / 可用性**：只返回 key/size/lastModified/url，
+   *    前端只能渲染 4 列，无法判断「这一版是否真的能下」。
+   *
+   * ## 现在的做法（单一数据源，不再有第二份清单）
+   *
+   * - 当前版本的三条：直接复用 `download.js` 的 `DOWNLOAD_FILES`（已 export）；
+   * - 历史 APK：直接复用 `download.js` 的 `listHistoricalApks()`（已 export，1.4.0 加）；
+   * - OSS 实际对象：`listObjects` 列举，用来判断「OSS 上有 / 本地有 / 两者都有」；
+   * - 下载次数：`release_downloads` 表按天聚合（`download.js` 的埋点写入）。
+   *
+   * 三处按**文件名**合并成一行一个文件，因此后台看到的集合 = 客户端能下到的集合 ∪ OSS 上的对象，
+   * 不会出现「后台有、客户端 404」或反之。
+   *
+   * ## 可用性（是否可下载）
+   *
+   * `available` 的判定：
+   *  - 当前版本清单内的文件：只要「本地有」或「OSS 有」就算可用（客户端会按需回退）；
+   *  - 历史 APK：本地有 → 可用；否则看 OSS；
+   *  - 仅在 OSS 上的历史 windows 包：`DOWNLOAD_FILES` 与 `listHistoricalApks` 都不认它
+   *    （历史 zip/exe 不在白名单内），因此标记 `downloadable: false` 并说明原因 ——
+   *    这正是「后台能看到但客户端下不到」的诚实呈现，避免管理员误判。
+   */
   app.get('/api/admin/releases', adminOnly, async (req, reply) => {
     const prefix = `${adminPrefix('releases')}/`;
-    let listing;
+
+    // 1) OSS 列举（失败不阻断：本地文件仍然要展示）
+    let listing = { objects: [] };
+    let ossMessage = null;
     try {
       listing = await listObjects(platformConfig(), prefix, 1000);
     } catch (err) {
       req.log.warn({ err, prefix }, '列举发布包失败');
-      return ok(reply, { prefix, files: [], message: `列举对象存储失败：${err.message}` });
+      ossMessage = `列举对象存储失败：${err.message}`;
     }
 
-    const files = listing.objects
-      .filter((item) => item.key && !item.key.endsWith('/'))
-      .map((item) => ({
+    const ossByFile = new Map();
+    for (const item of listing.objects) {
+      if (!item?.key || item.key.endsWith('/')) continue;
+      const file = item.key.slice(prefix.length);
+      ossByFile.set(file, {
         key: item.key,
         size: Number(item.size ?? 0),
         lastModified: item.lastModified ?? null,
         url: platformPublicUrl(item.key),
-      }))
-      .sort((a, b) => String(b.lastModified ?? '').localeCompare(String(a.lastModified ?? '')));
+      });
+    }
 
-    return ok(reply, { prefix, files });
+    // 2) 本地磁盘实际文件（只 stat，不读内容）
+    const localByFile = new Map();
+    try {
+      const names = await fs.readdir(LOCAL_DIR);
+      for (const name of names) {
+        if (!/^[A-Za-z0-9._-]+$/.test(name)) continue;
+        try {
+          const st = await fs.stat(path.join(LOCAL_DIR, name));
+          if (!st.isFile()) continue;
+          localByFile.set(name, { size: st.size, modifiedAt: st.mtime.toISOString() });
+        } catch {
+          /* 单个文件 stat 失败忽略 */
+        }
+      }
+    } catch {
+      /* 目录不存在（未部署 releases/）：本地视图为空 */
+    }
+
+    // 3) 下载次数（按天聚合 → 汇总到文件）
+    const countByFile = new Map();
+    try {
+      const rows = await query(
+        'SELECT file, SUM(count) AS total, MAX(last_at) AS last_at FROM release_downloads GROUP BY file',
+      );
+      for (const r of rows) {
+        countByFile.set(String(r.file), { total: Number(r.total ?? 0), lastAt: r.last_at ?? null });
+      }
+    } catch (err) {
+      req.log.warn({ err }, '读取下载统计失败（表可能尚未迁移）');
+    }
+
+    // 4) 组装：以「客户端清单 ∪ 历史 APK ∪ OSS 对象 ∪ 本地文件」的并集为全集
+    const files = new Map();
+    const ensure = (file) => {
+      if (!files.has(file)) {
+        files.set(file, {
+          file,
+          version: null,
+          platform: null,
+          title: null,
+          size: null,
+          lastModified: null,
+          url: null,
+          isCurrent: false,
+          inCurrentManifest: false,
+          historical: false,
+          onOss: false,
+          onLocal: false,
+          downloadable: false,
+          available: false,
+          downloads: 0,
+          lastDownloadAt: null,
+          note: null,
+        });
+      }
+      return files.get(file);
+    };
+
+    // 4a) 当前版本（DOWNLOAD_FILES：唯一事实源）
+    for (const item of DOWNLOAD_FILES) {
+      const row = ensure(item.file);
+      row.version = APP_VERSION;
+      row.platform = item.platform;
+      row.title = item.title;
+      row.inCurrentManifest = true;
+      row.isCurrent = true;
+    }
+
+    // 4b) 历史 APK（listHistoricalApks：与客户端白名单同一份）
+    for (const item of await listHistoricalApks()) {
+      const row = ensure(item.file);
+      row.platform = item.platform;
+      row.title = item.title;
+      row.historical = true;
+      row.version = row.version ?? (APK_RE.exec(item.file)?.[1] ?? null);
+    }
+
+    // 4c) OSS 对象（含未被任何清单认领的遗留文件）
+    for (const [file, meta] of ossByFile) {
+      const row = ensure(file);
+      row.onOss = true;
+      row.size = meta.size;
+      row.lastModified = meta.lastModified;
+      row.url = meta.url;
+      if (!row.version) {
+        const m = /^NeoMD-(\d+(?:\.\d+)*)/.exec(file);
+        if (m) row.version = m[1];
+      }
+      if (!row.title) {
+        row.title = file.endsWith('.apk')
+          ? `Android APK（${row.version ?? '未知版本'}）`
+          : file.includes('setup.exe')
+            ? `Windows 安装包（${row.version ?? '未知版本'}）`
+            : file.includes('win-x64.zip')
+              ? `Windows 绿色版（${row.version ?? '未知版本'}）`
+              : file;
+      }
+      if (!row.platform) row.platform = file.endsWith('.apk') ? 'android' : 'windows';
+    }
+
+    // 4d) 本地磁盘文件
+    for (const [file, meta] of localByFile) {
+      const row = ensure(file);
+      row.onLocal = true;
+      // 本地大小优先于 OSS（本地是实际会被 APK 代理直出的那份）
+      row.size = meta.size;
+      row.lastModified = row.lastModified ?? meta.modifiedAt;
+      if (!row.version) {
+        const m = /^NeoMD-(\d+(?:\.\d+)*)/.exec(file);
+        if (m) row.version = m[1];
+      }
+      if (!row.platform) row.platform = file.endsWith('.apk') ? 'android' : 'windows';
+      if (!row.title) row.title = file;
+    }
+
+    // 5) 计算可用性与下载次数
+    for (const row of files.values()) {
+      const stat = countByFile.get(row.file);
+      if (stat) {
+        row.downloads = stat.total;
+        row.lastDownloadAt = stat.lastAt;
+      }
+      /*
+       * 客户端能否下到这个文件，取决于它是否在 download.js 的白名单里。
+       * 但「在白名单里」不等于「真的能下」，还要看它**走哪条分发链路**：
+       *
+       *   - APK（proxy=true）：download.js 优先读本地 `services/api/releases/`，
+       *     本地缺失时回退到 OSS 代理下载 —— 而**阿里云禁止 APK 经 OSS 端点公开分发**
+       *     （返回 `ApkDownloadForbidden`）。所以只有 `onLocal` 的 APK 才是真的可下载；
+       *   - zip / exe（proxy=false）：302 跳到 OSS 预签名地址，客户端直连对象存储，
+       *     因此只有 `onOss` 的才可下载（本地留不留都不影响这条链路）。
+       *
+       * 这个区分是 1.4.0 排查时实测出来的：NeoMD-1.3.1.apk 确实存在于 OSS，
+       * 但本地目录只到 1.1.8，结果客户端下载 404。如果这里简单按「OSS 有 = 可用」
+       * 标记，后台就会对着一个下不动的安装包显示「可下载」——那比不显示更糟。
+       */
+      const whitelisted = row.inCurrentManifest || row.historical;
+      const isApk = row.file.endsWith('.apk');
+      row.downloadable = whitelisted;
+      row.available = whitelisted && (isApk ? row.onLocal : row.onOss);
+
+      if (!row.downloadable) {
+        row.note = '不在客户端下载白名单内（历史 Windows 包仅存档，客户端无法下载）';
+      } else if (isApk && !row.onLocal && row.onOss) {
+        row.note = 'APK 仅在对象存储上：阿里云禁止 APK 经 OSS 端点分发，且本地 releases/ 缺失 → 客户端会 404';
+      } else if (!row.available) {
+        row.note = 'OSS 与本地均无可分发的副本，客户端会返回 404';
+      } else if (row.onOss && row.onLocal) {
+        row.note = 'OSS 与本地均存在';
+      } else if (row.onLocal) {
+        row.note = isApk ? '本地直出（APK 正常链路）' : '仅本地存在（该类型不分发本地副本）';
+      } else {
+        row.note = '仅 OSS 存在（客户端 302 直连对象存储）';
+      }
+    }
+
+    const all = [...files.values()].sort((a, b) => {
+      // 当前版本永远置顶，其次按版本号倒序，最后按修改时间倒序
+      if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1;
+      const va = a.version ?? '';
+      const vb = b.version ?? '';
+      if (va !== vb) return vb.localeCompare(va, undefined, { numeric: true });
+      return String(b.lastModified ?? '').localeCompare(String(a.lastModified ?? ''));
+    });
+
+    const current = all.filter((f) => f.isCurrent);
+    const history = all.filter((f) => !f.isCurrent);
+
+    return ok(reply, {
+      prefix,
+      /** 当前版本号：直接来自 services/api/package.json，唯一事实源 */
+      currentVersion: APP_VERSION,
+      files: all,
+      current,
+      history,
+      summary: {
+        total: all.length,
+        current: current.length,
+        history: history.length,
+        downloadable: all.filter((f) => f.downloadable).length,
+        available: all.filter((f) => f.available).length,
+        onOss: all.filter((f) => f.onOss).length,
+        onLocal: all.filter((f) => f.onLocal).length,
+        both: all.filter((f) => f.onOss && f.onLocal).length,
+        ossOnly: all.filter((f) => f.onOss && !f.onLocal).length,
+        localOnly: all.filter((f) => f.onLocal && !f.onOss).length,
+        totalDownloads: all.reduce((s, f) => s + f.downloads, 0),
+      },
+      ...(ossMessage ? { message: ossMessage } : {}),
+    });
+  });
+
+  /**
+   * 单个安装包的可用性探测（HEAD）。
+   *
+   * 与「列表里带 available 标记」的区别：列表的 available 是**静态推断**
+   * （OSS 列举 + 本地 stat，按分发链路规则判定）；这里做的是**真实请求** ——
+   * 对 `/api/download/:file` 发 HEAD，看这条客户端路径当下是否真的通。
+   * 两者不一致时（例如 OSS 对象被删、白名单与磁盘脱节），这里能当场暴露。
+   *
+   * ## 为什么探测本机监听地址而不是 publicBaseUrl
+   *
+   * 最初版本打的是 `config.publicBaseUrl`（`https://md.zhengl.vip`），结果在本机实测
+   * 拿到 **502** —— 那是生产前置 nginx 的健康问题，与「这个文件能不能下」无关，
+   * 反而会让后台把所有文件都标成不可用。本接口要回答的是「本服务的分发逻辑是否正常」，
+   * 因此直接打自身监听地址（`127.0.0.1:PORT`），把 nginx/域名问题留给 `/api/admin/status`。
+   *
+   * 注意：`download.js` 已排除 HEAD 请求的下载计数，因此本探测不会污染统计。
+   */
+  app.get('/api/admin/releases/:file/probe', adminOnly, async (req, reply) => {
+    const file = String(req.params.file ?? '');
+    if (!/^[A-Za-z0-9._-]+$/.test(file)) throw badRequest('安装包文件名不合法', 'VALIDATION_ERROR');
+
+    const localOrigin = `http://${config.server.host === '0.0.0.0' ? '127.0.0.1' : config.server.host}:${config.server.port}`;
+    const url = `${localOrigin}/api/download/${encodeURIComponent(file)}`;
+    const publicUrl = `${String(config.publicBaseUrl).replace(/\/+$/, '')}/api/download/${encodeURIComponent(file)}`;
+    const startedAt = Date.now();
+    try {
+      // redirect: manual —— Windows 包会 302 到 OSS 预签名地址，我们只关心「服务端是否认这个文件」
+      const res = await fetch(url, { method: 'HEAD', redirect: 'manual', signal: AbortSignal.timeout(8000) });
+      const reachable = res.status === 200 || res.status === 302 || res.status === 307;
+      return ok(reply, {
+        file,
+        url,
+        publicUrl,
+        status: res.status,
+        reachable,
+        contentType: res.headers.get('content-type') ?? null,
+        contentLength: Number(res.headers.get('content-length') ?? 0) || null,
+        latencyMs: Date.now() - startedAt,
+        message: reachable ? '客户端下载链路可用' : `客户端下载返回 HTTP ${res.status}`,
+      });
+    } catch (err) {
+      return ok(reply, {
+        file,
+        url,
+        publicUrl,
+        status: 0,
+        reachable: false,
+        contentType: null,
+        contentLength: null,
+        latencyMs: Date.now() - startedAt,
+        message: `探测失败：${err?.message ?? String(err)}`,
+      });
+    }
   });
 
   /* ------------------------------ 自身改密 ------------------------------ */

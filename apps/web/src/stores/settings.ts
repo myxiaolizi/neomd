@@ -1,10 +1,59 @@
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
-import type { EditorColorScheme, ServerSettings, Settings, ThemePreset } from '@neomd/shared';
-import { allThemes, findTheme, legacyCustomTheme, legacyThemeId, resolveTheme, themeVars } from '@neomd/shared';
+import type { EditorColorScheme, ServerSettings, Settings, ThemePreset, ThemeScope } from '@neomd/shared';
+import {
+  ALL_THEME_VARS,
+  CONTENT_THEME_VARS,
+  CHROME_THEME_VARS,
+  STRUCTURAL_THEME_VARS,
+  allThemes,
+  findTheme,
+  legacyCustomTheme,
+  legacyThemeId,
+  resolveTheme,
+  scopedThemeVars,
+  themeVarAllowed,
+  themeVars,
+} from '@neomd/shared';
 import { mergeSettings, defaultSettings, SETTINGS_KEY, detectRuntime } from '@neomd/core';
 import { api, getAccessToken } from '@/api/client';
 import { DEFAULT_SERVER_SETTINGS, normalizeServerBase } from '@/lib/server-endpoint';
+
+/**
+ * 变量分类表与作用域判定的**权威来源**都在 `@neomd/shared`。
+ *
+ * 这里 re-export 是为了向后兼容（1.1.1 - 1.3.1 期间它们从本文件导出，
+ * SettingsPage / 历史脚本 / 取证脚本都按 `@/stores/settings` 引用）。
+ * 1.4.0 把数据源搬走的原因见 themes.ts 里「主题变量的语义分档」注释：
+ * 两处各维护一份清单必然漂移 ——「仅正文」白名单漏项就是这么来的。
+ */
+export { ALL_THEME_VARS, CONTENT_THEME_VARS, CHROME_THEME_VARS, STRUCTURAL_THEME_VARS, themeVarAllowed };
+
+/**
+ * `applyTheme()` 的可选覆盖。
+ *
+ * 引入原因（需求 16）：设置改为「草稿 + 保存」后，主题预览必须能在**不写 store**
+ * 的前提下改 CSS 变量。`appearance` 就是那份草稿外观；`scope` 允许调用方临时
+ * 指定作用域（切换「应用范围」时立即重算，不必等 localStorage 写回）。
+ */
+interface ThemeVarApplyOverride {
+  appearance?: Settings['appearance'];
+  scope?: ThemeScope;
+}
+
+/**
+ * `commitDraft()` 的敏感字段补丁。
+ *
+ * 密钥类字段在网页端**只留在内存**（`persist()` 会先把它们清空再写 localStorage），
+ * 因此草稿模式对它们只能是「先记在页面内存、保存时才写进 store」，
+ * 不能像普通设置项那样整份快照进 localStorage。
+ */
+interface CommitDraftSecrets {
+  storageKeyId?: string;
+  storageSecret?: string;
+  aiKey?: string;
+}
+
 
 /**
  * 给 settings 补齐服务端配置默认值。
@@ -178,60 +227,27 @@ function migrateSettingsTheme(input: Partial<Settings>): Partial<Settings> {
 
 
 /* ------------------------------------------------------------------ */
-/* 主题「应用范围」（1.1.1）                                            */
+/* 主题「应用范围」（1.1.1 引入，1.4.0 修正语义）                        */
+/*                                                                     */
+/* ## 1.4.0 修的是什么（需求 12）                                       */
+/*                                                                     */
+/* 1.1.1 的实现把「正文专属变量」写死成 5 个，切换范围时对不允许的变量执行  */
+/* `root.style.removeProperty(key)`。但 `themes.css` 里有                 */
+/* `:root[data-theme-preset='midnight'] { --bg: #1b1f26; … }` ——        */
+/* 删掉内联样式后这条静态主题规则立刻接管，`--bg` 仍是主题的侧栏色，      */
+/* 于是「仅正文」看起来完全没生效（实测：内联已清空，computed 不变）。    */
+/*                                                                     */
+/* 现在的做法：                                                          */
+/* - 分类表搬进 `@neomd/shared`（`CONTENT_THEME_VARS` / `CHROME_THEME_VARS` / */
+/*   `STRUCTURAL_THEME_VARS`），本文件只做 re-export，避免两处清单漂移；  */
+/* - 排除的一侧**显式写入中性基线值**（`scopedThemeVars()`），            */
+/*   内联样式优先级高于样式表，界面才会真的回到中性。                     */
 /* ------------------------------------------------------------------ */
 
-/** 应用范围：整体 / 仅正文 / 仅界面（本机偏好，存 localStorage，不进 settings） */
-export type ThemeScope = 'all' | 'content' | 'chrome';
+export type { ThemeScope } from '@neomd/shared';
 
 /** localStorage key，SettingsPage 与本 store 共用 */
 export const THEME_SCOPE_STORAGE_KEY = 'neomd.themeScope';
-
-/** 正文专属变量：用于把 themeVars() 的输出分成「正文」「界面」两组 */
-export const CONTENT_THEME_VARS = new Set<string>([
-  '--content-bg',
-  '--content-fg',
-  '--code-block-bg',
-  '--quote-bg',
-  '--table-border',
-]);
-
-/**
- * themeVars() 会产出的全部变量名。
- *
- * 为什么需要它：切换「应用范围」时必须**先清空上一轮写入的内联变量**，
- * 否则从「整体」切到「仅正文」后，界面类变量会以旧值残留，看起来范围没生效。
- * 直接列字面量而不是 `Object.keys(themeVars(someTheme))`，
- * 是为了让这份清单在模块加载期就固定，不受任何主题对象影响。
- */
-export const ALL_THEME_VARS: string[] = [
-  '--content-bg',
-  '--content-fg',
-  '--chrome-bg',
-  '--bg',
-  '--bg-elevated',
-  '--bg-sidebar',
-  '--bg-hover',
-  '--bg-active',
-  '--bg-input',
-  '--fg',
-  '--fg-2',
-  '--fg-3',
-  '--border',
-  '--border-strong',
-  '--accent',
-  '--accent-hover',
-  '--accent-weak',
-  '--accent-weak-2',
-  '--sky',
-  '--sky-2',
-  '--code-block-bg',
-  '--quote-bg',
-  '--table-border',
-  '--shadow-1',
-  '--shadow-2',
-  '--shadow-3',
-];
 
 /** 读取本机保存的应用范围 */
 export function readThemeScope(): ThemeScope {
@@ -239,16 +255,9 @@ export function readThemeScope(): ThemeScope {
     const v = localStorage.getItem(THEME_SCOPE_STORAGE_KEY);
     if (v === 'content' || v === 'chrome') return v;
   } catch {
-    /* localStorage 琚鐢?*/
+    /* localStorage 被禁用 */
   }
   return 'all';
-}
-
-/** 该变量在当前范围下是否允许覆盖 */
-export function themeVarAllowed(key: string, scope: ThemeScope): boolean {
-  if (scope === 'all') return true;
-  const isContent = CONTENT_THEME_VARS.has(key);
-  return scope === 'content' ? isContent : !isContent;
 }
 
 /** 自动 pull 节流窗口：可见性/聚焦事件在 30s 内只触发一次 */
@@ -750,25 +759,59 @@ export const useSettingsStore = defineStore('settings', () => {
   /* 与 task-2（server）、task-4（cloud sync）共用本文件：本段只放主题相关代码，
      请勿在此文件其它位置做无关整理，以免与并行改动冲突。 */
 
-  /** 把主题的整套 CSS 变量写到 <html>（正文与界面共用同一套变量） */
-  function applyThemeVars(theme: ThemePreset): void {
+  /**
+   * 把一套外观设置折算成 CSS 变量写到 `<html>`（需求 11 / 12 / 13 的共同落点）。
+   *
+   * @param theme    要应用的主题
+   * @param override 可选的外观覆盖（**草稿预览**走这里：只改 CSS 变量，不进 store、
+   *                 不推云端）。省略时读 store 里的正式值。
+   *
+   * ## 三条 1.4.0 的修正
+   *
+   * 1. **作用域**改用 `scopedThemeVars()`：排除的一侧写中性基线值，而不是
+   *    `removeProperty()` —— 删掉内联样式会回落到 `themes.css` 里同一套主题的
+   *    静态规则，界面照样被染色（这是「仅正文仍全局生效」的根因）。
+   * 2. **结构色保护**：`themeVars()` 内部已过 `protectStructuralColors()`，
+   *    分割线对背景的对比度保证 ≥ 1.2:1（需求 11）。
+   * 3. **颜色细化（accent）**：`appearance.accent` 仍优先于主题自带强调色，
+   *    但只在用户**显式改过**时生效 —— 见下面 `accentOverride` 的取值逻辑。
+   */
+  function applyThemeVars(theme: ThemePreset, override?: ThemeVarApplyOverride): void {
     const root = document.documentElement;
-    // 主题强调色为基准；用户在「通用」页签手动改过主色调时以用户值为准
-    const accent = settings.value.appearance.accent?.trim();
-    const effective: ThemePreset = accent ? { ...theme, accent } : theme;
-    const vars = themeVars(effective);
-    // 先清空上一次写入的变量：切换「应用范围」时若不清理，上一轮的主题变量会残留
+    const appearance = override?.appearance ?? settings.value.appearance;
+    /**
+     * 强调色优先级：草稿/设置里的 `accent` > 主题自带 `accent`。
+     *
+     * 1.4.0 之前这里是「只要 appearance.accent 有值就覆盖」，而
+     * `applyThemePreset()` 每次都把 `appearance.accent` 写成**主题值**，
+     * 于是「颜色细化」里改的强调色会被上一轮的主题 accent 吞掉（需求 13）。
+     * 现在把「用户显式改色」与「主题同步」区分开：
+     * - `appearance.accent` 有值且**与主题 accent 不同** → 用户改过，以用户值优先；
+     * - 相同（applyThemePreset 写入的镜像值）→ 视为「跟随主题」，直接用主题值。
+     */
+    const accentRaw = appearance.accent?.trim();
+    const accentOverrideValue =
+      accentRaw && accentRaw.toLowerCase() !== theme.accent.toLowerCase() ? accentRaw : '';
+    const effective: ThemePreset = accentOverrideValue ? { ...theme, accent: accentOverrideValue } : theme;
+    const scope = override?.scope ?? readThemeScope();
+    const vars = scopedThemeVars(effective, scope);
+    // 先清空上一次写入的变量，避免某套主题少产出某个键时残留上一套的值
     for (const key of ALL_THEME_VARS) root.style.removeProperty(key);
-    const scope = readThemeScope();
     for (const [key, value] of Object.entries(vars)) {
-      if (!themeVarAllowed(key, scope)) continue;
       root.style.setProperty(key, value);
     }
+    // 排查用：让审计脚本能直接读到「当前生效的范围」，不必去翻 localStorage
+    root.dataset.themeScope = scope;
   }
 
-  function applyTheme(): void {
+  /**
+   * 应用外观相关的全部 CSS 变量（主题 + 排版）。
+   *
+   * @param override 草稿预览用；省略 = 用 store 里的正式设置。
+   */
+  function applyTheme(override?: ThemeVarApplyOverride): void {
     if (typeof document === 'undefined') return;
-    const appearance = settings.value.appearance;
+    const appearance = override?.appearance ?? settings.value.appearance;
     const root = document.documentElement;
     const prefersDark =
       typeof window !== 'undefined'
@@ -780,7 +823,7 @@ export const useSettingsStore = defineStore('settings', () => {
     const theme = resolveTheme(appearance, { prefersDark });
     root.dataset.themePreset = theme.id;
     root.dataset.theme = theme.mode === 'dark' ? 'dark' : 'light';
-    applyThemeVars(theme);
+    applyThemeVars(theme, override);
     // 正文缩放：以 fontSize 为基准按 zoom 百分比放大字号，行高同步换算；只影响正文排版
     const zoom = clampZoomPercent(appearance.zoom ?? 100);
     // 这样只影响正文排版，不会像 CSS zoom 那样把侧栏/工具栏一起放大。
@@ -803,6 +846,90 @@ export const useSettingsStore = defineStore('settings', () => {
       // 页面级缩放单独存一份，供需要的样式读取（不影响界面组件）
     root.style.setProperty('--content-zoom', String(zoom / 100));
     root.dataset.contentZoom = String(zoom);
+  }
+
+  /**
+   * 「实时预览」：把**草稿**外观应用到界面，但不写 store、不推云端。
+   *
+   * 需求 16 要求设置改为「草稿 + 保存」语义，同时又不能把主题预览做得像死物 ——
+   * 所以预览单独走这条通道：改 CSS 变量立即看得见，点「保存」才落到 store。
+   * 关闭预览或取消时传 `null`，界面回到 store 里的正式值。
+   */
+  function previewAppearance(draft: Settings['appearance'] | null): void {
+    if (draft) applyTheme({ appearance: draft });
+    else applyTheme();
+  }
+
+  /**
+   * 一次性提交设置页草稿（需求 16 的核心入口）。
+   *
+   * 为什么不是循环调用 `update()` / `updateAppearance()` / `updateLayout()`：
+   * 那会把 `applyTheme()` + `persist()` + `scheduleCloudPush()` 各跑三遍 ——
+   * `scheduleCloudPush()` 虽只出一次推送（1s 防抖），但会白做两次全量主题重算
+   * （26 个变量 × setProperty），且中间态会让「结构色纠正」按半套设置算一次、
+   * 视觉上闪一下。
+   *
+   * @param next 待合并的整份设置（设置页草稿，已含 appearance / layout）
+   * @param secrets 可选：草稿里的敏感字段，保存时一并落到 store（不进 localStorage）
+   */
+  function commitDraft(next: Partial<Settings>, secretsPatch?: CommitDraftSecrets): void {
+    const prevAppearance = settings.value.appearance;
+    /*
+     * 与 `updateAppearance()` 保持同一套「切明暗时自动换主题预设」的行为：
+     * 用户在草稿里点「深色」而当前主题是浅色，保存后必须真的变深色，
+     * 否则 `resolveTheme()` 会因为 `themePresetId` 仍是浅色主题而忽略 `theme`。
+     */
+    if (next.appearance && next.appearance.theme !== prevAppearance.theme) {
+      const adjusted = { ...prevAppearance, ...next.appearance };
+      const prefersDark =
+        typeof window !== 'undefined'
+          ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false)
+          : false;
+      const wantDark = adjusted.theme === 'dark' || (adjusted.theme === 'system' && prefersDark);
+      const currentPreset = findTheme(adjusted.themePresetId, adjusted.customThemes);
+      if (!currentPreset || (currentPreset.mode === 'dark') !== wantDark) {
+        const targetTheme = findTheme(wantDark ? 'midnight' : 'daylight', adjusted.customThemes);
+        if (targetTheme) {
+          adjusted.themePresetId = targetTheme.id;
+          adjusted.editorColorScheme = PRESET_TO_LEGACY_SCHEME[targetTheme.id] ?? 'custom';
+          adjusted.customEditorBg = targetTheme.contentBg;
+          adjusted.customEditorFg = targetTheme.contentFg;
+        }
+      }
+      next = { ...next, appearance: adjusted };
+    }
+    settings.value = mergeSettings(settings.value, next);
+    settings.value.updatedAt = Date.now();
+    /*
+     * 主题类字段的「本地已改、待推送」标记：按**保存后的值 vs 保存前**逐字段比对，
+     * 而不是像 `updateAppearance()` 那样看「patch 里出现过哪些键」——
+     * 草稿里可能整份 appearance 都在，但真正变化的只有一两个字段。
+     */
+    if (next.appearance) {
+      const after = settings.value.appearance as unknown as Record<string, unknown>;
+      const changed = GLOBAL_APPEARANCE_FIELDS.filter(
+        (f) => JSON.stringify(after[f]) !== JSON.stringify((prevAppearance as unknown as Record<string, unknown>)[f]),
+      );
+      if (GLOBAL_APPEARANCE_FIELD_SET.has('theme') && changed.includes('theme')) markThemeDirty();
+      markAppearancePending(changed);
+    }
+    if (secretsPatch) {
+      if (secretsPatch.storageKeyId !== undefined) {
+        secrets.value.storageKeyId = secretsPatch.storageKeyId;
+        settings.value.storage.accessKeyId = secretsPatch.storageKeyId;
+      }
+      if (secretsPatch.storageSecret !== undefined) {
+        secrets.value.storageSecret = secretsPatch.storageSecret;
+        settings.value.storage.accessKeySecret = secretsPatch.storageSecret;
+      }
+      if (secretsPatch.aiKey !== undefined) {
+        secrets.value.aiKey = secretsPatch.aiKey;
+        settings.value.ai.apiKey = secretsPatch.aiKey;
+      }
+    }
+    persist();
+    applyTheme();
+    scheduleCloudPush();
   }
 
   /**
@@ -1300,17 +1427,19 @@ export const useSettingsStore = defineStore('settings', () => {
     applyTheme();
     ready.value = true;
     if (typeof window !== 'undefined') {
-      window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', applyTheme);
+      // 用箭头函数包一层：`addEventListener` 会把 Event 当第一个实参传给 applyTheme，
+      // 而 applyTheme 的首参现在是「草稿覆盖」，直接传会污染类型判断
+      window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener?.('change', () => applyTheme());
     }
     // 监听系统明暗变化，让「跟随系统」的用户无需手动切换
   }
 
-  watch(() => settings.value.appearance.theme, applyTheme);
+  watch(() => settings.value.appearance.theme, () => applyTheme());
 
     // 主题预设或自定义主题列表变化时也要重算 CSS 变量（切主题会同时改这两者）
   watch(
     () => [settings.value.appearance.themePresetId, settings.value.appearance.customThemes] as const,
-    applyTheme,
+    () => applyTheme(),
     { deep: true },
   );
 
@@ -1345,5 +1474,10 @@ export const useSettingsStore = defineStore('settings', () => {
     applyThemePreset,
   /** 重新套用当前主题（切换「应用范围」等本机偏好后调用，让变量立即重算） */
     reapplyTheme: applyTheme,
+  /* 草稿模式（1.4.0，需求 16） */
+    /** 一次性提交设置页草稿：合并 → 落盘 → 重算主题 → 触发云推送 */
+    commitDraft,
+    /** 实时预览：把草稿外观写进 CSS 变量，不进 store、不推云端；传 null 恢复正式值 */
+    previewAppearance,
   };
 });

@@ -1,0 +1,102 @@
+{
+  "at": "2026-10-30T18:29:07.451Z",
+  "passed": 19,
+  "total": 19,
+  "results": [
+    {
+      "name": "传有意义的名字 → 复用已有同名仓库",
+      "pass": true,
+      "detail": "返回 vault_id=vaultREAL"
+    },
+    {
+      "name": "不新增行",
+      "pass": true,
+      "detail": "1 → 1"
+    },
+    {
+      "name": "未执行 INSERT",
+      "pass": true,
+      "detail": "INSERT 次数=0"
+    },
+    {
+      "name": "新建了独立行（name 退化成新 vaultId）",
+      "pass": true,
+      "detail": "返回 vault_id=vaultBRANDNEW2"
+    },
+    {
+      "name": "确实 INSERT 了",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "新行带 auto_registered=1 标记",
+      "pass": true,
+      "detail": "auto_registered=1"
+    },
+    {
+      "name": "达到上限时抛错",
+      "pass": true,
+      "detail": "VAULT_LIMIT_REACHED 仓库数量已达上限（20 个），请先在「仓库管理」中清理不用的仓库"
+    },
+    {
+      "name": "错误码是 VAULT_LIMIT_REACHED",
+      "pass": true,
+      "detail": "code=VAULT_LIMIT_REACHED"
+    },
+    {
+      "name": "未 INSERT 新行",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "name": "第 1 次自动登记创建了 1 行",
+      "pass": true,
+      "detail": "实际 1 行"
+    },
+    {
+      "name": "5 次自动登记后仍然只有 1 行",
+      "pass": true,
+      "detail": "实际 1 行"
+    },
+    {
+      "name": "只 INSERT 过 1 次",
+      "pass": true,
+      "detail": "INSERT 次数=1"
+    },
+    {
+      "name": "后 4 次全部走复用分支（UPDATE updated_at）",
+      "pass": true,
+      "detail": "UPDATE 次数=4"
+    },
+    {
+      "name": "isAutoRegisteredShell(典型空壳) = true",
+      "pass": true,
+      "detail": "实际 true"
+    },
+    {
+      "name": "isAutoRegisteredShell(name=vaultId) = true",
+      "pass": true,
+      "detail": "实际 true"
+    },
+    {
+      "name": "isAutoRegisteredShell(未标记自动登记 → 保守保留) = false",
+      "pass": true,
+      "detail": "实际 false"
+    },
+    {
+      "name": "isAutoRegisteredShell(有文档 → 不是空壳) = false",
+      "pass": true,
+      "detail": "实际 false"
+    },
+    {
+      "name": "isAutoRegisteredShell(曾同步过 → 保守保留) = false",
+      "pass": true,
+      "detail": "实际 false"
+    },
+    {
+      "name": "isAutoRegisteredShell(用户自定义名 → 保留) = false",
+      "pass": true,
+      "detail": "实际 false"
+    }
+  ]
+}

@@ -124,7 +124,9 @@ async function runOne(chromium, cand, idx) {
     await openSettings(page, '编辑器');
     const uiSet = await page.evaluate((font) => {
       const sel =
-        document.querySelector('select[aria-label="正文字体"]') || document.querySelector('select[aria-label="正文字体族"]');
+        document.querySelector('select[data-testid="font-family"]') ||
+        document.querySelector('select[aria-label="正文字体"]') ||
+        document.querySelector('select[aria-label="正文字体族"]');
       if (!sel) return { ok: false, reason: '未找到正文字体下拉' };
       const has = Array.from(sel.options).some((o) => o.value === font);
       sel.value = font;
@@ -132,6 +134,23 @@ async function runOne(chromium, cand, idx) {
       return { ok: has, has, value: sel.value };
     }, cand.value);
     await page.waitForTimeout(1200);
+
+    /*
+     * 1.4.0 需求16 引入了设置**草稿模式**：改动只进草稿，必须点保存才写 store。
+     *
+     * C 段的语义是「**已保存**的字体不被云端旧值自动恢复」，所以这里必须点保存。
+     * 不点保存的话，第 2 步（断言 store/localStorage 已变）必然失败 ——
+     * 那不是回归，而是 C 段还在按 1.3.1 的「即时生效」旧口径测。
+     * 判据本身（保存后等 95s 不被恢复）没有任何放宽。
+     */
+    const saveClicked = await page.evaluate(() => {
+      const btn = document.querySelector('[data-testid="settings-save"]');
+      if (!btn) return { ok: false, reason: '未找到 settings-save（草稿模式保存按钮）' };
+      if (btn.disabled) return { ok: false, reason: '保存按钮 disabled（草稿未被识别为有改动）', disabled: true };
+      btn.click();
+      return { ok: true };
+    });
+    await page.waitForTimeout(1400);
     await backToDoc(page, 1000);
 
     const afterSet = await readState();

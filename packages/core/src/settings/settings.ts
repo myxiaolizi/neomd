@@ -239,12 +239,150 @@ export function defaultSettings(): Settings {
   };
 }
 
+/* ------------------------------------------------------------------ */
+/* 命名设置乱码纠偏（1.4.0 需求9）                                      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 已知的「命名模板乱码签名」**精确匹配表**。
+ *
+ * ## 这不是 GBK 乱码，也不是字符集问题（已用实验排除）
+ *
+ * 1.4.0 排查结论（完整证据见 `docs/shots-140/re14-*`）：
+ *  - 源文件按 UTF-8 扫描 GBK 特征串（`閿|銆|鏂|…`）**命中 0 处**；
+ *  - `SHOW CREATE TABLE user_settings` 是 `utf8mb4`，连接/客户端/结果字符集均
+ *    `utf8mb4`，且 `sql_mode` 含 `STRICT_TRANS_TABLES`（不可表示会**报错**而非静默替换）；
+ *  - `crypto.js` 的编码参数全为 `utf8`；
+ *  - **6 组对照值往返实验**（`ABC123` / `AB{CD}EF` / `AB日CD` / `YYMMDD日HHMM-{input}`
+ *    / `AB-CD_EF.G` / `AB CD:E*F?G`）全部**原样完好** —— 证明当前代码库不存在产生该乱码的路径。
+ *
+ * 因此判定为**历史版本遗留在云端/本地的脏数据**。原值经逐字符对齐反推：
+ *   落库 `YY?MM?DD?HHMM-?input?`（21 字符）
+ *   原值 `YY年MM月DD日HHMM-{input}`（21 字符）
+ *   规则 = **非 ASCII 字符 或 花括号 `{` `}` → 单个 `?`**
+ * 旁证：`SettingsPage.vue` 的 placeholder 至今写着 `YY年MM月DD日HHMM`（该旧模板的前半段）。
+ *
+ * ## 为什么用「精确签名」而不是比例启发式
+ *
+ * 比例启发式（「不含 CJK 且 `?` 占比高」）会**误杀合法配置**：
+ * 用户自定义模板 `A?B?C` 的 `?` 占比 40% 且不含 CJK，会被重置 —— 这是数据丢失。
+ * 因此这里只认**已知签名**：命中即修复，不命中一律原样保留。
+ * 宁可少纠一个，也不误重置一个用户的自定义设置。
+ */
+const KNOWN_GARBLED_TEMPLATES = new Set([
+  // 旧版默认模板 `YY年MM月DD日HHMM-{input}` 被「非 ASCII/花括号 → ?」破坏的结果
+  'YY?MM?DD?HHMM-?input?',
+  // 同一转换作用在上面的变体（不同旧版本可能带/不带 input 占位）
+  'YY?MM?DD?HHMM-?input',
+  'YYYY?MM?DD?HHMM-?input?',
+  // `YY-MM-DD日HHMM-{input}` 变体
+  'YY-MM-DD?HHMM-?input?',
+  // 纯中文模板被整段替换（例如 `第{input}问` → `???input?`）
+  '?????-?input?',
+]);
+
+/**
+ * 判断命名模板是否为**已知的乱码签名**。
+ *
+ * 只做精确匹配，不做任何比例推断 —— 见上方注释的误杀风险说明。
+ */
+export function isKnownGarbledTemplate(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  return KNOWN_GARBLED_TEMPLATES.has(value.trim());
+}
+
+/**
+ * 判断兜底名称是否被乱码破坏。
+ *
+ * `fallback` 的破坏形态高度可预测：整串被替换成等长 `?`
+ * （`无标题`(3) → `???`(3)）。这里要求**整串只由 `?` 组成且长度 ≥ 2**，
+ * 这样 `none`、`无标题`、空串、用户自定义的英文 fallback 都不会被误伤。
+ */
+export function isGarbledFallback(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const s = value.trim();
+  return s.length >= 2 && /^\?+$/.test(s);
+}
+
+/**
+ * 判断 AI 命名提示词是否被乱码破坏。
+ *
+ * 强约束（三条**同时**成立才判定，任一不满足就保留原值）：
+ *  1. 不含任何 CJK 字符（默认提示词是纯中文，正常值必然含 CJK）；
+ *  2. **长度与默认提示词完全相等**（1:1 替换不改变字符数，163 ↔ 163 实测吻合）；
+ *  3. `?` 占比 ≥ 30%（实测 103/163 ≈ 63%）。
+ *
+ * 长度约束是关键：它让「用户自己写了一段英文提示词」这类合法配置
+ * （长度几乎不可能恰好等于默认值）不会被误判。
+ */
+export function isGarbledAiPrompt(value: unknown): boolean {
+  if (typeof value !== 'string' || !value) return false;
+  if (/[\u4e00-\u9fa5]/.test(value)) return false;
+  if (value.length !== DEFAULT_AI_TITLE_PROMPT.length) return false;
+  const q = [...value].filter((c) => c === '?').length;
+  return q / value.length >= 0.3;
+}
+
+/** 乱码纠偏的结果与备份 */
+export interface GarbleRepairResult {
+  naming: Settings['naming'];
+  /** 被修复的字段名（为空表示没动） */
+  repaired: string[];
+  /** 修复前的原值备份（写回 `naming.garbleBackup`，便于人工恢复） */
+  backup: { template?: string; fallback?: string; aiPrompt?: string; at: number } | null;
+}
+
+/**
+ * 对 `naming` 做乱码纠偏（纯函数，可单测）。
+ *
+ * 设计要点：
+ *  - **只认已知签名**，不命中的值原样返回（绝不误重置用户自定义配置）；
+ *  - 命中时把原值写进 `garbleBackup`，万一将来发现误判可以人工恢复；
+ *  - 回落到**当前默认值**（`DEFAULT_NAMING_TEMPLATE` / `'无标题'` / `DEFAULT_AI_TITLE_PROMPT`）。
+ */
+export function repairGarbleNaming(naming: Settings['naming']): GarbleRepairResult {
+  const repaired: string[] = [];
+  const backup: { template?: string; fallback?: string; aiPrompt?: string; at: number } = { at: Date.now() };
+  const next: Settings['naming'] = { ...naming };
+
+  if (isKnownGarbledTemplate(naming.template)) {
+    backup.template = naming.template;
+    next.template = DEFAULT_NAMING_TEMPLATE;
+    repaired.push('template');
+  }
+  if (isGarbledFallback(naming.fallback)) {
+    backup.fallback = naming.fallback;
+    next.fallback = '无标题';
+    repaired.push('fallback');
+  }
+  if (isGarbledAiPrompt(naming.aiPrompt)) {
+    backup.aiPrompt = String(naming.aiPrompt);
+    next.aiPrompt = DEFAULT_AI_TITLE_PROMPT;
+    repaired.push('aiPrompt');
+  }
+
+  if (!repaired.length) return { naming, repaired, backup: null };
+  // 备份挂到 naming 上（以可选字段形式持久化，类型上通过索引访问，不改 shared 的接口定义）
+  (next as Settings['naming'] & { garbleBackup?: unknown }).garbleBackup = backup;
+  return { naming: next, repaired, backup };
+}
+
 /** 深度合并设置（用于云端->本地同步，保留本地密钥不被空值覆盖） */
 export function mergeSettings(local: Settings, remote: Partial<Settings> | null | undefined): Settings {
   if (!remote) return local;
   const out: Settings = JSON.parse(JSON.stringify(local)) as Settings;
   if (remote.appearance) out.appearance = { ...out.appearance, ...remote.appearance };
-  if (remote.naming) out.naming = { ...out.naming, ...remote.naming };
+  if (remote.naming) {
+    /*
+     * 1.4.0 需求9：合并后立刻做乱码纠偏。
+     *
+     * 为什么放在这里 —— 这是**所有设置读入的统一入口**：
+     * 本地 localStorage 读、云端 `pullCloudSettings()` 拉回后的合并，都经过 mergeSettings。
+     * 一处生效，覆盖两条路径，且是纯函数、可直接单测。
+     * 详见 `repairGarbleNaming()` 上方关于「为什么不是 GBK / 为什么用精确签名」的说明。
+     */
+    out.naming = repairGarbleNaming({ ...out.naming, ...remote.naming }).naming;
+  }
   if (remote.autosave) out.autosave = { ...(out.autosave ?? { enabled: true, versionMinutes: 5, versionChars: 300 }), ...remote.autosave };
   if (remote.shareStyle) out.shareStyle = { ...(out.shareStyle ?? { brandTitle: '', brandSubtitle: '', accentColor: '#1677FF', paperStyle: 'white', hideProductBrand: true }), ...remote.shareStyle };
   if (remote.localVault) out.localVault = { ...(out.localVault ?? { root: '', keepVersions: false }), ...remote.localVault };
