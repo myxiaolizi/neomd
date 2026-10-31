@@ -377,12 +377,43 @@ async function main() {
     console.error('无法确定版本号：package.json 没有 version，也没有传 --version。');
     return 1;
   }
-  const repoParts = args.repo ? /^([\w.-]+)\/([\w.-]+)$/.exec(args.repo) : parseRepoField(pkg.repository);
-  if (!repoParts) {
+  /*
+   * 仓库标识解析。
+   *
+   * ## 这里原本有一个真实 bug（1.4.0 验收时发现）
+   *
+   * 原写法：
+   * ```js
+   * const repoParts = args.repo ? /^([\w.-]+)\/([\w.-]+)$/.exec(args.repo) : parseRepoField(pkg.repository);
+   * const { owner, repo } = repoParts;
+   * ```
+   * 两个分支返回的**类型不同**：
+   *  - `exec()` 命中时返回**数组**（`[全串, owner, repo]`，还带 `index`/`input`）；
+   *  - `parseRepoField()` 返回的是**字符串 `'owner/repo'`**（见其实现）。
+   *
+   * 而 `const { owner, repo } = ...` 是**对象解构** ——
+   * 对数组取 `.owner` / `.repo` 两个不存在的属性 → 双双 `undefined`；
+   * 对字符串取属性同样 `undefined`。
+   *
+   * 于是**任何情况下** `owner`/`repo` 都是 undefined，所有 API 请求变成
+   * `/repos/undefined/undefined/...` → 全部 404，脚本报「仓库不可读 / tag 不存在 /
+   * Release 404」，看起来像发布失败了，其实只是 URL 拼错。
+   *
+   * 修复：统一规范成 `owner/repo` 字符串，再按字符串切分（两个来源同一套逻辑）。
+   */
+  const repoMatch = args.repo
+    ? /^([\w.-]+)\/([\w.-]+)$/.exec(String(args.repo).trim())
+    : null;
+  const repoSlug = repoMatch
+    ? `${repoMatch[1]}/${repoMatch[2]}`
+    : String(parseRepoField(pkg.repository) || '').trim();
+  const slugMatch = /^([\w.-]+)\/([\w.-]+)$/.exec(repoSlug);
+  if (!slugMatch) {
     console.error('无法解析仓库标识，请用 --repo=owner/repo。');
     return 1;
   }
-  const { owner, repo } = repoParts;
+  const owner = slugMatch[1];
+  const repo = slugMatch[2];
   const tag = `v${version}`;
 
   const proxy = applyProxy(args);
