@@ -1,0 +1,89 @@
+{
+  "measuredAt": "2026-10-31T06:18:13.855Z",
+  "prod": "https://md.zhengl.vip",
+  "version": "1.4.0",
+  "pass": 10,
+  "fail": 0,
+  "results": [
+    {
+      "bucket": "A",
+      "name": "首页 HTML 可获取",
+      "expect": "200 且 < 20KB",
+      "actual": "HTTP 200，0.6KB，64ms，encoding=(none)",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "bucket": "A",
+      "name": "入口资源 index-Du-HaJrq.js",
+      "expect": "可获取且压缩生效",
+      "actual": "HTTP 200，传输 179.7KB，37ms，encoding=gzip",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "bucket": "A",
+      "name": "入口资源 vendor-DQ8vRQB2.js",
+      "expect": "可获取且压缩生效",
+      "actual": "HTTP 200，传输 109.3KB，23ms，encoding=gzip",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "bucket": "A",
+      "name": "入口资源 index-DEjw4zqL.css",
+      "expect": "可获取且压缩生效",
+      "actual": "HTTP 200，传输 18.6KB，12ms，encoding=gzip",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "bucket": "A",
+      "name": "首屏总传输量（HTML + 入口资源）",
+      "expect": "< 600KB（含框架与编辑器内核分块前的入口）",
+      "actual": "308.2KB",
+      "pass": true,
+      "note": "这是用户首屏必须下载的字节数"
+    },
+    {
+      "bucket": "B",
+      "name": "健康检查 /api/health",
+      "expect": "< 300ms 且 200",
+      "actual": "HTTP 200，14ms，0.1KB",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "bucket": "B",
+      "name": "下载清单 /api/download/list",
+      "expect": "< 300ms 且 200",
+      "actual": "HTTP 200，19ms，0.5KB",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "bucket": "C",
+      "name": "Windows 绿色版 NeoMD-1.4.0-win-x64.zip",
+      "expect": "可下载（200 或 302 到 OSS）",
+      "actual": "HTTP 302，11ms，0.0KB，→zhengle.s3.oss-cn-guangzhou.aliyuncs.com",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "bucket": "C",
+      "name": "Windows 安装包 NeoMD-1.4.0-setup.exe",
+      "expect": "可下载（200 或 302 到 OSS）",
+      "actual": "HTTP 302，23ms，0.0KB，→zhengle.s3.oss-cn-guangzhou.aliyuncs.com",
+      "pass": true,
+      "note": ""
+    },
+    {
+      "bucket": "C",
+      "name": "Android APK NeoMD-1.4.0.apk",
+      "expect": "可下载（200 或 302 到 OSS）",
+      "actual": "HTTP 200，21ms，4307.3KB",
+      "pass": true,
+      "note": ""
+    }
+  ]
+}

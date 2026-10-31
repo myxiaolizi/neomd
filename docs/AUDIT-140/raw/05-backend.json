@@ -1,0 +1,97 @@
+{
+  "api": "http://127.0.0.1:3200",
+  "health": {
+    "ok": true,
+    "status": 200,
+    "uptime": 9539,
+    "version": "1.4.0",
+    "env": "development"
+  },
+  "staticOrigin": {
+    "results": [
+      {
+        "目标": "本地 API 根路径",
+        "状态": 503,
+        "Server": "-",
+        "压缩": "(none)",
+        "content-length": "124",
+        "cache-control": "",
+        "TTFBms": 1.3,
+        "KB": 0.1
+      },
+      {
+        "目标": "本地 API /assets 探测",
+        "状态": 503,
+        "Server": "-",
+        "压缩": "(none)",
+        "content-length": "124",
+        "cache-control": "",
+        "TTFBms": 17,
+        "KB": 0.1
+      },
+      {
+        "目标": "生产首页",
+        "状态": 200,
+        "Server": "nginx",
+        "压缩": "(none)",
+        "content-length": "603",
+        "cache-control": "no-cache, no-store, must-revalidat",
+        "TTFBms": 46,
+        "KB": 0.6
+      },
+      {
+        "目标": "生产静态 JS（codemirror）",
+        "状态": 200,
+        "Server": "nginx",
+        "压缩": "gzip",
+        "content-length": "-",
+        "cache-control": "no-cache, no-store, must-revalidat",
+        "TTFBms": 33.7,
+        "KB": 543.8
+      }
+    ],
+    "headerDetail": {
+      "index-Du-HaJrq.js": {
+        "server": "nginx",
+        "etag": "W/\"2ceb5-1a18f522600\"",
+        "last-modified": "Sat, 31 Oct 2026 00:18:08 GMT",
+        "content-encoding": "gzip",
+        "content-length": "-",
+        "vary": "Accept-Encoding, Origin",
+        "cache-control": "no-cache, no-store, must-revalidate"
+      },
+      "vendor-DQ8vRQB2.js": {
+        "server": "nginx",
+        "etag": "W/\"1b556-1a18f522600\"",
+        "last-modified": "Sat, 31 Oct 2026 00:18:08 GMT",
+        "content-encoding": "gzip",
+        "content-length": "-",
+        "vary": "Accept-Encoding, Origin",
+        "cache-control": "no-cache, no-store, must-revalidate"
+      },
+      "Select.vue_vue_type_style_index_0_scoped_02e01f26_lang-BbT9zwIo.js": {
+        "server": "nginx",
+        "etag": "W/\"1e76-1a18f522600\"",
+        "last-modified": "Sat, 31 Oct 2026 00:18:08 GMT",
+        "content-encoding": "gzip",
+        "content-length": "-",
+        "vary": "Accept-Encoding, Origin",
+        "cache-control": "no-cache, no-store, must-revalidate"
+      },
+      "Modal-BJiE5vUL.js": {
+        "server": "nginx",
+        "etag": "W/\"705-1a18f522600\"",
+        "last-modified": "Sat, 31 Oct 2026 00:18:08 GMT",
+        "content-encoding": "gzip",
+        "content-length": "-",
+        "vary": "Accept-Encoding, Origin",
+        "cache-control": "no-cache, no-store, must-revalidate"
+      }
+    }
+  },
+  "healthGuard": {
+    "before": 9539,
+    "after": 9544,
+    "stable": true
+  }
+}

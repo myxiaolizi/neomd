@@ -1,0 +1,2315 @@
+{
+  "generatedAt": "2026-10-31T08:57:51.247Z",
+  "totalProbes": 229,
+  "totalRows": 230,
+  "stat": {
+    "PASS": 184,
+    "DEAD": 3,
+    "SKIP": 17,
+    "N/A": 4,
+    "REVIEW": 21
+  },
+  "deadCount": 4,
+  "rows": [
+    {
+      "no": 1,
+      "kind": "editorbar",
+      "label": "新建文档",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：editorTextLen,tabCount",
+      "extra": false
+    },
+    {
+      "no": 2,
+      "kind": "editorbar",
+      "label": "保存文档",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：toastCount",
+      "extra": false
+    },
+    {
+      "no": 3,
+      "kind": "editorbar",
+      "label": "正文编辑命令面板",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：弹层数 0→4；页面文本：\"最近打开 261031日1553- 刚刚 261031日1543- 7 分钟前 261031日1543- 7 分钟前 261031日1543- 7 分钟前 261031日1543- 7 分钟前 全部文件 日记 2026-10-30 日记 2\"",
+      "extra": false
+    },
+    {
+      "no": 4,
+      "kind": "editorbar",
+      "label": "分隔线",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html,hr",
+      "extra": false
+    },
+    {
+      "no": 5,
+      "kind": "editorbar",
+      "label": "撤销",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：输入后长度 22 → 点击撤销后 16（生效；起点 16）",
+      "extra": false
+    },
+    {
+      "no": 6,
+      "kind": "editorbar",
+      "label": "重做",
+      "probe": "no-change",
+      "baseline": "DEAD",
+      "dead": true,
+      "note": "已定性：真死按钮",
+      "extra": false
+    },
+    {
+      "no": 7,
+      "kind": "editorbar",
+      "label": "斜体",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html",
+      "extra": false
+    },
+    {
+      "no": 8,
+      "kind": "editorbar",
+      "label": "一级标题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html,h1",
+      "extra": false
+    },
+    {
+      "no": 9,
+      "kind": "editorbar",
+      "label": "二级标题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html",
+      "extra": false
+    },
+    {
+      "no": 10,
+      "kind": "editorbar",
+      "label": "三级标题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html",
+      "extra": false
+    },
+    {
+      "no": 11,
+      "kind": "editorbar",
+      "label": "加粗",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：选中「这是一段普通文字用于验证格式按钮」→ 点击 → <strong> 数量 0→1 ✓生效",
+      "extra": false
+    },
+    {
+      "no": 12,
+      "kind": "editorbar",
+      "label": "删除线",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：选中「这是一段普通文字用于验证格式按钮」→ 点击 → <s> 数量 0→1 ✓生效",
+      "extra": false
+    },
+    {
+      "no": 13,
+      "kind": "editorbar",
+      "label": "高亮",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：选中「这是一段普通文字用于验证格式按钮」→ 点击 → <mark> 数量 0→1 ✓生效",
+      "extra": false
+    },
+    {
+      "no": 14,
+      "kind": "editorbar",
+      "label": "行内代码",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：选中「这是一段普通文字用于验证格式按钮」→ 点击 → <code> 数量 0→1 ✓生效",
+      "extra": false
+    },
+    {
+      "no": 15,
+      "kind": "editorbar",
+      "label": "无序列表",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html,ul",
+      "extra": false
+    },
+    {
+      "no": 16,
+      "kind": "editorbar",
+      "label": "有序列表",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html",
+      "extra": false
+    },
+    {
+      "no": 17,
+      "kind": "editorbar",
+      "label": "任务列表",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html,ul",
+      "extra": false
+    },
+    {
+      "no": 18,
+      "kind": "editorbar",
+      "label": "下划线",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：选中「这是一段普通文字用于验证格式按钮」→ 点击 → <u> 数量 0→1 ✓生效",
+      "extra": false
+    },
+    {
+      "no": 19,
+      "kind": "editorbar",
+      "label": "引用",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html,quote",
+      "extra": false
+    },
+    {
+      "no": 20,
+      "kind": "editorbar",
+      "label": "插入表格",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html,table",
+      "extra": false
+    },
+    {
+      "no": 21,
+      "kind": "editorbar",
+      "label": "插入链接",
+      "probe": "no-change",
+      "baseline": "DEAD",
+      "dead": true,
+      "note": "（已全选后点击）结构变化：无",
+      "extra": false
+    },
+    {
+      "no": 22,
+      "kind": "editorbar",
+      "label": "代码块",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "（已全选后点击）结构变化：html,pre,code",
+      "extra": false
+    },
+    {
+      "no": 23,
+      "kind": "editorbar",
+      "label": "历史版本（查看与恢复本文档历史）",
+      "probe": "ok-dialog",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "弹窗：版本历史 共 3 个版本（本地 0 · 云端 3），按时间倒序 v4刚刚2 B云端v3刚刚5 B云端v2刚刚2 B云端选择左侧任一版本查看差异关闭 恢复此版本",
+      "extra": false
+    },
+    {
+      "no": 24,
+      "kind": "editorbar",
+      "label": "页宽：铺满（点击切换）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：menuCount",
+      "extra": false
+    },
+    {
+      "no": 25,
+      "kind": "editorbar",
+      "label": "编辑模式：所见即所得（",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 26,
+      "kind": "editorbar",
+      "label": "分享与发布",
+      "probe": "ok-dialog",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "弹窗：分享与发布 分享链接 发布网页 生成一个免登录链接，访客可阅读；开启评价后还能划词标注。允许访客评价与标注关闭后链接只读开访问密码（留空表示免密公开访问）有效期长期1 天7 天30",
+      "extra": false
+    },
+    {
+      "no": 27,
+      "kind": "editorbar",
+      "label": "导出文档（PDF / Word / HTML）",
+      "probe": "ok-dialog",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "弹窗：导出文档PDF 文档桌面端由系统打印生成Word 文档 (.docx)保留标题层级、列表与表格HTML 网页单文件，可直接分享取消开始导出",
+      "extra": false
+    },
+    {
+      "no": 28,
+      "kind": "editorbar",
+      "label": "切换右侧边栏（AI 助手与文件操作）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 29,
+      "kind": "bar",
+      "label": "收起侧边栏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 30,
+      "kind": "bar",
+      "label": "关闭 Ctrl+W",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 31,
+      "kind": "bar",
+      "label": "关闭 Ctrl+W",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：toastCount,tabCount,activeTab",
+      "extra": false
+    },
+    {
+      "no": 32,
+      "kind": "bar",
+      "label": "新建标签页（同时打开另一篇）Ctrl+N",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 33,
+      "kind": "bar",
+      "label": "快速跳转标签页（2 个）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 34,
+      "kind": "bar",
+      "label": "分屏：同时查看两篇文章",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 35,
+      "kind": "bar",
+      "label": "上次自动同步：刚刚（点击立即同步）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 36,
+      "kind": "bar",
+      "label": "点击在文件夹中打开：cloud:admin/261031日1542- (2).md",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 37,
+      "kind": "bar",
+      "label": "白板",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 38,
+      "kind": "bar",
+      "label": "幻灯片演示",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 39,
+      "kind": "bar",
+      "label": "数据库视图",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 40,
+      "kind": "bar",
+      "label": "流程图",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 41,
+      "kind": "bar",
+      "label": "字数统计",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 42,
+      "kind": "bar",
+      "label": "脚注视图",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 43,
+      "kind": "bar",
+      "label": "页面预览",
+      "probe": "ok",
+      "baseline": "DEAD",
+      "dead": true,
+      "note": "1.4.0 已知遗留：点击后无预览容器（指纹法因 tabCount 变化误判为 PASS，已按定性脚本 H 段纠正）",
+      "extra": false
+    },
+    {
+      "no": 44,
+      "kind": "bar",
+      "label": "思维导图",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 45,
+      "kind": "bar",
+      "label": "插件商店（管理已装插件 / 安装新插件）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 46,
+      "kind": "bar",
+      "label": "点击复制字数",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 47,
+      "kind": "bar",
+      "label": "点击复制字符数",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 48,
+      "kind": "bar",
+      "label": "正文缩放 70%（点击选择，Ctrl+滚轮可调整）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 49,
+      "kind": "bar",
+      "label": "AI 助手 Ctrl+Shift+A",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：tabCount",
+      "extra": false
+    },
+    {
+      "no": 50,
+      "kind": "settings-tab",
+      "label": "通用",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：初始激活页签就是「通用」，点已选中的页签不产生变化 = 设计如此（假阳性）",
+      "extra": false
+    },
+    {
+      "no": 51,
+      "kind": "settings-tab",
+      "label": "编辑器",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 52,
+      "kind": "settings-tab",
+      "label": "主题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 53,
+      "kind": "settings-tab",
+      "label": "界面布局",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 54,
+      "kind": "settings-tab",
+      "label": "快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 55,
+      "kind": "settings-tab",
+      "label": "对象存储",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 56,
+      "kind": "settings-tab",
+      "label": "AI",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 57,
+      "kind": "settings-tab",
+      "label": "仓库",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 58,
+      "kind": "settings-tab",
+      "label": "知识库",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 59,
+      "kind": "settings-tab",
+      "label": "同步与版本",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 60,
+      "kind": "settings:通用",
+      "label": "跟随系统主题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 61,
+      "kind": "settings:通用",
+      "label": "浅色主题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 62,
+      "kind": "settings:通用",
+      "label": "深色主题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：theme,preset,bg",
+      "extra": false
+    },
+    {
+      "no": 63,
+      "kind": "settings:通用",
+      "label": "日期时间自动命名",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：该项当前已选中（seg 选项列表：[\"跟随系统\",\"浅色\",\"深色\",\"日期时间自动命名\",\"AI 保存后命名\"]）→ 点已选中项无变化 = 假阳性",
+      "extra": false
+    },
+    {
+      "no": 64,
+      "kind": "settings:通用",
+      "label": "AI 保存后命名",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 65,
+      "kind": "settings:通用",
+      "label": "恢复默认的 AI 命名提示词",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：点击前提示词长度 163，点击后 163（本来就等于默认值时点它无变化 = 假阳性）",
+      "extra": false
+    },
+    {
+      "no": 66,
+      "kind": "settings:通用",
+      "label": "恢复全部设置为默认值",
+      "probe": "ok-dialog",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "弹窗：恢复默认设置将把外观、命名、布局、快捷键、插件开关等全部恢复为默认值；对象存储与 AI 的账号密钥不会被清除。确定继续？取消恢复默认",
+      "extra": false
+    },
+    {
+      "no": 67,
+      "kind": "settings:编辑器",
+      "label": "恢复到系统默认字体与默认字号/行高",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 68,
+      "kind": "settings:编辑器",
+      "label": "开启正文行号",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 69,
+      "kind": "settings:编辑器",
+      "label": "关闭拼写检查",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 70,
+      "kind": "settings:编辑器",
+      "label": "关闭自动保存",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 71,
+      "kind": "settings:编辑器",
+      "label": "关闭正文工具栏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 72,
+      "kind": "settings:编辑器",
+      "label": "恢复默认工具栏顺序与按钮",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 73,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「分隔线」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 74,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「撤销」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 75,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「重做」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 76,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「斜体」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 77,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「H1 一级标题」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 78,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「H2 二级标题」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 79,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「H3 三级标题」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 80,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「加粗」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 81,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「删除线」顺序，点击隐藏",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 82,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「高亮」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 83,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「行内代码」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 84,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「无序列表」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 85,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「有序列表」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 86,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「任务列表」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 87,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「下划线」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 88,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「引用」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 89,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「插入表格」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 90,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「插入链接」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 91,
+      "kind": "settings:编辑器",
+      "label": "拖动调整「代码块」顺序，点击隐藏",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 92,
+      "kind": "settings:编辑器",
+      "label": "点击显示「插入图片」",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 93,
+      "kind": "settings:主题",
+      "label": "应用主题：日光白",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：theme,preset,bg",
+      "extra": false
+    },
+    {
+      "no": 94,
+      "kind": "settings:主题",
+      "label": "应用主题：石墨灰",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 95,
+      "kind": "settings:主题",
+      "label": "应用主题：午夜黑",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：theme,preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 96,
+      "kind": "settings:主题",
+      "label": "应用主题：护眼绿",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：theme,preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 97,
+      "kind": "settings:主题",
+      "label": "应用主题：静谧蓝",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 98,
+      "kind": "settings:主题",
+      "label": "应用主题：暖纸黄",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 99,
+      "kind": "settings:主题",
+      "label": "应用主题：玫瑰粉",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 100,
+      "kind": "settings:主题",
+      "label": "应用主题：深海青",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：theme,preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 101,
+      "kind": "settings:主题",
+      "label": "应用主题：暮光紫",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 102,
+      "kind": "settings:主题",
+      "label": "应用主题：墨石黑",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：preset,bg,accent",
+      "extra": false
+    },
+    {
+      "no": 103,
+      "kind": "settings:主题",
+      "label": "主色调 #1677FF",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：accent",
+      "extra": false
+    },
+    {
+      "no": 104,
+      "kind": "settings:主题",
+      "label": "主色调 #0E9F6E",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：accent",
+      "extra": false
+    },
+    {
+      "no": 105,
+      "kind": "settings:主题",
+      "label": "主色调 #7C4DFF",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：accent",
+      "extra": false
+    },
+    {
+      "no": 106,
+      "kind": "settings:主题",
+      "label": "主色调 #FF8A3D",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：accent",
+      "extra": false
+    },
+    {
+      "no": 107,
+      "kind": "settings:主题",
+      "label": "主色调 #E5484D",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：accent",
+      "extra": false
+    },
+    {
+      "no": 108,
+      "kind": "settings:主题",
+      "label": "整体（正文 + 界面）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 109,
+      "kind": "settings:主题",
+      "label": "仅正文",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：bg,accent",
+      "extra": false
+    },
+    {
+      "no": 110,
+      "kind": "settings:主题",
+      "label": "仅界面",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：bg,accent",
+      "extra": false
+    },
+    {
+      "no": 111,
+      "kind": "settings:主题",
+      "label": "把当前主题的颜色恢复为默认值",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 112,
+      "kind": "settings:主题",
+      "label": "内置主题不能直接改，将另存为新自定义主题（仍需点底部保存）",
+      "probe": "disabled",
+      "baseline": "N/A",
+      "dead": false,
+      "note": "按钮当前禁用（依赖前置条件）",
+      "extra": false
+    },
+    {
+      "no": 113,
+      "kind": "settings:主题",
+      "label": "把当前配色复制成一套新主题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：preset,accent,paneLen",
+      "extra": false
+    },
+    {
+      "no": 114,
+      "kind": "settings:主题",
+      "label": "重置为内置默认主题",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 115,
+      "kind": "settings:主题",
+      "label": "新建主题…",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：theme,preset,bg,accent,paneLen",
+      "extra": false
+    },
+    {
+      "no": 116,
+      "kind": "settings:主题",
+      "label": "导出主题 JSON",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 117,
+      "kind": "settings:主题",
+      "label": "导入主题",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 118,
+      "kind": "settings:界面布局",
+      "label": "文件列表",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 119,
+      "kind": "settings:界面布局",
+      "label": "大纲",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：这些都是 seg 单选项，其中已选中的 4 个点了必然无变化：[\"文件列表\",\"替换当前标签页（单文档模式）\",\"日历\",\"状态栏左侧\"]；其余项点击会切换（属于「状态已符合预期」而非死按钮）",
+      "extra": false
+    },
+    {
+      "no": 120,
+      "kind": "settings:界面布局",
+      "label": "上方大纲 + 下方文件",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 121,
+      "kind": "settings:界面布局",
+      "label": "全库搜索",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：这些都是 seg 单选项，其中已选中的 4 个点了必然无变化：[\"文件列表\",\"替换当前标签页（单文档模式）\",\"日历\",\"状态栏左侧\"]；其余项点击会切换（属于「状态已符合预期」而非死按钮）",
+      "extra": false
+    },
+    {
+      "no": 122,
+      "kind": "settings:界面布局",
+      "label": "替换当前标签页（单文档模式）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 123,
+      "kind": "settings:界面布局",
+      "label": "保留当前并新开标签页（多标签模式）",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 124,
+      "kind": "settings:界面布局",
+      "label": "隐藏最近打开",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 125,
+      "kind": "settings:界面布局",
+      "label": "AI 助手",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 126,
+      "kind": "settings:界面布局",
+      "label": "文件操作",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：这些都是 seg 单选项，其中已选中的 4 个点了必然无变化：[\"文件列表\",\"替换当前标签页（单文档模式）\",\"日历\",\"状态栏左侧\"]；其余项点击会切换（属于「状态已符合预期」而非死按钮）",
+      "extra": false
+    },
+    {
+      "no": 127,
+      "kind": "settings:界面布局",
+      "label": "大纲",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：toastCount",
+      "extra": false
+    },
+    {
+      "no": 128,
+      "kind": "settings:界面布局",
+      "label": "反向链接",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 129,
+      "kind": "settings:界面布局",
+      "label": "标签",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 130,
+      "kind": "settings:界面布局",
+      "label": "版本历史",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 131,
+      "kind": "settings:界面布局",
+      "label": "文档统计",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 132,
+      "kind": "settings:界面布局",
+      "label": "日历",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 133,
+      "kind": "settings:界面布局",
+      "label": "关闭功能区",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 134,
+      "kind": "settings:界面布局",
+      "label": "最左侧",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：这些都是 seg 单选项，其中已选中的 4 个点了必然无变化：[\"文件列表\",\"替换当前标签页（单文档模式）\",\"日历\",\"状态栏左侧\"]；其余项点击会切换（属于「状态已符合预期」而非死按钮）",
+      "extra": false
+    },
+    {
+      "no": 135,
+      "kind": "settings:界面布局",
+      "label": "最右侧",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：toastCount",
+      "extra": false
+    },
+    {
+      "no": 136,
+      "kind": "settings:界面布局",
+      "label": "状态栏左侧",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：这些都是 seg 单选项，其中已选中的 4 个点了必然无变化：[\"文件列表\",\"替换当前标签页（单文档模式）\",\"日历\",\"状态栏左侧\"]；其余项点击会切换（属于「状态已符合预期」而非死按钮）",
+      "extra": false
+    },
+    {
+      "no": 137,
+      "kind": "settings:界面布局",
+      "label": "状态栏右侧",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 138,
+      "kind": "settings:界面布局",
+      "label": "从功能区移除「白板」",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 139,
+      "kind": "settings:界面布局",
+      "label": "从功能区移除「幻灯片」",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 140,
+      "kind": "settings:界面布局",
+      "label": "从功能区移除「数据库」",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 141,
+      "kind": "settings:界面布局",
+      "label": "从功能区移除「流程图」",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 142,
+      "kind": "settings:界面布局",
+      "label": "把「思维导图」加入功能区",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 143,
+      "kind": "settings:快捷键",
+      "label": "重置全部快捷键为默认值",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 144,
+      "kind": "settings:快捷键",
+      "label": "修改「标题 1」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 145,
+      "kind": "settings:快捷键",
+      "label": "修改「标题 2」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 146,
+      "kind": "settings:快捷键",
+      "label": "修改「标题 3」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 147,
+      "kind": "settings:快捷键",
+      "label": "修改「标题 4」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 148,
+      "kind": "settings:快捷键",
+      "label": "修改「标题 5」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 149,
+      "kind": "settings:快捷键",
+      "label": "修改「标题 6」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 150,
+      "kind": "settings:快捷键",
+      "label": "修改「加粗」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 151,
+      "kind": "settings:快捷键",
+      "label": "修改「斜体」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 152,
+      "kind": "settings:快捷键",
+      "label": "修改「下划线」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 153,
+      "kind": "settings:快捷键",
+      "label": "修改「删除线」的快捷键",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 154,
+      "kind": "settings:快捷键",
+      "label": "修改「高亮」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 155,
+      "kind": "settings:快捷键",
+      "label": "修改「行内代码」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 156,
+      "kind": "settings:快捷键",
+      "label": "修改「代码块」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 157,
+      "kind": "settings:快捷键",
+      "label": "修改「插入链接」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 158,
+      "kind": "settings:快捷键",
+      "label": "修改「引用」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 159,
+      "kind": "settings:快捷键",
+      "label": "修改「任务列表」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 160,
+      "kind": "settings:快捷键",
+      "label": "修改「无序列表」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 161,
+      "kind": "settings:快捷键",
+      "label": "修改「有序列表」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 162,
+      "kind": "settings:快捷键",
+      "label": "修改「插入表格」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 163,
+      "kind": "settings:快捷键",
+      "label": "修改「分隔线」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 164,
+      "kind": "settings:快捷键",
+      "label": "修改「保存」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 165,
+      "kind": "settings:快捷键",
+      "label": "修改「同步」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 166,
+      "kind": "settings:快捷键",
+      "label": "修改「命令面板」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 167,
+      "kind": "settings:快捷键",
+      "label": "修改「快速切换」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 168,
+      "kind": "settings:快捷键",
+      "label": "修改「全库搜索」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 169,
+      "kind": "settings:快捷键",
+      "label": "修改「新建笔记」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 170,
+      "kind": "settings:快捷键",
+      "label": "修改「关闭标签页」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 171,
+      "kind": "settings:快捷键",
+      "label": "修改「恢复标签页」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 172,
+      "kind": "settings:快捷键",
+      "label": "修改「切换侧栏」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 173,
+      "kind": "settings:快捷键",
+      "label": "修改「切换 AI 面板」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 174,
+      "kind": "settings:快捷键",
+      "label": "修改「切换视图方式」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 175,
+      "kind": "settings:快捷键",
+      "label": "修改「打开设置」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 176,
+      "kind": "settings:快捷键",
+      "label": "修改「导出文档」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 177,
+      "kind": "settings:快捷键",
+      "label": "修改「今日日记」的快捷键",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 178,
+      "kind": "settings:快捷键",
+      "label": "修改「漫游笔记」的快捷键",
+      "probe": "no-change",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "假阳性：点击后出现捕获输入框=true（placeholder=\"按下组合键…\"）→ 正常进入捕获态，只是没有立即的视觉文本变化 = 假阳性",
+      "extra": false
+    },
+    {
+      "no": 179,
+      "kind": "settings:对象存储",
+      "label": "阿里云 OSS",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 180,
+      "kind": "settings:对象存储",
+      "label": "腾讯云 COS",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 181,
+      "kind": "settings:对象存储",
+      "label": "火山引擎 TOS",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 182,
+      "kind": "settings:对象存储",
+      "label": "百度云 BOS",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 183,
+      "kind": "settings:对象存储",
+      "label": "京东云对象存储",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 184,
+      "kind": "settings:对象存储",
+      "label": "金山云 KS3",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 185,
+      "kind": "settings:对象存储",
+      "label": "自定义 S3 / MinIO",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 186,
+      "kind": "settings:对象存储",
+      "label": "清空已保存的对象存储密钥",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 187,
+      "kind": "settings:对象存储",
+      "label": "请填写 AccessKey Secret",
+      "probe": "disabled",
+      "baseline": "N/A",
+      "dead": false,
+      "note": "按钮当前禁用（依赖前置条件）",
+      "extra": false
+    },
+    {
+      "no": 188,
+      "kind": "settings:AI",
+      "label": "当前使用中",
+      "probe": "disabled",
+      "baseline": "N/A",
+      "dead": false,
+      "note": "按钮当前禁用（依赖前置条件）",
+      "extra": false
+    },
+    {
+      "no": 189,
+      "kind": "settings:AI",
+      "label": "QA Mock · 温度上限 0.3 · 最多 128 tokens",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 190,
+      "kind": "settings:AI",
+      "label": "DeepSeek",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 191,
+      "kind": "settings:AI",
+      "label": "小米 MiMo",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 192,
+      "kind": "settings:AI",
+      "label": "通义千问",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 193,
+      "kind": "settings:AI",
+      "label": "腾讯混元",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 194,
+      "kind": "settings:AI",
+      "label": "智谱 GLM",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 195,
+      "kind": "settings:AI",
+      "label": "火山方舟",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 196,
+      "kind": "settings:AI",
+      "label": "百度千帆",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 197,
+      "kind": "settings:AI",
+      "label": "自定义 OpenAI 兼容",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 198,
+      "kind": "settings:AI",
+      "label": "由服务端代测 AI 连通性",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：文本",
+      "extra": false
+    },
+    {
+      "no": 199,
+      "kind": "settings:仓库",
+      "label": "创建新云端仓库",
+      "probe": "ok-dialog",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "弹窗：新建云端仓库输入新仓库名称取消 确定",
+      "extra": false
+    },
+    {
+      "no": 200,
+      "kind": "settings:仓库",
+      "label": "将全部仓库立即与云端同步",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 201,
+      "kind": "settings:仓库",
+      "label": "重新读取仓库列表与云端档案",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 202,
+      "kind": "settings:仓库",
+      "label": "已经是当前仓库",
+      "probe": "disabled",
+      "baseline": "N/A",
+      "dead": false,
+      "note": "按钮当前禁用（依赖前置条件）",
+      "extra": false
+    },
+    {
+      "no": 203,
+      "kind": "settings:仓库",
+      "label": "立即将该仓库与云端同步",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 204,
+      "kind": "settings:仓库",
+      "label": "为仓库生成完整快照，登录后可同时登记云端备份",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 205,
+      "kind": "settings:仓库",
+      "label": "复制该仓库为新仓库（云端优先，桌面端可退化为目录复制）",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 206,
+      "kind": "settings:仓库",
+      "label": "只改显示名，不改磁盘目录名",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：paneLen",
+      "extra": false
+    },
+    {
+      "no": 207,
+      "kind": "settings:仓库",
+      "label": "不能停用当前正在使用的仓库",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 208,
+      "kind": "settings:仓库",
+      "label": "不能删除当前正在使用的仓库，请先切换",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 209,
+      "kind": "settings:仓库",
+      "label": "切换到「Neo MD」",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：panelCount,tabCount,activeTab,paneLen",
+      "extra": false
+    },
+    {
+      "no": 210,
+      "kind": "settings:仓库",
+      "label": "立即将该仓库与云端同步",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 211,
+      "kind": "settings:仓库",
+      "label": "为仓库生成完整快照，登录后可同时登记云端备份",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 212,
+      "kind": "settings:仓库",
+      "label": "复制该仓库为新仓库（云端优先，桌面端可退化为目录复制）",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 213,
+      "kind": "settings:仓库",
+      "label": "只改显示名，不改磁盘目录名",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 214,
+      "kind": "settings:仓库",
+      "label": "停用该仓库，数据保留",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 215,
+      "kind": "settings:仓库",
+      "label": "从仓库列表移除（不删除磁盘文件夹）",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 216,
+      "kind": "settings:仓库",
+      "label": "切换到「笔记本」",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 217,
+      "kind": "settings:仓库",
+      "label": "立即将该仓库与云端同步",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：toastCount",
+      "extra": false
+    },
+    {
+      "no": 218,
+      "kind": "settings:仓库",
+      "label": "为仓库生成完整快照，登录后可同时登记云端备份",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 219,
+      "kind": "settings:仓库",
+      "label": "复制该仓库为新仓库（云端优先，桌面端可退化为目录复制）",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 220,
+      "kind": "settings:仓库",
+      "label": "只改显示名，不改磁盘目录名",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 221,
+      "kind": "settings:仓库",
+      "label": "停用该仓库，数据保留",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 222,
+      "kind": "settings:仓库",
+      "label": "从仓库列表移除（不删除磁盘文件夹）",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 223,
+      "kind": "settings:仓库",
+      "label": "切换到「vaultmvp3augl2m72a0nw」",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：toastCount",
+      "extra": false
+    },
+    {
+      "no": 224,
+      "kind": "settings:仓库",
+      "label": "立即将该仓库与云端同步",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 225,
+      "kind": "settings:仓库",
+      "label": "为仓库生成完整快照，登录后可同时登记云端备份",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 226,
+      "kind": "settings:仓库",
+      "label": "复制该仓库为新仓库（云端优先，桌面端可退化为目录复制）",
+      "probe": "no-change",
+      "baseline": "REVIEW",
+      "dead": false,
+      "note": "未定性，需人工复核",
+      "extra": false
+    },
+    {
+      "no": 227,
+      "kind": "settings:仓库",
+      "label": "只改显示名，不改磁盘目录名",
+      "probe": "ok",
+      "baseline": "PASS",
+      "dead": false,
+      "note": "变化：toastCount",
+      "extra": false
+    },
+    {
+      "no": 228,
+      "kind": "settings:仓库",
+      "label": "停用该仓库，数据保留",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": 229,
+      "kind": "settings:仓库",
+      "label": "从仓库列表移除（不删除磁盘文件夹）",
+      "probe": "skipped-danger",
+      "baseline": "SKIP",
+      "dead": false,
+      "note": "破坏性，未点击",
+      "extra": false
+    },
+    {
+      "no": "额外1",
+      "kind": "keyboard",
+      "label": "斜杠「/」唤起命令面板",
+      "probe": "manual",
+      "baseline": "DEAD",
+      "dead": true,
+      "note": "输入 / 后弹层数=0，/ 原样留在正文 —— 1.4.0 已知遗留，仍未修",
+      "extra": true
+    }
+  ]
+}

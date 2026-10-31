@@ -1,0 +1,116 @@
+{
+  "at": "2026-10-31T06:43:51.687Z",
+  "rows": [
+    {
+      "user_id": 1,
+      "vault_id": "admin",
+      "name": "admin",
+      "doc_count": 280,
+      "status": "active"
+    },
+    {
+      "user_id": 1,
+      "vault_id": "vaultmvp3augl2m72a0nw",
+      "name": "vaultmvp3augl2m72a0nw",
+      "doc_count": 298,
+      "status": "active"
+    },
+    {
+      "user_id": 1,
+      "vault_id": "vaultmvs9ey2vkpj8q5jy",
+      "name": "Neo MD",
+      "doc_count": 315,
+      "status": "active"
+    },
+    {
+      "user_id": 1,
+      "vault_id": "vaultmvuqt3rn8ubd9num",
+      "name": "笔记本",
+      "doc_count": 700,
+      "status": "active"
+    },
+    {
+      "user_id": 1,
+      "vault_id": "vaultNotMineAtAll01",
+      "name": "vaultNotMineAtAll01",
+      "doc_count": 0,
+      "status": "active"
+    }
+  ],
+  "vaultIdColumn": {
+    "Field": "vault_id",
+    "Type": "varchar(64)",
+    "Collation": "utf8mb4_0900_ai_ci",
+    "Null": "NO",
+    "Key": "",
+    "Default": null,
+    "Extra": "",
+    "Privileges": "select,insert,update,references",
+    "Comment": ""
+  },
+  "vaultIdCaseInsensitive": true,
+  "primaryKey": "PRIMARY KEY (`id`)",
+  "tableCollation": "utf8mb4_0900_ai_ci",
+  "dbVars": {
+    "cs": "utf8mb4",
+    "coll": "utf8mb4_general_ci",
+    "mode": "IGNORE_SPACE,STRICT_TRANS_TABLES,NO_ENGINE_SUBSTITUTION"
+  },
+  "duplicateByCase": [],
+  "indexes": [
+    {
+      "INDEX_NAME": "idx_user_vaults_user_auto",
+      "cols": "user_id,auto_registered,created_at",
+      "NON_UNIQUE": 1
+    },
+    {
+      "INDEX_NAME": "idx_user_vaults_user_name",
+      "cols": "user_id,name,status",
+      "NON_UNIQUE": 1
+    },
+    {
+      "INDEX_NAME": "idx_user_vaults_user_status",
+      "cols": "user_id,status",
+      "NON_UNIQUE": 1
+    },
+    {
+      "INDEX_NAME": "PRIMARY",
+      "cols": "id",
+      "NON_UNIQUE": 0
+    },
+    {
+      "INDEX_NAME": "uk_user_vaults",
+      "cols": "user_id,vault_id",
+      "NON_UNIQUE": 0
+    }
+  ],
+  "tables": [
+    "ai_usage",
+    "audit_logs",
+    "backups",
+    "community_plugins",
+    "credit_ledger",
+    "knowledge_tokens",
+    "knowledge_usage",
+    "platform_ai_providers",
+    "platform_config",
+    "publishes",
+    "redeem_codes",
+    "refresh_tokens",
+    "release_downloads",
+    "share_annotations",
+    "share_comments",
+    "shares",
+    "user_settings",
+    "user_vaults",
+    "users",
+    "v1_audit_logs",
+    "v1_comments",
+    "v1_file_versions",
+    "v1_files",
+    "v1_repos",
+    "v1_settings",
+    "v1_shares",
+    "v1_users"
+  ]
+}

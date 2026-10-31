@@ -1,0 +1,160 @@
+{
+  "at": "2026-10-31T08:01:05.942Z",
+  "total": 19,
+  "passed": 19,
+  "failed": 0,
+  "results": [
+    {
+      "group": "A",
+      "name": "三方完全相同",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "A\nB\nC"
+    },
+    {
+      "group": "A",
+      "name": "只有 local 改",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "A\nB2\nC"
+    },
+    {
+      "group": "A",
+      "name": "只有 remote 改",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "A\nB3\nC"
+    },
+    {
+      "group": "A",
+      "name": "双方改不同区域（上 / 下）",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "A-X\nB\nC\nD\nE-Y"
+    },
+    {
+      "group": "A",
+      "name": "双方在同一区域改出相同内容",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "A\nB\nC"
+    },
+    {
+      "group": "A",
+      "name": "双方都追加到末尾（不同内容）",
+      "verdict": "conflict",
+      "pass": true,
+      "note": "判为冲突（保守，可接受）",
+      "outputPreview": null
+    },
+    {
+      "group": "A",
+      "name": "一方删除中间行，另一方改末尾",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "A\nC\nD-R"
+    },
+    {
+      "group": "A",
+      "name": "双方各插入一行（位置不同）",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "A\nL\nB\nC\nD\nE\nR\nF"
+    },
+    {
+      "group": "B",
+      "name": "双方改同一行（不同内容）",
+      "verdict": "conflict",
+      "pass": true,
+      "note": "",
+      "outputPreview": null
+    },
+    {
+      "group": "B",
+      "name": "双方改同一行同一位置（不同）",
+      "verdict": "conflict",
+      "pass": true,
+      "note": "",
+      "outputPreview": null
+    },
+    {
+      "group": "B",
+      "name": "单行文档双方都改",
+      "verdict": "conflict",
+      "pass": true,
+      "note": "",
+      "outputPreview": null
+    },
+    {
+      "group": "B",
+      "name": "双方删除同一行并各加新行",
+      "verdict": "conflict",
+      "pass": true,
+      "note": "",
+      "outputPreview": null
+    },
+    {
+      "group": "C",
+      "name": "空 base / 双方各有内容",
+      "verdict": "conflict",
+      "pass": true,
+      "note": "判为冲突（保守）",
+      "outputPreview": null
+    },
+    {
+      "group": "C",
+      "name": "一行为空字符串",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": ""
+    },
+    {
+      "group": "C",
+      "name": "CRLF 换行（local 改）",
+      "verdict": "merged",
+      "pass": true,
+      "note": "保留 local 改动",
+      "outputPreview": "A\r\nB2\r\nC"
+    },
+    {
+      "group": "C",
+      "name": "Unicode / 中文内容（双方改不同行）",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "标题-改\n正文\n结尾-改"
+    },
+    {
+      "group": "C",
+      "name": "emoji 内容",
+      "verdict": "conflict",
+      "pass": true,
+      "note": "判为冲突（保守，可接受）",
+      "outputPreview": null
+    },
+    {
+      "group": "C",
+      "name": "代码块内改不同行",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "```\ncode1-X\ncode2-Y\n```"
+    },
+    {
+      "group": "C",
+      "name": "超长文档（300 行，双方改首尾）",
+      "verdict": "merged",
+      "pass": true,
+      "note": "",
+      "outputPreview": "HEAD-CHANGED\nline 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\nline 31\nline 32\n"
+    }
+  ]
+}

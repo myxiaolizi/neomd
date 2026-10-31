@@ -1,0 +1,161 @@
+{
+  "generatedAt": "2026-10-31T06:21:17.737Z",
+  "scenarios": [
+    {
+      "id": "S1",
+      "title": "首次访问首页的认知效率",
+      "goal": "陌生访客能否在 5 秒内理解「这是什么、能干什么、我该点哪里」",
+      "steps": [
+        {
+          "action": "打开首页并等网络空闲",
+          "expect": "HTTP 200，DOM 渲染完成（h1 存在）",
+          "actual": "h1=\"新一代商务级 Markdown个人与团队知识生产力平台\"，首屏可见文本 15 段",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "首屏（1440×900 视口内）是否同时出现「价值主张 + 主 CTA」",
+          "expect": "至少 1 条价值描述 + 1 个主按钮",
+          "actual": "首屏文本：[\"NNeo MDEnterprise\",\"核心价值\",\"产品对比\",\"插件开放平台\",\"客户端下载\",\"常见问题\",\"登录\",\"免费注册\"]；hasPrimaryCta=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "h1 是否直接说明产品类别（而非只有品牌名/口号）",
+          "expect": "h1 含 Markdown / 笔记 / 知识 等类别词",
+          "actual": "h1=\"新一代商务级 Markdown个人与团队知识生产力平台\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "页面加载耗时",
+          "expect": "< 5000ms（「5 秒内理解」的前提）",
+          "actual": "2319ms",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "主 CTA 可见且未禁用",
+          "expect": "visible=true, disabled=false",
+          "actual": "{\"text\":\"免费注册\",\"visible\":true,\"disabled\":false}",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "首屏图片无 404/破图",
+          "expect": "破损图片数 = 0",
+          "actual": "破损 0 张 []",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "无 JS 运行时错误",
+          "expect": "0 条 pageerror",
+          "actual": "0 条 []",
+          "ok": true,
+          "note": ""
+        }
+      ],
+      "status": "ok",
+      "notes": [
+        "首屏文本偏多（15 段），信息密度高但可能冲淡价值主张"
+      ],
+      "startedAt": "2026-10-31T06:20:47.458Z",
+      "durationMs": 2404
+    },
+    {
+      "id": "S2",
+      "title": "注册 → 登录 → 首次进入工作台的引导",
+      "goal": "新用户能否顺利完成注册并知道下一步做什么",
+      "steps": [
+        {
+          "action": "登录页存在注册入口",
+          "expect": "页面上有「立即注册」",
+          "actual": "hasRegister=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "注册表单可用（字段齐全）",
+          "expect": "≥2 个输入框（账号/密码）",
+          "actual": "[{\"type\":\"email\",\"ph\":\"you@example.com\"},{\"type\":\"text\",\"ph\":\"用于个人存储目录，注册后不可修改\"},{\"type\":\"password\",\"ph\":\"至少 8 位\"}]",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "登录后能进入工作台",
+          "expect": ".shell__main 存在",
+          "actual": "hasShell=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "进入工作台耗时",
+          "expect": "< 8000ms",
+          "actual": "12873ms",
+          "ok": false,
+          "note": ""
+        },
+        {
+          "action": "首次进入是否有引导或明确的下一步入口",
+          "expect": "存在欢迎/引导文案，或已自动打开可编辑文档",
+          "actual": "hasEditor=false, 有引导词=false, 空状态文案=\"N还没有打开任何文档从左侧选择一篇，或新建一篇开始写作。新建文档 Ctrl+N编辑命令 Ctrl+P\"",
+          "ok": false,
+          "note": ""
+        }
+      ],
+      "status": "partial",
+      "notes": [
+        "注册页填写字段：[\"you@example.com\",\"用于个人存储目录，注册后不可修改\",\"至少 8 位\"]（未实际注册，避免在生产库造用户）"
+      ],
+      "startedAt": "2026-10-31T06:20:49.960Z",
+      "durationMs": 18666
+    },
+    {
+      "id": "S3",
+      "title": "未登录直接访问 /app 的守卫",
+      "goal": "未登录访问工作台应被拦到登录页，且不泄露他人数据",
+      "steps": [
+        {
+          "action": "未登录访问 /app 是否被拦到登录页",
+          "expect": "path=/login 且无 .shell__main",
+          "actual": "path=/app, hasShell=true, hasEditor=false, hasPasswordInput=false",
+          "ok": false,
+          "note": "页面文本前 200 字：全部文件 仓库还是空的，点右上角 + 新建第一篇。 Neo MD 未登录 N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 100%"
+        },
+        {
+          "action": "未登录时是否泄露文档列表/正文（不渲染工作台内容）",
+          "expect": "无 .tab、无编辑器、文本不含真实文档名",
+          "actual": "tabCount=0, 文本：\"全部文件 仓库还是空的，点右上角 + 新建第一篇。 Neo MD 未登录 N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 100%\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "未带 token 访问受保护 API /api/settings",
+          "expect": "HTTP 401（拒绝）",
+          "actual": "HTTP 401：{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未登录或登录已过期\"}}",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "未带 token 访问 /api/vaults（仓库列表）",
+          "expect": "HTTP 401/403",
+          "actual": "HTTP 401：{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未登录或登录已过期\"}}",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "「进入本机编辑器」免登录入口是否可用",
+          "expect": "跳转后能进入可编辑界面",
+          "actual": "path=/app, hasEditor=false, 文本=\"全部文件 仓库还是空的，点右上角 + 新建第一篇。 Neo MD 未登录 N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 10\"",
+          "ok": false,
+          "note": ""
+        }
+      ],
+      "status": "partial",
+      "notes": [],
+      "startedAt": "2026-10-31T06:21:08.698Z",
+      "durationMs": 9039
+    }
+  ]
+}

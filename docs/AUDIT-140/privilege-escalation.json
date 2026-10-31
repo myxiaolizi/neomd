@@ -1,0 +1,208 @@
+{
+  "at": "2026-10-31T07:05:57.197Z",
+  "api": "http://127.0.0.1:3200",
+  "users": [
+    {
+      "id": 1,
+      "username": "admin",
+      "role": "admin",
+      "status": "active"
+    },
+    {
+      "id": 2,
+      "username": "tester01",
+      "role": "user",
+      "status": "active"
+    },
+    {
+      "id": 6,
+      "username": "my",
+      "role": "user",
+      "status": "active"
+    },
+    {
+      "id": 36,
+      "username": "perm_1793429865625",
+      "role": "user",
+      "status": "active"
+    }
+  ],
+  "tokenIssuedFor": "tester01",
+  "storageProbe": {
+    "status": 200,
+    "leaked": false,
+    "body": "{\"ok\":true,\"data\":{\"objects\":[],\"truncated\":false,\"prefix\":\"\"}}"
+  },
+  "results": [
+    {
+      "name": "普通用户 GET /api/settings（自己的）",
+      "status": 200,
+      "expect": "allow",
+      "pass": true,
+      "bodySample": "{\"ok\":true,\"data\":{\"payload\":null,\"sensitive\":null,\"version\":0,\"updatedAt\":null,\"deviceId\":null,\"platform\":null}}"
+    },
+    {
+      "name": "普通用户 GET /api/vaults（自己的）",
+      "status": 200,
+      "expect": "allow",
+      "pass": true,
+      "bodySample": "{\"ok\":true,\"data\":{\"vaults\":[],\"storageRoot\":\"mdadmin/neomd/users/tester01/vaults/\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/stats",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/dashboard?days=7",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/users?page=1",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/plugins?page=1",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/vaults?page=1",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/publishes?page=1",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/releases",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/audit?page=1",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/comments?page=1",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/billing",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/ai/providers",
+      "status": 404,
+      "expect": "deny",
+      "pass": false,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"接口不存在：GET /api/admin/ai/providers\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/ai/usage?days=7",
+      "status": 404,
+      "expect": "deny",
+      "pass": false,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"接口不存在：GET /api/admin/ai/usage\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/redeem-codes?page=1",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/credits?page=1",
+      "status": 404,
+      "expect": "deny",
+      "pass": false,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"接口不存在：GET /api/admin/credits\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/backups?page=1",
+      "status": 404,
+      "expect": "deny",
+      "pass": false,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"接口不存在：GET /api/admin/backups\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/users/1",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/users/1/logins",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 GET /api/admin/users/1/overview",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 DELETE /api/admin/users/999999",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 PUT /api/admin/users/999999/status",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"ADMIN_REQUIRED\",\"message\":\"需要管理员权限\"}}"
+    },
+    {
+      "name": "普通用户 PUT /api/admin/settings",
+      "status": 404,
+      "expect": "deny",
+      "pass": false,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"NOT_FOUND\",\"message\":\"接口不存在：PUT /api/admin/settings\"}}"
+    },
+    {
+      "name": "普通用户访问 admin 的 vaultId 存储列举",
+      "status": 200,
+      "expect": "deny-or-empty",
+      "pass": true,
+      "bodySample": "{\"ok\":true,\"data\":{\"objects\":[],\"truncated\":false,\"prefix\":\"\"}}"
+    }
+  ],
+  "passed": 19,
+  "failed": 5
+}

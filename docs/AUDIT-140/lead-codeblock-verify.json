@@ -1,0 +1,62 @@
+{
+  "steps": [
+    {
+      "name": "新建文档成功",
+      "expect": "docId 非空",
+      "actual": "docId=docmvw1p99ntmi0s6eg",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "插入代码块 fenced markdown 并保存",
+      "expect": "保存后 store.content 含 ``` 围栏",
+      "actual": "含围栏=true, 长度=73",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "磁盘/仓库文件含代码块围栏（绕开前端读）",
+      "expect": "读到的原始文本含 ```",
+      "actual": "读取失败：app.vault.readText is not a function",
+      "ok": false,
+      "note": "这一步是判定的关键：磁盘有=前端渲染问题；磁盘无=真数据丢失"
+    },
+    {
+      "name": "关闭后重新打开，内容仍含代码块",
+      "expect": "store.content 含 ```",
+      "actual": "含围栏=true, 长度=73",
+      "ok": true,
+      "note": ""
+    },
+    {
+      "name": "重开后 DOM 里有代码块渲染",
+      "expect": "<pre> 数量 >= 1",
+      "actual": "pre/cm=1，正文前 200 字=\"代码块测试\\n\\n前置段落。\\n\\nconst answer = 42;\\nconsole.log(answer);\\n\\n\\n\\n后置段落。\"",
+      "ok": true,
+      "note": ""
+    }
+  ],
+  "conclusion": "**真数据丢失**：磁盘上也没有代码块 —— 保存链路吞掉了代码块",
+  "title": "QA-LEDGER-CB-1793429638180",
+  "docId": "docmvw1p99ntmi0s6eg",
+  "cleaned": true,
+  "selfWrites": [
+    "POST vaults",
+    "POST vaults",
+    "HEAD storage/object?key=docs%2Fdocmvw1p99ntmi0s6eg%2F1-c41e5feb07763010.md",
+    "PUT storage/object?key=docs%2Fdocmvw1p99ntmi0s6eg%2F1-c41e5feb07763010.md",
+    "HEAD storage/object?key=versions%2Fdocmvw1p99ntmi0s6eg%2F1793429640693-1-c41e5feb07763010.md",
+    "PUT storage/object?key=versions%2Fdocmvw1p99ntmi0s6eg%2F1793429640693-1-c41e5feb07763010.md",
+    "PUT storage/object?key=docs%2Fdocmvw1p99ntmi0s6eg%2Fmanifest.json",
+    "PUT storage/object?key=index%2Fdev-mvw1p3zf-1l7x4r.json",
+    "POST vaults",
+    "PUT storage/object?key=versions%2Fdocmvw1p99ntmi0s6eg%2F1793429642537-1-c41e5feb07763010.md",
+    "HEAD storage/object?key=docs%2Fdocmvw1p99ntmi0s6eg%2F2-e797d31321705ee2.md",
+    "PUT storage/object?key=docs%2Fdocmvw1p99ntmi0s6eg%2F2-e797d31321705ee2.md",
+    "HEAD storage/object?key=versions%2Fdocmvw1p99ntmi0s6eg%2F1793429645879-2-e797d31321705ee2.md",
+    "PUT storage/object?key=versions%2Fdocmvw1p99ntmi0s6eg%2F1793429645879-2-e797d31321705ee2.md",
+    "PUT storage/object?key=docs%2Fdocmvw1p99ntmi0s6eg%2Fmanifest.json",
+    "PUT storage/object?key=index%2Fdev-mvw1p3zf-1l7x4r.json",
+    "POST vaults"
+  ]
+}

@@ -1,0 +1,477 @@
+{
+  "profile": {
+    "id": "slow3g",
+    "label": "Slow 3G",
+    "latency": 400,
+    "downloadThroughput": 64000,
+    "uploadThroughput": 64000
+  },
+  "healthBefore": 8957,
+  "scenario1": {
+    "shellAtMs": 11353,
+    "samples": [
+      {
+        "t": 507,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 1013,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 1522,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 2022,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 2523,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 3023,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 3526,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 4035,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 4543,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 5044,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 5542,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 6043,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 6544,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 7047,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 7548,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 8046,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 8546,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 9047,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 9547,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 10064,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 10563,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 0,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": ""
+      },
+      {
+        "t": 11107,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": true,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 Neo MD A 正在打开本地仓库… 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 100%"
+      },
+      {
+        "t": 11581,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": true,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 Neo MD A 正在打开本地仓库… 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 100%"
+      },
+      {
+        "t": 12080,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 100%"
+      },
+      {
+        "t": 12581,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 100% "
+      },
+      {
+        "t": 13084,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 13586,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 14100,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 14601,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 15103,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 15618,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 16136,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 16648,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 17155,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 17655,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 18170,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 18684,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      },
+      {
+        "t": 19189,
+        "pm": 0,
+        "cm": 0,
+        "tabs": 0,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 70% 积"
+      }
+    ],
+    "totalSamples": 38,
+    "firstEditorAt": null,
+    "firstLoadingHintAt": 11107,
+    "loadingHintEverAppeared": true,
+    "lastSampleAt": 19189
+  },
+  "scenario2": {
+    "clicked": {
+      "ok": true,
+      "title": "新建文档 Ctrl+N",
+      "text": ""
+    },
+    "editorAppearedAtMs": 508,
+    "samples": [
+      {
+        "t": 508,
+        "pm": 1,
+        "cm": 0,
+        "tabs": 1,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "最近打开 261031日1937- 刚刚 全部文件 全部文件已在上方「最近打开」中显示。 admin A 261031日1937- H1 H2 H3 自动同步已就绪 261031日1937-.md 字数 0 字符 0 阅读 1 分钟 70%"
+      },
+      {
+        "t": 1011,
+        "pm": 1,
+        "cm": 0,
+        "tabs": 1,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "最近打开 261031日1937- 刚刚 全部文件 全部文件已在上方「最近打开」中显示。 admin A 261031日1937- H1 H2 H3 自动同步已就绪 261031日1937-.md 字数 0 字符 0 阅读 1 分钟 70%"
+      },
+      {
+        "t": 1514,
+        "pm": 1,
+        "cm": 0,
+        "tabs": 1,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "最近打开 261031日1937- 刚刚 全部文件 全部文件已在上方「最近打开」中显示。 admin A 261031日1937- H1 H2 H3 自动同步已就绪 261031日1937-.md 字数 0 字符 0 阅读 1 分钟 70%"
+      },
+      {
+        "t": 2019,
+        "pm": 1,
+        "cm": 0,
+        "tabs": 1,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "最近打开 261031日1937- 刚刚 全部文件 全部文件已在上方「最近打开」中显示。 admin A 261031日1937- H1 H2 H3 自动同步已就绪 261031日1937-.md 字数 0 字符 0 阅读 1 分钟 70%"
+      },
+      {
+        "t": 2519,
+        "pm": 1,
+        "cm": 0,
+        "tabs": 1,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "最近打开 261031日1937- 刚刚 全部文件 全部文件已在上方「最近打开」中显示。 admin A 261031日1937- H1 H2 H3 自动同步已就绪 261031日1937-.md 字数 0 字符 0 阅读 1 分钟 70%"
+      },
+      {
+        "t": 3032,
+        "pm": 1,
+        "cm": 0,
+        "tabs": 1,
+        "shell": 1,
+        "loadingText": false,
+        "spinner": false,
+        "bodyHead": "最近打开 261031日1937- 刚刚 全部文件 全部文件已在上方「最近打开」中显示。 admin A 261031日1937- H1 H2 H3 自动同步已就绪 261031日1937-.md 字数 0 字符 0 阅读 1 分钟 70%"
+      }
+    ],
+    "totalSamples": 6,
+    "firstEditorAt": 508,
+    "firstLoadingHintAt": null,
+    "loadingHintEverAppeared": false,
+    "lastSampleAt": 3032
+  },
+  "healthAfter": 8995,
+  "healthStable": true
+}

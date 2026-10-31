@@ -1,0 +1,773 @@
+{
+  "prod": {
+    "agg": {
+      "target": "prod",
+      "label": "生产 (md.zhengl.vip)",
+      "rounds": 4,
+      "fcp": {
+        "n": 4,
+        "min": 288,
+        "med": 554,
+        "mean": 494,
+        "p95": 580,
+        "max": 580
+      },
+      "lcp": {
+        "n": 4,
+        "min": 320,
+        "med": 580,
+        "mean": 522,
+        "p95": 608,
+        "max": 608
+      },
+      "ttfb": {
+        "n": 4,
+        "min": 35,
+        "med": 38,
+        "mean": 38.5,
+        "p95": 43,
+        "max": 43
+      },
+      "dcl": {
+        "n": 4,
+        "min": 97,
+        "med": 107,
+        "mean": 107,
+        "p95": 117,
+        "max": 117
+      },
+      "load": {
+        "n": 4,
+        "min": 128,
+        "med": 135.5,
+        "mean": 138,
+        "p95": 153,
+        "max": 153
+      },
+      "shell": {
+        "n": 4,
+        "min": 201,
+        "med": 823.5,
+        "mean": 673,
+        "p95": 844,
+        "max": 844
+      },
+      "interactive": {
+        "n": 4,
+        "min": 9,
+        "med": 10.5,
+        "mean": 11.8,
+        "p95": 17,
+        "max": 17
+      },
+      "editable": {
+        "n": 4,
+        "min": 66,
+        "med": 67,
+        "mean": 67.5,
+        "p95": 70,
+        "max": 70
+      },
+      "cls": {
+        "n": 4,
+        "min": 0.2,
+        "med": 0.2,
+        "mean": 0.2,
+        "p95": 0.2,
+        "max": 0.2
+      },
+      "longTaskTotal": {
+        "n": 4,
+        "min": 54,
+        "med": 56,
+        "mean": 56.5,
+        "p95": 60,
+        "max": 60
+      },
+      "longTaskMax": {
+        "n": 4,
+        "min": 54,
+        "med": 56,
+        "mean": 56.5,
+        "p95": 60,
+        "max": 60
+      },
+      "resourceCount": {
+        "n": 4,
+        "min": 55,
+        "med": 80.5,
+        "mean": 77,
+        "p95": 92,
+        "max": 92
+      },
+      "resourceKB": {
+        "n": 4,
+        "min": 2347.5,
+        "med": 3594,
+        "mean": 3467.7,
+        "p95": 4335.3,
+        "max": 4335.3
+      },
+      "jsHeapMB": {
+        "n": 4,
+        "min": 9,
+        "med": 9.4,
+        "mean": 9.6,
+        "p95": 10.3,
+        "max": 10.3
+      },
+      "health": {
+        "before": 575,
+        "after": 578,
+        "uptimeStable": true,
+        "version": "1.4.0"
+      }
+    },
+    "rounds": [
+      {
+        "round": 1,
+        "target": "prod",
+        "cache": "cold",
+        "ok": true,
+        "phases": {
+          "domContentLoadedMs": 99,
+          "shellMs": 828,
+          "interactiveMs": 11,
+          "editableVia": "new-doc",
+          "editableMs": 66
+        },
+        "vitals": {
+          "fcp": 580,
+          "lcp": 608,
+          "lcpEl": "P.",
+          "cls": 0.245,
+          "ttfb": 39,
+          "domContentLoaded": 97,
+          "load": 128,
+          "domInteractive": 47,
+          "transferSize": 903,
+          "encodedBodySize": 603,
+          "decodedBodySize": 603,
+          "longTaskCount": 1,
+          "longTaskTotal": 54,
+          "longTaskMax": 54
+        },
+        "metrics": {
+          "JSHeapUsedSize": 10833952,
+          "Nodes": 571,
+          "LayoutCount": 8,
+          "RecalcStyleCount": 23,
+          "ScriptDuration": 26.1,
+          "TaskDuration": 265.1,
+          "LayoutDuration": 92.3
+        },
+        "resources": {
+          "count": 92,
+          "totalBytes": 4439333,
+          "top": [
+            {
+              "name": "https://md.zhengl.vip/assets/codemirror-DWuwBixc.js",
+              "initiatorType": "script",
+              "startTime": 97,
+              "duration": 398,
+              "transferSize": 192940,
+              "encodedBodySize": 192640,
+              "decodedBodySize": 556846
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/editor-B2ozkiv3.js",
+              "initiatorType": "script",
+              "startTime": 97,
+              "duration": 216,
+              "transferSize": 126363,
+              "encodedBodySize": 126063,
+              "decodedBodySize": 393844
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/EditorPage-CuHqdrD0.js",
+              "initiatorType": "script",
+              "startTime": 97,
+              "duration": 38,
+              "transferSize": 110087,
+              "encodedBodySize": 109787,
+              "decodedBodySize": 340782
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/index-Du-HaJrq.js",
+              "initiatorType": "script",
+              "startTime": 44,
+              "duration": 27,
+              "transferSize": 71782,
+              "encodedBodySize": 71482,
+              "decodedBodySize": 183989
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/app-C5ONzHU_.js",
+              "initiatorType": "script",
+              "startTime": 97,
+              "duration": 48,
+              "transferSize": 38391,
+              "encodedBodySize": 38091,
+              "decodedBodySize": 112595
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/vendor-DQ8vRQB2.js",
+              "initiatorType": "other",
+              "startTime": 44,
+              "duration": 38,
+              "transferSize": 44097,
+              "encodedBodySize": 43797,
+              "decodedBodySize": 111958
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/EditorPage-BSPWy9nL.css",
+              "initiatorType": "link",
+              "startTime": 97,
+              "duration": 29,
+              "transferSize": 12465,
+              "encodedBodySize": 12165,
+              "decodedBodySize": 74289
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Faudit-perf-140.json",
+              "initiatorType": "fetch",
+              "startTime": 697,
+              "duration": 24,
+              "transferSize": 10931,
+              "encodedBodySize": 10631,
+              "decodedBodySize": 71315
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvmq22c-8179q1.json",
+              "initiatorType": "fetch",
+              "startTime": 2187,
+              "duration": 15,
+              "transferSize": 10407,
+              "encodedBodySize": 10107,
+              "decodedBodySize": 68906
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvmh24l-sj9zpg.json",
+              "initiatorType": "fetch",
+              "startTime": 2169,
+              "duration": 16,
+              "transferSize": 10296,
+              "encodedBodySize": 9996,
+              "decodedBodySize": 68131
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvlwgzg-x7lsp5.json",
+              "initiatorType": "fetch",
+              "startTime": 2153,
+              "duration": 15,
+              "transferSize": 10176,
+              "encodedBodySize": 9876,
+              "decodedBodySize": 67344
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvlj76x-t44k3q.json",
+              "initiatorType": "fetch",
+              "startTime": 2118,
+              "duration": 17,
+              "transferSize": 10162,
+              "encodedBodySize": 9862,
+              "decodedBodySize": 67097
+            }
+          ]
+        },
+        "requestCount": 94,
+        "jsErrors": [],
+        "health": {
+          "before": 575,
+          "after": 578,
+          "uptimeStable": true,
+          "version": "1.4.0"
+        },
+        "wallMs": 2360
+      },
+      {
+        "round": 2,
+        "target": "prod",
+        "cache": "cold",
+        "ok": true,
+        "phases": {
+          "domContentLoadedMs": 119,
+          "shellMs": 201,
+          "interactiveMs": 17,
+          "editableVia": "new-doc",
+          "editableMs": 68
+        },
+        "vitals": {
+          "fcp": 288,
+          "lcp": 320,
+          "lcpEl": "P.",
+          "cls": 0.245,
+          "ttfb": 37,
+          "domContentLoaded": 117,
+          "load": 153,
+          "domInteractive": 43,
+          "transferSize": 903,
+          "encodedBodySize": 603,
+          "decodedBodySize": 603,
+          "longTaskCount": 1,
+          "longTaskTotal": 56,
+          "longTaskMax": 56
+        },
+        "metrics": {
+          "JSHeapUsedSize": 10162356,
+          "Nodes": 571,
+          "LayoutCount": 9,
+          "RecalcStyleCount": 22,
+          "ScriptDuration": 24.8,
+          "TaskDuration": 235.2,
+          "LayoutDuration": 96.3
+        },
+        "resources": {
+          "count": 55,
+          "totalBytes": 2403887,
+          "top": [
+            {
+              "name": "https://md.zhengl.vip/assets/codemirror-DWuwBixc.js",
+              "initiatorType": "script",
+              "startTime": 117,
+              "duration": 85,
+              "transferSize": 192940,
+              "encodedBodySize": 192640,
+              "decodedBodySize": 556846
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/editor-B2ozkiv3.js",
+              "initiatorType": "script",
+              "startTime": 117,
+              "duration": 87,
+              "transferSize": 126363,
+              "encodedBodySize": 126063,
+              "decodedBodySize": 393844
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/EditorPage-CuHqdrD0.js",
+              "initiatorType": "script",
+              "startTime": 117,
+              "duration": 22,
+              "transferSize": 110087,
+              "encodedBodySize": 109787,
+              "decodedBodySize": 340782
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/index-Du-HaJrq.js",
+              "initiatorType": "script",
+              "startTime": 41,
+              "duration": 33,
+              "transferSize": 71782,
+              "encodedBodySize": 71482,
+              "decodedBodySize": 183989
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/app-C5ONzHU_.js",
+              "initiatorType": "script",
+              "startTime": 117,
+              "duration": 66,
+              "transferSize": 38391,
+              "encodedBodySize": 38091,
+              "decodedBodySize": 112595
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/vendor-DQ8vRQB2.js",
+              "initiatorType": "other",
+              "startTime": 41,
+              "duration": 61,
+              "transferSize": 44097,
+              "encodedBodySize": 43797,
+              "decodedBodySize": 111958
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/EditorPage-BSPWy9nL.css",
+              "initiatorType": "link",
+              "startTime": 117,
+              "duration": 35,
+              "transferSize": 12465,
+              "encodedBodySize": 12165,
+              "decodedBodySize": 74289
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Faudit-perf-140.json",
+              "initiatorType": "fetch",
+              "startTime": 402,
+              "duration": 21,
+              "transferSize": 10931,
+              "encodedBodySize": 10631,
+              "decodedBodySize": 71315
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvuzu0rh-okv24s.json",
+              "initiatorType": "fetch",
+              "startTime": 1498,
+              "duration": 18,
+              "transferSize": 4969,
+              "encodedBodySize": 4669,
+              "decodedBodySize": 29599
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvv0b8w3-dyec2i.json",
+              "initiatorType": "fetch",
+              "startTime": 1517,
+              "duration": 21,
+              "transferSize": 4969,
+              "encodedBodySize": 4669,
+              "decodedBodySize": 29599
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvv0if0a-4ai5qb.json",
+              "initiatorType": "fetch",
+              "startTime": 1540,
+              "duration": 19,
+              "transferSize": 4979,
+              "encodedBodySize": 4679,
+              "decodedBodySize": 29599
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvv0rzl2-y2dj1j.json",
+              "initiatorType": "fetch",
+              "startTime": 1560,
+              "duration": 19,
+              "transferSize": 4975,
+              "encodedBodySize": 4675,
+              "decodedBodySize": 29599
+            }
+          ]
+        },
+        "requestCount": 57,
+        "jsErrors": [],
+        "health": {
+          "before": 579,
+          "after": 580,
+          "uptimeStable": true,
+          "version": "1.4.0"
+        },
+        "wallMs": 1746
+      },
+      {
+        "round": 3,
+        "target": "prod",
+        "cache": "cold",
+        "ok": true,
+        "phases": {
+          "domContentLoadedMs": 111,
+          "shellMs": 844,
+          "interactiveMs": 10,
+          "editableVia": "new-doc",
+          "editableMs": 70
+        },
+        "vitals": {
+          "fcp": 544,
+          "lcp": 568,
+          "lcpEl": "P.",
+          "cls": 0.245,
+          "ttfb": 43,
+          "domContentLoaded": 109,
+          "load": 134,
+          "domInteractive": 51,
+          "transferSize": 903,
+          "encodedBodySize": 603,
+          "decodedBodySize": 603,
+          "longTaskCount": 1,
+          "longTaskTotal": 60,
+          "longTaskMax": 60
+        },
+        "metrics": {
+          "JSHeapUsedSize": 9642652,
+          "Nodes": 571,
+          "LayoutCount": 9,
+          "RecalcStyleCount": 23,
+          "ScriptDuration": 27.1,
+          "TaskDuration": 277.8,
+          "LayoutDuration": 101.8
+        },
+        "resources": {
+          "count": 81,
+          "totalBytes": 3711363,
+          "top": [
+            {
+              "name": "https://md.zhengl.vip/assets/codemirror-DWuwBixc.js",
+              "initiatorType": "script",
+              "startTime": 109,
+              "duration": 57,
+              "transferSize": 192940,
+              "encodedBodySize": 192640,
+              "decodedBodySize": 556846
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/editor-B2ozkiv3.js",
+              "initiatorType": "script",
+              "startTime": 109,
+              "duration": 349,
+              "transferSize": 126363,
+              "encodedBodySize": 126063,
+              "decodedBodySize": 393844
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/EditorPage-CuHqdrD0.js",
+              "initiatorType": "script",
+              "startTime": 109,
+              "duration": 28,
+              "transferSize": 110087,
+              "encodedBodySize": 109787,
+              "decodedBodySize": 340782
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/index-Du-HaJrq.js",
+              "initiatorType": "script",
+              "startTime": 48,
+              "duration": 33,
+              "transferSize": 71782,
+              "encodedBodySize": 71482,
+              "decodedBodySize": 183989
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/app-C5ONzHU_.js",
+              "initiatorType": "script",
+              "startTime": 109,
+              "duration": 40,
+              "transferSize": 38391,
+              "encodedBodySize": 38091,
+              "decodedBodySize": 112595
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/vendor-DQ8vRQB2.js",
+              "initiatorType": "other",
+              "startTime": 48,
+              "duration": 46,
+              "transferSize": 44097,
+              "encodedBodySize": 43797,
+              "decodedBodySize": 111958
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/EditorPage-BSPWy9nL.css",
+              "initiatorType": "link",
+              "startTime": 109,
+              "duration": 24,
+              "transferSize": 12465,
+              "encodedBodySize": 12165,
+              "decodedBodySize": 74289
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Faudit-perf-140.json",
+              "initiatorType": "fetch",
+              "startTime": 602,
+              "duration": 23,
+              "transferSize": 10931,
+              "encodedBodySize": 10631,
+              "decodedBodySize": 71315
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvhfb5b-asg1rj.json",
+              "initiatorType": "fetch",
+              "startTime": 2204,
+              "duration": 21,
+              "transferSize": 9505,
+              "encodedBodySize": 9205,
+              "decodedBodySize": 62176
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvgtyqk-np17r6.json",
+              "initiatorType": "fetch",
+              "startTime": 2182,
+              "duration": 21,
+              "transferSize": 9406,
+              "encodedBodySize": 9106,
+              "decodedBodySize": 61389
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvgs0u2-pbiv1l.json",
+              "initiatorType": "fetch",
+              "startTime": 2158,
+              "duration": 22,
+              "transferSize": 9400,
+              "encodedBodySize": 9100,
+              "decodedBodySize": 61381
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvgpeac-zwt5sg.json",
+              "initiatorType": "fetch",
+              "startTime": 2136,
+              "duration": 21,
+              "transferSize": 9264,
+              "encodedBodySize": 8964,
+              "decodedBodySize": 60343
+            }
+          ]
+        },
+        "requestCount": 83,
+        "jsErrors": [],
+        "health": {
+          "before": 581,
+          "after": 584,
+          "uptimeStable": true,
+          "version": "1.4.0"
+        },
+        "wallMs": 2373
+      },
+      {
+        "round": 4,
+        "target": "prod",
+        "cache": "cold",
+        "ok": true,
+        "phases": {
+          "domContentLoadedMs": 107,
+          "shellMs": 819,
+          "interactiveMs": 9,
+          "editableVia": "new-doc",
+          "editableMs": 66
+        },
+        "vitals": {
+          "fcp": 564,
+          "lcp": 592,
+          "lcpEl": "P.",
+          "cls": 0.245,
+          "ttfb": 35,
+          "domContentLoaded": 105,
+          "load": 137,
+          "domInteractive": 42,
+          "transferSize": 903,
+          "encodedBodySize": 603,
+          "decodedBodySize": 603,
+          "longTaskCount": 1,
+          "longTaskTotal": 56,
+          "longTaskMax": 56
+        },
+        "metrics": {
+          "JSHeapUsedSize": 9442252,
+          "Nodes": 571,
+          "LayoutCount": 8,
+          "RecalcStyleCount": 22,
+          "ScriptDuration": 25.6,
+          "TaskDuration": 311,
+          "LayoutDuration": 92.9
+        },
+        "resources": {
+          "count": 80,
+          "totalBytes": 3649187,
+          "top": [
+            {
+              "name": "https://md.zhengl.vip/assets/codemirror-DWuwBixc.js",
+              "initiatorType": "script",
+              "startTime": 105,
+              "duration": 136,
+              "transferSize": 192940,
+              "encodedBodySize": 192640,
+              "decodedBodySize": 556846
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/editor-B2ozkiv3.js",
+              "initiatorType": "script",
+              "startTime": 105,
+              "duration": 375,
+              "transferSize": 126363,
+              "encodedBodySize": 126063,
+              "decodedBodySize": 393844
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/EditorPage-CuHqdrD0.js",
+              "initiatorType": "script",
+              "startTime": 105,
+              "duration": 28,
+              "transferSize": 110087,
+              "encodedBodySize": 109787,
+              "decodedBodySize": 340782
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/index-Du-HaJrq.js",
+              "initiatorType": "script",
+              "startTime": 39,
+              "duration": 28,
+              "transferSize": 71782,
+              "encodedBodySize": 71482,
+              "decodedBodySize": 183989
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/app-C5ONzHU_.js",
+              "initiatorType": "script",
+              "startTime": 105,
+              "duration": 37,
+              "transferSize": 38391,
+              "encodedBodySize": 38091,
+              "decodedBodySize": 112595
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/vendor-DQ8vRQB2.js",
+              "initiatorType": "other",
+              "startTime": 39,
+              "duration": 50,
+              "transferSize": 44097,
+              "encodedBodySize": 43797,
+              "decodedBodySize": 111958
+            },
+            {
+              "name": "https://md.zhengl.vip/assets/EditorPage-BSPWy9nL.css",
+              "initiatorType": "link",
+              "startTime": 105,
+              "duration": 30,
+              "transferSize": 12465,
+              "encodedBodySize": 12165,
+              "decodedBodySize": 74289
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Faudit-perf-140.json",
+              "initiatorType": "fetch",
+              "startTime": 621,
+              "duration": 20,
+              "transferSize": 10931,
+              "encodedBodySize": 10631,
+              "decodedBodySize": 71315
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvgtyqk-np17r6.json",
+              "initiatorType": "fetch",
+              "startTime": 2185,
+              "duration": 20,
+              "transferSize": 9406,
+              "encodedBodySize": 9106,
+              "decodedBodySize": 61389
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvgs0u2-pbiv1l.json",
+              "initiatorType": "fetch",
+              "startTime": 2139,
+              "duration": 42,
+              "transferSize": 9400,
+              "encodedBodySize": 9100,
+              "decodedBodySize": 61381
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvgpeac-zwt5sg.json",
+              "initiatorType": "fetch",
+              "startTime": 2117,
+              "duration": 20,
+              "transferSize": 9264,
+              "encodedBodySize": 8964,
+              "decodedBodySize": 60343
+            },
+            {
+              "name": "https://md.zhengl.vip/api/storage/object?key=index%2Fdev-mvvgjubg-voc2ag.json",
+              "initiatorType": "fetch",
+              "startTime": 2093,
+              "duration": 20,
+              "transferSize": 8999,
+              "encodedBodySize": 8699,
+              "decodedBodySize": 58286
+            }
+          ]
+        },
+        "requestCount": 81,
+        "jsErrors": [],
+        "health": {
+          "before": 584,
+          "after": 587,
+          "uptimeStable": true,
+          "version": "1.4.0"
+        },
+        "wallMs": 2343
+      }
+    ]
+  }
+}

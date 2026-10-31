@@ -1,0 +1,65 @@
+{
+  "generatedAt": "2026-10-31T07:11:30.610Z",
+  "scenarios": [
+    {
+      "id": "CB",
+      "title": "代码块在不同插入位置的序列化",
+      "goal": "定位 S4 代码块丢失的真实条件",
+      "steps": [
+        {
+          "action": "[A] 空文档后插入代码块：DOM pre=1",
+          "expect": "pre>=1",
+          "actual": "pre=1",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "[A] 保存后 markdown 含围栏",
+          "expect": "true",
+          "actual": "含围栏=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "[B] 列表后插入代码块：DOM pre=1",
+          "expect": "pre>=1",
+          "actual": "clicked=true, pre=1, html=\"<pre class=\\\"nm-code-block is-empty is-editor-empty\\\" data-placeholder=\\\"开始写作…\\\"><code><br class=\\\"ProseMirror-trailingBreak\\\"></code></pre><p><br class=\\\"ProseMirror-trailingBreak\\\"></p>\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "[B] 保存后 markdown 含围栏",
+          "expect": "true",
+          "actual": "含围栏=true, pre(DOM)=1",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "[C] 保存后 markdown 含围栏",
+          "expect": "true",
+          "actual": "含围栏=true, pre(DOM)=1",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "[C] 保存后 markdown 含引用标记 >",
+          "expect": "true",
+          "actual": "含 \"> \"=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "[C] 保存后 markdown 含表格 |",
+          "expect": "true",
+          "actual": "含 \"|\"=true",
+          "ok": true,
+          "note": ""
+        }
+      ],
+      "status": "ok",
+      "notes": [],
+      "startedAt": "2026-10-31T07:10:58.485Z",
+      "durationMs": 0
+    }
+  ]
+}

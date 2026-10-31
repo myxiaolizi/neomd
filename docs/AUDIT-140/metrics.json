@@ -1,0 +1,1151 @@
+{
+  "at": "2026-10-31T06:14:45.055Z",
+  "version": "1.4.0",
+  "topWeb": [
+    {
+      "path": "apps/web/src/views/EditorPage.vue",
+      "kb": 197.8,
+      "lines": 5096
+    },
+    {
+      "path": "apps/web/src/views/SettingsPage.vue",
+      "kb": 172,
+      "lines": 4707
+    },
+    {
+      "path": "apps/web/src/stores/app.ts",
+      "kb": 126.6,
+      "lines": 2973
+    },
+    {
+      "path": "apps/web/src/components/panels/SettingsModal.vue",
+      "kb": 87.5,
+      "lines": 2484
+    },
+    {
+      "path": "apps/web/src/stores/settings.ts",
+      "kb": 69.2,
+      "lines": 1484
+    },
+    {
+      "path": "apps/web/src/components/panels/KnowledgeSettingsSection.vue",
+      "kb": 65.7,
+      "lines": 2110
+    },
+    {
+      "path": "apps/web/src/views/AccountPage.vue",
+      "kb": 55,
+      "lines": 1284
+    },
+    {
+      "path": "apps/web/src/components/panels/PluginCenter.vue",
+      "kb": 49.6,
+      "lines": 1460
+    },
+    {
+      "path": "apps/web/src/components/panels/VaultManagerSection.vue",
+      "kb": 49.5,
+      "lines": 1511
+    },
+    {
+      "path": "apps/web/src/api/client.ts",
+      "kb": 48.3,
+      "lines": 1287
+    },
+    {
+      "path": "apps/web/src/components/diagram/FlowchartEditor.vue",
+      "kb": 44,
+      "lines": 1215
+    },
+    {
+      "path": "apps/web/src/components/panels/AiPanel.vue",
+      "kb": 41.5,
+      "lines": 1314
+    },
+    {
+      "path": "apps/web/src/components/diagram/MindmapEditor.vue",
+      "kb": 40.6,
+      "lines": 1329
+    },
+    {
+      "path": "apps/web/src/views/MarketingHome.vue",
+      "kb": 38.5,
+      "lines": 702
+    },
+    {
+      "path": "apps/web/src/components/layout/LeftPanel.vue",
+      "kb": 33.9,
+      "lines": 1120
+    }
+  ],
+  "topCore": [
+    {
+      "path": "packages/core/src/vault/vault.ts",
+      "kb": 42.7,
+      "lines": 1109
+    },
+    {
+      "path": "packages/core/src/vault/registry.ts",
+      "kb": 36.3,
+      "lines": 887
+    },
+    {
+      "path": "packages/core/src/sync/sync-engine.ts",
+      "kb": 31.1,
+      "lines": 799
+    },
+    {
+      "path": "packages/core/src/vault/markdown-bridge.ts",
+      "kb": 25.4,
+      "lines": 709
+    },
+    {
+      "path": "packages/core/src/diagram/serialize.ts",
+      "kb": 24,
+      "lines": 677
+    },
+    {
+      "path": "packages/core/src/import/obsidian.ts",
+      "kb": 19.7,
+      "lines": 573
+    },
+    {
+      "path": "packages/core/src/settings/settings.ts",
+      "kb": 18.9,
+      "lines": 493
+    },
+    {
+      "path": "packages/core/src/storage/proxy-client.ts",
+      "kb": 18.2,
+      "lines": 411
+    },
+    {
+      "path": "packages/core/src/storage/s3-client.ts",
+      "kb": 18.1,
+      "lines": 483
+    },
+    {
+      "path": "packages/core/src/__tests__/obsidian.test.ts",
+      "kb": 16.4,
+      "lines": 459
+    }
+  ],
+  "topApi": [
+    {
+      "path": "services/api/src/routes/admin.js",
+      "kb": 148.8,
+      "lines": 3542
+    },
+    {
+      "path": "services/api/src/lib/platform.js",
+      "kb": 40.2,
+      "lines": 960
+    },
+    {
+      "path": "services/api/src/routes/plugins.js",
+      "kb": 32.9,
+      "lines": 759
+    },
+    {
+      "path": "services/api/src/routes/ai.js",
+      "kb": 30,
+      "lines": 788
+    },
+    {
+      "path": "services/api/src/routes/knowledge.js",
+      "kb": 27.2,
+      "lines": 698
+    },
+    {
+      "path": "services/api/src/routes/storage.js",
+      "kb": 25.4,
+      "lines": 594
+    },
+    {
+      "path": "services/api/src/lib/s3.js",
+      "kb": 22.9,
+      "lines": 635
+    },
+    {
+      "path": "services/api/src/db/migrate-v2.js",
+      "kb": 22.8,
+      "lines": 511
+    },
+    {
+      "path": "services/api/src/routes/profile.js",
+      "kb": 14.7,
+      "lines": 374
+    },
+    {
+      "path": "services/api/src/routes/vaults.js",
+      "kb": 14.2,
+      "lines": 353
+    },
+    {
+      "path": "services/api/src/routes/shares.js",
+      "kb": 13.5,
+      "lines": 360
+    },
+    {
+      "path": "services/api/src/lib/vault-legacy.js",
+      "kb": 13.4,
+      "lines": 337
+    }
+  ],
+  "webTotals": {
+    "files": 86,
+    "kb": 1854,
+    "lines": 53260,
+    "top3Kb": 496.4,
+    "top3Lines": 12776,
+    "top3KbPct": 26.8,
+    "top3LinesPct": 24
+  },
+  "stores": [
+    {
+      "path": "apps/web/src/stores/app.ts",
+      "kb": 126.6,
+      "lines": 2973,
+      "functions": 85,
+      "returnKeys": 0
+    },
+    {
+      "path": "apps/web/src/stores/settings.ts",
+      "kb": 69.2,
+      "lines": 1484,
+      "functions": 50,
+      "returnKeys": 0
+    },
+    {
+      "path": "apps/web/src/stores/auth.ts",
+      "kb": 3.5,
+      "lines": 119,
+      "functions": 6,
+      "returnKeys": null
+    }
+  ],
+  "types": {
+    "totals": {
+      "as-any": 0,
+      "ts-ignore": 0,
+      "ts-expect-error": 0,
+      "any-annotation": 0,
+      "any-generic": 0
+    },
+    "byFile": []
+  },
+  "deadCandidates": [
+    {
+      "path": "apps/web/src/components/diagram/mindmap-engine.ts",
+      "kb": 20,
+      "lines": 574
+    },
+    {
+      "path": "services/api/src/server.js",
+      "kb": 12.2,
+      "lines": 349
+    },
+    {
+      "path": "apps/web/vite.config.ts",
+      "kb": 4.2,
+      "lines": 101
+    },
+    {
+      "path": "apps/web/src/components/layout/StatusBar.vue",
+      "kb": 1.3,
+      "lines": 66
+    },
+    {
+      "path": "vitest.config.ts",
+      "kb": 0.5,
+      "lines": 20
+    }
+  ],
+  "tests": [
+    {
+      "path": "packages/core/src/__tests__/diagram-files.test.ts",
+      "kb": 4.9,
+      "lines": 131,
+      "cases": 6
+    },
+    {
+      "path": "packages/core/src/__tests__/diagram.test.ts",
+      "kb": 12.1,
+      "lines": 314,
+      "cases": 30
+    },
+    {
+      "path": "packages/core/src/__tests__/diary-naming.test.ts",
+      "kb": 2.8,
+      "lines": 77,
+      "cases": 13
+    },
+    {
+      "path": "packages/core/src/__tests__/history-versions.test.ts",
+      "kb": 16.2,
+      "lines": 425,
+      "cases": 11
+    },
+    {
+      "path": "packages/core/src/__tests__/knowledge.test.ts",
+      "kb": 10.2,
+      "lines": 257,
+      "cases": 24
+    },
+    {
+      "path": "packages/core/src/__tests__/obsidian-importer.test.ts",
+      "kb": 11.5,
+      "lines": 316,
+      "cases": 14
+    },
+    {
+      "path": "packages/core/src/__tests__/obsidian.test.ts",
+      "kb": 16.4,
+      "lines": 459,
+      "cases": 57
+    },
+    {
+      "path": "packages/core/src/__tests__/roundtrip.test.ts",
+      "kb": 13.4,
+      "lines": 290,
+      "cases": 29
+    },
+    {
+      "path": "packages/core/src/__tests__/settings-garble.test.ts",
+      "kb": 9.3,
+      "lines": 228,
+      "cases": 21
+    },
+    {
+      "path": "packages/core/src/__tests__/vault-registry-orphan.test.ts",
+      "kb": 14.4,
+      "lines": 344,
+      "cases": 18
+    },
+    {
+      "path": "packages/core/src/__tests__/vault-registry.test.ts",
+      "kb": 10.6,
+      "lines": 283,
+      "cases": 26
+    },
+    {
+      "path": "packages/shared/src/__tests__/plugin-source.test.ts",
+      "kb": 7.6,
+      "lines": 187,
+      "cases": 16
+    }
+  ],
+  "testTotals": {
+    "files": 12,
+    "cases": 265
+  },
+  "coreModules": [
+    {
+      "path": "packages/core/src/ai/ai-client.ts",
+      "name": "ai-client",
+      "lines": 352
+    },
+    {
+      "path": "packages/core/src/db/metadata-store.ts",
+      "name": "metadata-store",
+      "lines": 497
+    },
+    {
+      "path": "packages/core/src/db/search-engine.ts",
+      "name": "search-engine",
+      "lines": 195
+    },
+    {
+      "path": "packages/core/src/db/types.ts",
+      "name": "types",
+      "lines": 71
+    },
+    {
+      "path": "packages/core/src/diagram/align.ts",
+      "name": "align",
+      "lines": 222
+    },
+    {
+      "path": "packages/core/src/diagram/geometry.ts",
+      "name": "geometry",
+      "lines": 401
+    },
+    {
+      "path": "packages/core/src/diagram/hit-test.ts",
+      "name": "hit-test",
+      "lines": 185
+    },
+    {
+      "path": "packages/core/src/diagram/mindmap-layout.ts",
+      "name": "mindmap-layout",
+      "lines": 456
+    },
+    {
+      "path": "packages/core/src/diagram/serialize.ts",
+      "name": "serialize",
+      "lines": 677
+    },
+    {
+      "path": "packages/core/src/export/exporters.ts",
+      "name": "exporters",
+      "lines": 255
+    },
+    {
+      "path": "packages/core/src/import/obsidian-importer.ts",
+      "name": "obsidian-importer",
+      "lines": 208
+    },
+    {
+      "path": "packages/core/src/import/obsidian-reader.ts",
+      "name": "obsidian-reader",
+      "lines": 185
+    },
+    {
+      "path": "packages/core/src/import/obsidian.ts",
+      "name": "obsidian",
+      "lines": 573
+    },
+    {
+      "path": "packages/core/src/index.ts",
+      "name": "index",
+      "lines": 29
+    },
+    {
+      "path": "packages/core/src/knowledge/chunker.ts",
+      "name": "chunker",
+      "lines": 294
+    },
+    {
+      "path": "packages/core/src/knowledge/defaults.ts",
+      "name": "defaults",
+      "lines": 185
+    },
+    {
+      "path": "packages/core/src/knowledge/index.ts",
+      "name": "index",
+      "lines": 10
+    },
+    {
+      "path": "packages/core/src/knowledge/knowledge-base.ts",
+      "name": "knowledge-base",
+      "lines": 162
+    },
+    {
+      "path": "packages/core/src/knowledge/search.ts",
+      "name": "search",
+      "lines": 411
+    },
+    {
+      "path": "packages/core/src/knowledge/vault-bridge.ts",
+      "name": "vault-bridge",
+      "lines": 123
+    },
+    {
+      "path": "packages/core/src/platform.ts",
+      "name": "platform",
+      "lines": 111
+    },
+    {
+      "path": "packages/core/src/settings/settings.ts",
+      "name": "settings",
+      "lines": 493
+    },
+    {
+      "path": "packages/core/src/storage/proxy-client.ts",
+      "name": "proxy-client",
+      "lines": 411
+    },
+    {
+      "path": "packages/core/src/storage/s3-client.ts",
+      "name": "s3-client",
+      "lines": 483
+    },
+    {
+      "path": "packages/core/src/storage/types.ts",
+      "name": "types",
+      "lines": 50
+    },
+    {
+      "path": "packages/core/src/sync/sync-engine.ts",
+      "name": "sync-engine",
+      "lines": 799
+    },
+    {
+      "path": "packages/core/src/util/hash.ts",
+      "name": "hash",
+      "lines": 126
+    },
+    {
+      "path": "packages/core/src/vault/adapter.ts",
+      "name": "adapter",
+      "lines": 36
+    },
+    {
+      "path": "packages/core/src/vault/browser-adapter.ts",
+      "name": "browser-adapter",
+      "lines": 308
+    },
+    {
+      "path": "packages/core/src/vault/markdown-bridge.ts",
+      "name": "markdown-bridge",
+      "lines": 709
+    },
+    {
+      "path": "packages/core/src/vault/markdown-parse.ts",
+      "name": "markdown-parse",
+      "lines": 297
+    },
+    {
+      "path": "packages/core/src/vault/native-adapter.ts",
+      "name": "native-adapter",
+      "lines": 127
+    },
+    {
+      "path": "packages/core/src/vault/registry.ts",
+      "name": "registry",
+      "lines": 887
+    },
+    {
+      "path": "packages/core/src/vault/vault.ts",
+      "name": "vault",
+      "lines": 1109
+    }
+  ],
+  "untestedCore": [
+    {
+      "path": "packages/core/src/vault/vault.ts",
+      "name": "vault",
+      "lines": 1109
+    },
+    {
+      "path": "packages/core/src/vault/registry.ts",
+      "name": "registry",
+      "lines": 887
+    },
+    {
+      "path": "packages/core/src/sync/sync-engine.ts",
+      "name": "sync-engine",
+      "lines": 799
+    },
+    {
+      "path": "packages/core/src/vault/markdown-bridge.ts",
+      "name": "markdown-bridge",
+      "lines": 709
+    },
+    {
+      "path": "packages/core/src/diagram/serialize.ts",
+      "name": "serialize",
+      "lines": 677
+    },
+    {
+      "path": "packages/core/src/db/metadata-store.ts",
+      "name": "metadata-store",
+      "lines": 497
+    },
+    {
+      "path": "packages/core/src/settings/settings.ts",
+      "name": "settings",
+      "lines": 493
+    },
+    {
+      "path": "packages/core/src/storage/s3-client.ts",
+      "name": "s3-client",
+      "lines": 483
+    },
+    {
+      "path": "packages/core/src/diagram/mindmap-layout.ts",
+      "name": "mindmap-layout",
+      "lines": 456
+    },
+    {
+      "path": "packages/core/src/knowledge/search.ts",
+      "name": "search",
+      "lines": 411
+    },
+    {
+      "path": "packages/core/src/storage/proxy-client.ts",
+      "name": "proxy-client",
+      "lines": 411
+    },
+    {
+      "path": "packages/core/src/diagram/geometry.ts",
+      "name": "geometry",
+      "lines": 401
+    },
+    {
+      "path": "packages/core/src/ai/ai-client.ts",
+      "name": "ai-client",
+      "lines": 352
+    },
+    {
+      "path": "packages/core/src/vault/browser-adapter.ts",
+      "name": "browser-adapter",
+      "lines": 308
+    },
+    {
+      "path": "packages/core/src/vault/markdown-parse.ts",
+      "name": "markdown-parse",
+      "lines": 297
+    },
+    {
+      "path": "packages/core/src/knowledge/chunker.ts",
+      "name": "chunker",
+      "lines": 294
+    },
+    {
+      "path": "packages/core/src/export/exporters.ts",
+      "name": "exporters",
+      "lines": 255
+    },
+    {
+      "path": "packages/core/src/diagram/align.ts",
+      "name": "align",
+      "lines": 222
+    },
+    {
+      "path": "packages/core/src/db/search-engine.ts",
+      "name": "search-engine",
+      "lines": 195
+    },
+    {
+      "path": "packages/core/src/diagram/hit-test.ts",
+      "name": "hit-test",
+      "lines": 185
+    },
+    {
+      "path": "packages/core/src/import/obsidian-reader.ts",
+      "name": "obsidian-reader",
+      "lines": 185
+    },
+    {
+      "path": "packages/core/src/knowledge/defaults.ts",
+      "name": "defaults",
+      "lines": 185
+    },
+    {
+      "path": "packages/core/src/knowledge/knowledge-base.ts",
+      "name": "knowledge-base",
+      "lines": 162
+    },
+    {
+      "path": "packages/core/src/vault/native-adapter.ts",
+      "name": "native-adapter",
+      "lines": 127
+    },
+    {
+      "path": "packages/core/src/util/hash.ts",
+      "name": "hash",
+      "lines": 126
+    },
+    {
+      "path": "packages/core/src/knowledge/vault-bridge.ts",
+      "name": "vault-bridge",
+      "lines": 123
+    },
+    {
+      "path": "packages/core/src/platform.ts",
+      "name": "platform",
+      "lines": 111
+    }
+  ],
+  "deps": {
+    "@neomd/shared": [],
+    "@neomd/core": [
+      "@neomd/shared"
+    ],
+    "@neomd/ui": [],
+    "@neomd/web": [
+      "@neomd/core",
+      "@neomd/shared",
+      "@neomd/ui"
+    ]
+  },
+  "routes": [
+    {
+      "path": "services/api/src/routes/admin.js",
+      "kb": 148.8,
+      "lines": 3542,
+      "registrations": 49,
+      "withAuth": 1,
+      "withAdmin": 51
+    },
+    {
+      "path": "services/api/src/routes/ai.js",
+      "kb": 30,
+      "lines": 788,
+      "registrations": 6,
+      "withAuth": 3,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/plugins.js",
+      "kb": 32.9,
+      "lines": 759,
+      "registrations": 11,
+      "withAuth": 5,
+      "withAdmin": 6
+    },
+    {
+      "path": "services/api/src/routes/knowledge.js",
+      "kb": 27.2,
+      "lines": 698,
+      "registrations": 6,
+      "withAuth": 6,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/storage.js",
+      "kb": 25.4,
+      "lines": 594,
+      "registrations": 8,
+      "withAuth": 6,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/profile.js",
+      "kb": 14.7,
+      "lines": 374,
+      "registrations": 7,
+      "withAuth": 7,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/shares.js",
+      "kb": 13.5,
+      "lines": 360,
+      "registrations": 7,
+      "withAuth": 4,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/vaults.js",
+      "kb": 14.2,
+      "lines": 353,
+      "registrations": 5,
+      "withAuth": 5,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/settings.js",
+      "kb": 12.4,
+      "lines": 310,
+      "registrations": 3,
+      "withAuth": 3,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/download.js",
+      "kb": 10.6,
+      "lines": 275,
+      "registrations": 2,
+      "withAuth": 0,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/auth.js",
+      "kb": 11.1,
+      "lines": 264,
+      "registrations": 6,
+      "withAuth": 2,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/publish.js",
+      "kb": 8.6,
+      "lines": 218,
+      "registrations": 4,
+      "withAuth": 3,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/upload.js",
+      "kb": 7.6,
+      "lines": 203,
+      "registrations": 3,
+      "withAuth": 3,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/credits.js",
+      "kb": 3.8,
+      "lines": 96,
+      "registrations": 3,
+      "withAuth": 2,
+      "withAdmin": 0
+    },
+    {
+      "path": "services/api/src/routes/health.js",
+      "kb": 0.7,
+      "lines": 29,
+      "registrations": 1,
+      "withAuth": 0,
+      "withAdmin": 0
+    }
+  ],
+  "secrets": {
+    "admin-pass": {
+      "label": "管理员密码 6655",
+      "files": 53,
+      "occurrences": 58,
+      "detail": [
+        {
+          "path": "PROJECT_CONTEXT.md",
+          "count": 2
+        },
+        {
+          "path": "tools/audit140-metrics.mjs",
+          "count": 2
+        },
+        {
+          "path": "tools/re121-right-dom.mjs",
+          "count": 2
+        },
+        {
+          "path": "tools/re140-probe-D/encoding-audit-wide.json",
+          "count": 2
+        },
+        {
+          "path": "tools/verify-119-settings.mjs",
+          "count": 2
+        },
+        {
+          "path": "docs/DEPLOY-131.md",
+          "count": 1
+        },
+        {
+          "path": "docs/DEPLOY-140.md",
+          "count": 1
+        },
+        {
+          "path": "tools/audit-admin-consistency.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/audit-analytics-conversion.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/debug-v2.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re121/common.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re121-evidence-autopull.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re121-history.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re121-layout.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re121-restore-original.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re121-settings-font-repro.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re121-settings-uniqueness.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-admin-b6-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-admin-recon.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-admin-routes.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-admin-ui.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-admin-verify.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-anti-rebound.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-charset-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-clean-vaults.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-editorbar.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-layout-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-layout-regress.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-layout-rightstack.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-layout-split.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-naming-garble.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-naming-verify.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-release-gate.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-seed-market.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-settings-audit.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-settings-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-settings-save-verify.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-vault-audit.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-writepath-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140/common.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140-fix-plugin54.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140-probe-B06-endpoints.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140-probe-B06.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140-probe-D/data-probe-http.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140-probe-D/data-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/test-web-v2.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/verify-101.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/verify-119-admin.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/verify-119-full.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/verify-119-sync.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/verify-120-sync-error.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/_debug-119.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/_debug-119b.mjs",
+          "count": 1
+        }
+      ]
+    },
+    "oss-ak": {
+      "label": "疑似阿里云 AccessKeyId",
+      "files": 3,
+      "occurrences": 3,
+      "detail": [
+        {
+          "path": "PROJECT_CONTEXT.md",
+          "count": 1
+        },
+        {
+          "path": "services/api/.env",
+          "count": 1
+        },
+        {
+          "path": "tools/verify-120-sync-error.mjs",
+          "count": 1
+        }
+      ]
+    },
+    "jwt-secret": {
+      "label": "JWT_SECRET 明文",
+      "files": 4,
+      "occurrences": 4,
+      "detail": [
+        {
+          "path": "docs/DEPLOYMENT.md",
+          "count": 1
+        },
+        {
+          "path": "SECURITY.md",
+          "count": 1
+        },
+        {
+          "path": "services/api/.env",
+          "count": 1
+        },
+        {
+          "path": "services/api/.env.example",
+          "count": 1
+        }
+      ]
+    },
+    "generic-pass": {
+      "label": "password= 明文",
+      "files": 24,
+      "occurrences": 33,
+      "detail": [
+        {
+          "path": "tools/re14-admin-verify.mjs",
+          "count": 5
+        },
+        {
+          "path": "apps/android/build.mjs",
+          "count": 2
+        },
+        {
+          "path": "docs/evidence-121/subagent-D-release-plan.md",
+          "count": 2
+        },
+        {
+          "path": "tools/re140-probe-D/encoding-audit-wide.json",
+          "count": 2
+        },
+        {
+          "path": "tools/smoke-api.mjs",
+          "count": 2
+        },
+        {
+          "path": "tools/verify-119-github.mjs",
+          "count": 2
+        },
+        {
+          "path": "docs/RELEASE-120.md",
+          "count": 1
+        },
+        {
+          "path": "tools/re121/common.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re121-layout.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-admin-b6-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-admin-routes.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-editorbar.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-layout-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-layout-regress.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-layout-rightstack.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-layout-split.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re14-seed-market.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140/common.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140-probe-D/data-probe-http.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/re140-probe-D/data-probe.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/verify-119-full.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/_debug-119.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/_debug-119b.mjs",
+          "count": 1
+        },
+        {
+          "path": "tools/_task118-mkadmin.mjs",
+          "count": 1
+        }
+      ]
+    }
+  }
+}

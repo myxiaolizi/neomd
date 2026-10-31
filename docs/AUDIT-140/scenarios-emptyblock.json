@@ -1,0 +1,58 @@
+{
+  "generatedAt": "2026-10-31T07:14:15.497Z",
+  "scenarios": [
+    {
+      "id": "EB",
+      "title": "空块是否在保存时被丢弃",
+      "goal": "插入后不填内容的代码块/引用/表格会不会消失",
+      "steps": [
+        {
+          "action": "插入空代码块后 DOM 里有 pre",
+          "expect": "pre>=1",
+          "actual": "inserted=true, pre=1, 其中 is-empty=1",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "空代码块带 is-empty 标记（说明编辑器知道它是空的）",
+          "expect": "preEmpty>=1",
+          "actual": "preEmpty=1",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "空代码块保存后 markdown 仍含围栏",
+          "expect": "content 含 ```",
+          "actual": "含围栏=true, len=18",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "再次保存后空代码块仍未出现",
+          "expect": "用于确认不是首次保存时序问题",
+          "actual": "含围栏=true, len=23",
+          "ok": true,
+          "note": "第二次保存后又出现了（时序问题）"
+        },
+        {
+          "action": "对照：空引用块保存后是否保留 `> `",
+          "expect": "/^>\\s/m 为 true",
+          "actual": "含 \"> \"=false, md=\"空引用块测试\\n\\n\"",
+          "ok": false,
+          "note": "空引用块同样被丢弃（与空代码块一致）"
+        },
+        {
+          "action": "对照：空表格保存后是否保留 `|`",
+          "expect": "content 含 |",
+          "actual": "含 \"|\"=true, md=\"|  |  |  |\\n| --- | --- | --- |\\n|  |  |  |\\n|  |  |  |\\n\\n\"",
+          "ok": true,
+          "note": ""
+        }
+      ],
+      "status": "partial",
+      "notes": [],
+      "startedAt": "2026-10-31T07:13:33.704Z",
+      "durationMs": 0
+    }
+  ]
+}

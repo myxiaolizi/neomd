@@ -1,0 +1,2838 @@
+{
+  "generatedAt": "2026-10-31T07:46:58.981Z",
+  "summary": {
+    "ok": 164,
+    "no-change": 39,
+    "ok-dialog": 5,
+    "skipped-danger": 17,
+    "disabled": 4
+  },
+  "rows": [
+    {
+      "kind": "editorbar",
+      "label": "新建文档",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "editorTextLen",
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：editorTextLen,tabCount"
+    },
+    {
+      "kind": "editorbar",
+      "label": "保存文档",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "toastCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：toastCount"
+    },
+    {
+      "kind": "editorbar",
+      "label": "正文编辑命令面板",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "editorbar",
+      "label": "分隔线",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html",
+        "hr"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html,hr"
+    },
+    {
+      "kind": "editorbar",
+      "label": "撤销",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "editorbar",
+      "label": "重做",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "editorbar",
+      "label": "斜体",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html"
+    },
+    {
+      "kind": "editorbar",
+      "label": "一级标题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html",
+        "h1"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html,h1"
+    },
+    {
+      "kind": "editorbar",
+      "label": "二级标题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html"
+    },
+    {
+      "kind": "editorbar",
+      "label": "三级标题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html"
+    },
+    {
+      "kind": "editorbar",
+      "label": "加粗",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": "（已全选后点击）结构变化：无"
+    },
+    {
+      "kind": "editorbar",
+      "label": "删除线",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": "（已全选后点击）结构变化：无"
+    },
+    {
+      "kind": "editorbar",
+      "label": "高亮",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": "（已全选后点击）结构变化：无"
+    },
+    {
+      "kind": "editorbar",
+      "label": "行内代码",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": "（已全选后点击）结构变化：无"
+    },
+    {
+      "kind": "editorbar",
+      "label": "无序列表",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html",
+        "ul"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html,ul"
+    },
+    {
+      "kind": "editorbar",
+      "label": "有序列表",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html"
+    },
+    {
+      "kind": "editorbar",
+      "label": "任务列表",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html",
+        "ul"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html,ul"
+    },
+    {
+      "kind": "editorbar",
+      "label": "下划线",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": "（已全选后点击）结构变化：无"
+    },
+    {
+      "kind": "editorbar",
+      "label": "引用",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html",
+        "quote"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html,quote"
+    },
+    {
+      "kind": "editorbar",
+      "label": "插入表格",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html",
+        "table"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html,table"
+    },
+    {
+      "kind": "editorbar",
+      "label": "插入链接",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": "（已全选后点击）结构变化：无"
+    },
+    {
+      "kind": "editorbar",
+      "label": "代码块",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "html",
+        "pre",
+        "code"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "（已全选后点击）结构变化：html,pre,code"
+    },
+    {
+      "kind": "editorbar",
+      "label": "历史版本（查看与恢复本文档历史）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": "版本历史 共 3 个版本（本地 0 · 云端 3），按时间倒序 v4刚刚2 B云端v3刚刚5 B云端v2刚刚2 B云端选择左侧任一版本查看差异关闭 恢复此版本",
+      "changedKeys": [
+        "modalCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok-dialog",
+      "note": "弹窗：版本历史 共 3 个版本（本地 0 · 云端 3），按时间倒序 v4刚刚2 B云端v3刚刚5 B云端v2刚刚2 B云端选择左侧任一版本查看差异关闭 恢复此版本"
+    },
+    {
+      "kind": "editorbar",
+      "label": "页宽：铺满（点击切换）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "menuCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：menuCount"
+    },
+    {
+      "kind": "editorbar",
+      "label": "编辑模式：所见即所得（",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "editorbar",
+      "label": "分享与发布",
+      "danger": false,
+      "clickErr": null,
+      "dialog": "分享与发布 分享链接 发布网页 生成一个免登录链接，访客可阅读；开启评价后还能划词标注。允许访客评价与标注关闭后链接只读开访问密码（留空表示免密公开访问）有效期长期1 天7 天30 天生成分享链接我的分享自动保存验证内容 20263 次浏览 · 有效 打开 撤销无标题1 次浏览 · 有效 打开 撤销浏览器验证分享文档1",
+      "changedKeys": [
+        "modalCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok-dialog",
+      "note": "弹窗：分享与发布 分享链接 发布网页 生成一个免登录链接，访客可阅读；开启评价后还能划词标注。允许访客评价与标注关闭后链接只读开访问密码（留空表示免密公开访问）有效期长期1 天7 天30"
+    },
+    {
+      "kind": "editorbar",
+      "label": "导出文档（PDF / Word / HTML）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": "导出文档PDF 文档桌面端由系统打印生成Word 文档 (.docx)保留标题层级、列表与表格HTML 网页单文件，可直接分享取消开始导出",
+      "changedKeys": [
+        "modalCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok-dialog",
+      "note": "弹窗：导出文档PDF 文档桌面端由系统打印生成Word 文档 (.docx)保留标题层级、列表与表格HTML 网页单文件，可直接分享取消开始导出"
+    },
+    {
+      "kind": "editorbar",
+      "label": "切换右侧边栏（AI 助手与文件操作）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "bar",
+      "label": "收起侧边栏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "bar",
+      "label": "关闭 Ctrl+W",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "关闭 Ctrl+W",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "toastCount",
+        "tabCount",
+        "activeTab"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：toastCount,tabCount,activeTab"
+    },
+    {
+      "kind": "bar",
+      "label": "新建标签页（同时打开另一篇）Ctrl+N",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "快速跳转标签页（2 个）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "分屏：同时查看两篇文章",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "上次自动同步：刚刚（点击立即同步）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "点击在文件夹中打开：cloud:admin/261031日1542- (2).md",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "白板",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "幻灯片演示",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "数据库视图",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "流程图",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "字数统计",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "脚注视图",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "页面预览",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "思维导图",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "插件商店（管理已装插件 / 安装新插件）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "点击复制字数",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "点击复制字符数",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "正文缩放 70%（点击选择，Ctrl+滚轮可调整）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "bar",
+      "label": "AI 助手 Ctrl+Shift+A",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "tabCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：tabCount"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "通用",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings-tab",
+      "label": "编辑器",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "主题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "界面布局",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "对象存储",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "AI",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "仓库",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "知识库",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings-tab",
+      "label": "同步与版本",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:通用",
+      "label": "跟随系统主题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:通用",
+      "label": "浅色主题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:通用",
+      "label": "深色主题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "theme",
+        "preset",
+        "bg"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：theme,preset,bg"
+    },
+    {
+      "kind": "settings:通用",
+      "label": "日期时间自动命名",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:通用",
+      "label": "AI 保存后命名",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:通用",
+      "label": "恢复默认的 AI 命名提示词",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:通用",
+      "label": "恢复全部设置为默认值",
+      "danger": false,
+      "clickErr": null,
+      "dialog": "恢复默认设置将把外观、命名、布局、快捷键、插件开关等全部恢复为默认值；对象存储与 AI 的账号密钥不会被清除。确定继续？取消恢复默认",
+      "changedKeys": [
+        "modalCount"
+      ],
+      "textChanged": true,
+      "verdict": "ok-dialog",
+      "note": "弹窗：恢复默认设置将把外观、命名、布局、快捷键、插件开关等全部恢复为默认值；对象存储与 AI 的账号密钥不会被清除。确定继续？取消恢复默认"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "恢复到系统默认字体与默认字号/行高",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "开启正文行号",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "关闭拼写检查",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "关闭自动保存",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "关闭正文工具栏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "恢复默认工具栏顺序与按钮",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「分隔线」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「撤销」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「重做」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「斜体」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「H1 一级标题」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「H2 二级标题」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「H3 三级标题」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「加粗」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「删除线」顺序，点击隐藏",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「高亮」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「行内代码」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「无序列表」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「有序列表」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「任务列表」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「下划线」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「引用」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「插入表格」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「插入链接」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "拖动调整「代码块」顺序，点击隐藏",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:编辑器",
+      "label": "点击显示「插入图片」",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：日光白",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "theme",
+        "preset",
+        "bg"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：theme,preset,bg"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：石墨灰",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：午夜黑",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "theme",
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：theme,preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：护眼绿",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "theme",
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：theme,preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：静谧蓝",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：暖纸黄",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：玫瑰粉",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：深海青",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "theme",
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：theme,preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：暮光紫",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "应用主题：墨石黑",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "preset",
+        "bg",
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：preset,bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "主色调 #1677FF",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "accent"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "主色调 #0E9F6E",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "accent"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "主色调 #7C4DFF",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "accent"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "主色调 #FF8A3D",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "accent"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "主色调 #E5484D",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "accent"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "整体（正文 + 界面）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "仅正文",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "bg",
+        "accent"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "仅界面",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "bg",
+        "accent"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：bg,accent"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "把当前主题的颜色恢复为默认值",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "内置主题不能直接改，将另存为新自定义主题（仍需点底部保存）",
+      "danger": false,
+      "verdict": "disabled",
+      "note": "按钮当前禁用（依赖前置条件）",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:主题",
+      "label": "把当前配色复制成一套新主题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "preset",
+        "accent",
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：preset,accent,paneLen"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "重置为内置默认主题",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:主题",
+      "label": "新建主题…",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "theme",
+        "preset",
+        "bg",
+        "accent",
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：theme,preset,bg,accent,paneLen"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "导出主题 JSON",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:主题",
+      "label": "导入主题",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "文件列表",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "大纲",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "上方大纲 + 下方文件",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "全库搜索",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "替换当前标签页（单文档模式）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "保留当前并新开标签页（多标签模式）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "隐藏最近打开",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "AI 助手",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "文件操作",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "大纲",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "toastCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：toastCount"
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "反向链接",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "标签",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "版本历史",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "文档统计",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "日历",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "关闭功能区",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "最左侧",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "最右侧",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "toastCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：toastCount"
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "状态栏左侧",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "状态栏右侧",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "从功能区移除「白板」",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "从功能区移除「幻灯片」",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "从功能区移除「数据库」",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "从功能区移除「流程图」",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:界面布局",
+      "label": "把「思维导图」加入功能区",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "重置全部快捷键为默认值",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「标题 1」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「标题 2」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「标题 3」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「标题 4」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「标题 5」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「标题 6」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「加粗」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「斜体」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「下划线」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「删除线」的快捷键",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「高亮」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「行内代码」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「代码块」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「插入链接」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「引用」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「任务列表」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「无序列表」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「有序列表」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「插入表格」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「分隔线」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「保存」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「同步」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「命令面板」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「快速切换」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「全库搜索」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「新建笔记」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「关闭标签页」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「恢复标签页」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「切换侧栏」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「切换 AI 面板」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「切换视图方式」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「打开设置」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「导出文档」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「今日日记」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:快捷键",
+      "label": "修改「漫游笔记」的快捷键",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "阿里云 OSS",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "腾讯云 COS",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "火山引擎 TOS",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "百度云 BOS",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "京东云对象存储",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "金山云 KS3",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "自定义 S3 / MinIO",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "清空已保存的对象存储密钥",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:对象存储",
+      "label": "请填写 AccessKey Secret",
+      "danger": false,
+      "verdict": "disabled",
+      "note": "按钮当前禁用（依赖前置条件）",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:AI",
+      "label": "当前使用中",
+      "danger": false,
+      "verdict": "disabled",
+      "note": "按钮当前禁用（依赖前置条件）",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:AI",
+      "label": "QA Mock · 温度上限 0.3 · 最多 128 tokens",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "DeepSeek",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "小米 MiMo",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "通义千问",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "腾讯混元",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "智谱 GLM",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "火山方舟",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "百度千帆",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "自定义 OpenAI 兼容",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:AI",
+      "label": "由服务端代测 AI 连通性",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：文本"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "创建新云端仓库",
+      "danger": false,
+      "clickErr": null,
+      "dialog": "新建云端仓库输入新仓库名称取消 确定",
+      "changedKeys": [
+        "modalCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok-dialog",
+      "note": "弹窗：新建云端仓库输入新仓库名称取消 确定"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "将全部仓库立即与云端同步",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "重新读取仓库列表与云端档案",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "已经是当前仓库",
+      "danger": false,
+      "verdict": "disabled",
+      "note": "按钮当前禁用（依赖前置条件）",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "立即将该仓库与云端同步",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "为仓库生成完整快照，登录后可同时登记云端备份",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "复制该仓库为新仓库（云端优先，桌面端可退化为目录复制）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "只改显示名，不改磁盘目录名",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：paneLen"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "不能停用当前正在使用的仓库",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "不能删除当前正在使用的仓库，请先切换",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "切换到「Neo MD」",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "panelCount",
+        "tabCount",
+        "activeTab",
+        "paneLen"
+      ],
+      "textChanged": true,
+      "verdict": "ok",
+      "note": "变化：panelCount,tabCount,activeTab,paneLen"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "立即将该仓库与云端同步",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "为仓库生成完整快照，登录后可同时登记云端备份",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "复制该仓库为新仓库（云端优先，桌面端可退化为目录复制）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "只改显示名，不改磁盘目录名",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "停用该仓库，数据保留",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "从仓库列表移除（不删除磁盘文件夹）",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "切换到「笔记本」",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "立即将该仓库与云端同步",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "toastCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：toastCount"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "为仓库生成完整快照，登录后可同时登记云端备份",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "复制该仓库为新仓库（云端优先，桌面端可退化为目录复制）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "只改显示名，不改磁盘目录名",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "停用该仓库，数据保留",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "从仓库列表移除（不删除磁盘文件夹）",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "切换到「vaultmvp3augl2m72a0nw」",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "toastCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：toastCount"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "立即将该仓库与云端同步",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "为仓库生成完整快照，登录后可同时登记云端备份",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "复制该仓库为新仓库（云端优先，桌面端可退化为目录复制）",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [],
+      "textChanged": false,
+      "verdict": "no-change",
+      "note": ""
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "只改显示名，不改磁盘目录名",
+      "danger": false,
+      "clickErr": null,
+      "dialog": null,
+      "changedKeys": [
+        "toastCount"
+      ],
+      "textChanged": false,
+      "verdict": "ok",
+      "note": "变化：toastCount"
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "停用该仓库，数据保留",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    },
+    {
+      "kind": "settings:仓库",
+      "label": "从仓库列表移除（不删除磁盘文件夹）",
+      "danger": true,
+      "verdict": "skipped-danger",
+      "note": "破坏性，未点击",
+      "changedKeys": [],
+      "textChanged": false,
+      "clickErr": null,
+      "dialog": null
+    }
+  ]
+}

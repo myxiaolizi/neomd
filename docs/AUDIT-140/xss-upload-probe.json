@@ -1,0 +1,174 @@
+{
+  "at": "2026-10-31T07:53:13.702Z",
+  "api": "http://127.0.0.1:3200",
+  "uploadPathTraversal": {
+    "status": 201,
+    "key": "us/admin/ot/passwd-jddiufhj",
+    "safe": true
+  },
+  "uploadEmpty": {
+    "status": 400
+  },
+  "uploadAnon": {
+    "status": 401
+  },
+  "uploadNotMultipart": {
+    "status": 400
+  },
+  "xss": [
+    {
+      "name": "裸 script 标签",
+      "payload": "<script>alert(1)</script>",
+      "html": "<p>&lt;script&gt;alert(1)&lt;/script&gt;</p>\n",
+      "hasRawScript": false,
+      "hasEventAttr": false,
+      "hasJsHref": false,
+      "escaped": true,
+      "safe": true
+    },
+    {
+      "name": "img onerror",
+      "payload": "<img src=x onerror=alert(1)>",
+      "html": "<p>&lt;img src=x onerror=alert(1)&gt;</p>\n",
+      "hasRawScript": false,
+      "hasEventAttr": false,
+      "hasJsHref": false,
+      "escaped": true,
+      "safe": true
+    },
+    {
+      "name": "svg onload",
+      "payload": "<svg onload=alert(1)>",
+      "html": "<p>&lt;svg onload=alert(1)&gt;</p>\n",
+      "hasRawScript": false,
+      "hasEventAttr": false,
+      "hasJsHref": false,
+      "escaped": true,
+      "safe": true
+    },
+    {
+      "name": "iframe",
+      "payload": "<iframe src=\"javascript:alert(1)\"></iframe>",
+      "html": "<p>&lt;iframe src=“javascript:alert(1)”&gt;&lt;/iframe&gt;</p>\n",
+      "hasRawScript": false,
+      "hasEventAttr": false,
+      "hasJsHref": false,
+      "escaped": true,
+      "safe": true
+    },
+    {
+      "name": "javascript: 链接",
+      "payload": "[click](javascript:alert(1))",
+      "html": "<p>[click](javascript:alert(1))</p>\n",
+      "hasRawScript": false,
+      "hasEventAttr": false,
+      "hasJsHref": false,
+      "escaped": false,
+      "safe": true
+    },
+    {
+      "name": "data: URI 链接",
+      "payload": "[click](data:text/html,<script>alert(1)</script>)",
+      "html": "<p>[click](data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;)</p>\n",
+      "hasRawScript": false,
+      "hasEventAttr": false,
+      "hasJsHref": false,
+      "escaped": true,
+      "safe": true
+    },
+    {
+      "name": "onclick 属性",
+      "payload": "<div onclick=\"alert(1)\">x</div>",
+      "html": "<p>&lt;div onclick=“alert(1)”&gt;x&lt;/div&gt;</p>\n",
+      "hasRawScript": false,
+      "hasEventAttr": false,
+      "hasJsHref": false,
+      "escaped": true,
+      "safe": true
+    },
+    {
+      "name": "markdown 内嵌 HTML",
+      "payload": "正常文字\n\n<b onmouseover=\"alert(1)\">粗</b>",
+      "html": "<p>正常文字</p>\n<p>&lt;b onmouseover=“alert(1)”&gt;粗&lt;/b&gt;</p>\n",
+      "hasRawScript": false,
+      "hasEventAttr": false,
+      "hasJsHref": false,
+      "escaped": true,
+      "safe": true
+    }
+  ],
+  "csrf": {
+    "mechanism": "Authorization: Bearer <jwt>",
+    "cookieBased": false,
+    "note": "需确认前端不把 token 写进 cookie；实测 api/client.ts 用 localStorage + Authorization 头"
+  },
+  "results": [
+    {
+      "name": "A1 路径穿越文件名被净化（key 中无 \"..\"）",
+      "pass": true,
+      "detail": "status=201 key=us/admin/ot/passwd-jddiufhj "
+    },
+    {
+      "name": "A2 空文件被拒绝",
+      "pass": true,
+      "detail": "status=400 {\"ok\":false,\"error\":{\"code\":\"EMPTY_FILE\",\"message\":\"文件内容为空\"}}"
+    },
+    {
+      "name": "A3 未登录上传被拒绝",
+      "pass": true,
+      "detail": "status=401"
+    },
+    {
+      "name": "A4 非 multipart 请求被拒绝",
+      "pass": true,
+      "detail": "status=400 {\"ok\":false,\"error\":{\"code\":\"NOT_MULTIPART\",\"message\":\"请使用 multipart/form-data 上传文件\"}}"
+    },
+    {
+      "name": "B 裸 script 标签 被安全转义",
+      "pass": true,
+      "detail": "输出: <p>&lt;script&gt;alert(1)&lt;/script&gt;</p>\n  （已转义，无裸标签）"
+    },
+    {
+      "name": "B img onerror 被安全转义",
+      "pass": true,
+      "detail": "输出: <p>&lt;img src=x onerror=alert(1)&gt;</p>\n  （已转义，无裸标签）"
+    },
+    {
+      "name": "B svg onload 被安全转义",
+      "pass": true,
+      "detail": "输出: <p>&lt;svg onload=alert(1)&gt;</p>\n  （已转义，无裸标签）"
+    },
+    {
+      "name": "B iframe 被安全转义",
+      "pass": true,
+      "detail": "输出: <p>&lt;iframe src=“javascript:alert(1)”&gt;&lt;/iframe&gt;</p>\n  （已转义，无裸标签）"
+    },
+    {
+      "name": "B javascript: 链接 被安全转义",
+      "pass": true,
+      "detail": "输出: <p>[click](javascript:alert(1))</p>\n  （已转义，无裸标签）"
+    },
+    {
+      "name": "B data: URI 链接 被安全转义",
+      "pass": true,
+      "detail": "输出: <p>[click](data:text/html,&lt;script&gt;alert(1)&lt;/script&gt;)</p>\n  （已转义，无裸标签）"
+    },
+    {
+      "name": "B onclick 属性 被安全转义",
+      "pass": true,
+      "detail": "输出: <p>&lt;div onclick=“alert(1)”&gt;x&lt;/div&gt;</p>\n  （已转义，无裸标签）"
+    },
+    {
+      "name": "B markdown 内嵌 HTML 被安全转义",
+      "pass": true,
+      "detail": "输出: <p>正常文字</p>\n<p>&lt;b onmouseover=“alert(1)”&gt;粗&lt;/b&gt;</p>\n  （已转义，无裸标签）"
+    },
+    {
+      "name": "C 鉴权走 Authorization 头（非 Cookie）→ CSRF 天然免疫",
+      "pass": true,
+      "detail": "代码实测：middleware/auth.js 的 bearerToken() 只从 req.headers.authorization 取令牌，全程无 Cookie 鉴权"
+    }
+  ],
+  "passed": 13,
+  "failed": 0
+}

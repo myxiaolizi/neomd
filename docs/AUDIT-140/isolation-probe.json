@@ -1,0 +1,207 @@
+{
+  "at": "2026-10-31T06:33:58.130Z",
+  "api": "http://127.0.0.1:3200",
+  "total": 22,
+  "passed": 21,
+  "failed": 1,
+  "results": [
+    {
+      "name": "admin 访问不属于自己的 vaultId 的存储列举",
+      "method": "GET",
+      "url": "/api/storage/list?x-vault-id=vaultNotMineAtAll01",
+      "status": 200,
+      "expect": "deny",
+      "pass": false,
+      "bodySample": "{\"ok\":true,\"data\":{\"objects\":[],\"truncated\":false,\"prefix\":\"\"}}"
+    },
+    {
+      "name": "admin 在别人的 vaultId 下读对象",
+      "method": "GET",
+      "url": "/api/storage/object (foreign vault)",
+      "status": 404,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"OBJECT_NOT_FOUND\",\"message\":\"对象不存在\"}}"
+    },
+    {
+      "name": "admin 尝试读取 tester01 前缀下的对象",
+      "method": "GET",
+      "url": "/api/storage/object (tester01 prefix)",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"OBJECT_KEY_FORBIDDEN\",\"message\":\"对象 key 越界：只能访问当前仓库的存储空间\"}}"
+    },
+    {
+      "name": "admin 尝试读取 my 前缀下的对象",
+      "method": "GET",
+      "url": "/api/storage/object (my prefix)",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"OBJECT_KEY_FORBIDDEN\",\"message\":\"对象 key 越界：只能访问当前仓库的存储空间\"}}"
+    },
+    {
+      "name": "路径穿越被拒：docs/../../../etc/passwd",
+      "method": "GET",
+      "url": "/api/storage/object?key=docs/../../../etc/passwd",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"OBJECT_KEY_FORBIDDEN\",\"message\":\"对象 key 含非法路径片段（不允许空段、. 或 ..）\"}}"
+    },
+    {
+      "name": "路径穿越被拒：docs/x/../../../../../../etc/passwd",
+      "method": "GET",
+      "url": "/api/storage/object?key=docs/x/../../../../../../etc/passwd",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"OBJECT_KEY_FORBIDDEN\",\"message\":\"对象 key 含非法路径片段（不允许空段、. 或 ..）\"}}"
+    },
+    {
+      "name": "路径穿越被拒：../users/my/vaults/admin/docs/x/1-a.md",
+      "method": "GET",
+      "url": "/api/storage/object?key=../users/my/vaults/admin/docs/x/1-a.md",
+      "status": 403,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"OBJECT_KEY_FORBIDDEN\",\"message\":\"对象 key 含非法路径片段（不允许空段、. 或 ..）\"}}"
+    },
+    {
+      "name": "路径穿越被拒：docs/%2e%2e/%2e%2e/etc/passwd",
+      "method": "GET",
+      "url": "/api/storage/object?key=docs/%2e%2e/%2e%2e/etc/passwd",
+      "status": 404,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"OBJECT_NOT_FOUND\",\"message\":\"对象不存在\"}}"
+    },
+    {
+      "name": "伪造的 share token 访问公开分享",
+      "method": "GET",
+      "url": "/api/public/shares/<fake>",
+      "status": 404,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"SHARE_NOT_FOUND\",\"message\":\"分享不存在或已被作者取消\"}}"
+    },
+    {
+      "name": "无 token 访问 /api/settings",
+      "method": "GET",
+      "url": "/api/settings",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未登录或登录已过期\"}}"
+    },
+    {
+      "name": "无 token 访问 /api/vaults",
+      "method": "GET",
+      "url": "/api/vaults",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未登录或登录已过期\"}}"
+    },
+    {
+      "name": "无 token 访问 /api/storage/list?prefix=",
+      "method": "GET",
+      "url": "/api/storage/list?prefix=",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未登录或登录已过期\"}}"
+    },
+    {
+      "name": "无 token 访问 /api/profile",
+      "method": "GET",
+      "url": "/api/profile",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未登录或登录已过期\"}}"
+    },
+    {
+      "name": "无 token 访问 /api/credits",
+      "method": "GET",
+      "url": "/api/credits",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未登录或登录已过期\"}}"
+    },
+    {
+      "name": "伪造 token 被拒：空 token",
+      "method": "GET",
+      "url": "/api/settings",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"UNAUTHORIZED\",\"message\":\"未登录或登录已过期\"}}"
+    },
+    {
+      "name": "伪造 token 被拒：随机串",
+      "method": "GET",
+      "url": "/api/settings",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"登录凭证无效，请重新登录\"}}"
+    },
+    {
+      "name": "伪造 token 被拒：篡改签名",
+      "method": "GET",
+      "url": "/api/settings",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"登录凭证无效，请重新登录\"}}"
+    },
+    {
+      "name": "伪造 token 被拒：篡改 payload（改 sub）",
+      "method": "GET",
+      "url": "/api/settings",
+      "status": 401,
+      "expect": "deny",
+      "pass": true,
+      "bodySample": "{\"ok\":false,\"error\":{\"code\":\"TOKEN_INVALID\",\"message\":\"登录凭证无效，请重新登录\"}}"
+    },
+    {
+      "name": "admin 访问自己的 /api/settings",
+      "method": "GET",
+      "url": "/api/settings",
+      "status": 200,
+      "expect": "allow",
+      "pass": true,
+      "bodySample": "{\"ok\":true,\"data\":{\"payload\":{\"version\":1,\"appearance\":{\"theme\":\"system\",\"accent\":\"#1677FF\",\"fontFam"
+    },
+    {
+      "name": "admin 访问自己的 /api/vaults",
+      "method": "GET",
+      "url": "/api/vaults",
+      "status": 200,
+      "expect": "allow",
+      "pass": true,
+      "bodySample": "{\"ok\":true,\"data\":{\"vaults\":[{\"vaultId\":\"vaultNotMineAtAll01\",\"name\":\"vaultNotMineAtAll01\",\"docCount"
+    },
+    {
+      "name": "admin 访问自己 vault 的存储",
+      "method": "GET",
+      "url": "/api/storage/list (own)",
+      "status": 200,
+      "expect": "allow",
+      "pass": true,
+      "bodySample": "{\"ok\":true,\"data\":{\"objects\":[{\"key\":\".migrated\",\"size\":202,\"etag\":\"EA1665934210765B8D7CF36E91715FC1"
+    },
+    {
+      "name": "admin 的 settings 返回的是自己的 payload（含 naming）",
+      "method": "GET",
+      "url": "/api/settings",
+      "status": 200,
+      "expect": "allow",
+      "pass": true,
+      "bodySample": "naming 存在"
+    }
+  ]
+}

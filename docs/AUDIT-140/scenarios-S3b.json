@@ -1,0 +1,72 @@
+{
+  "generatedAt": "2026-10-31T06:22:43.534Z",
+  "scenarios": [
+    {
+      "id": "S3b",
+      "title": "访客（未登录）写作能力核实",
+      "goal": "判断 /app 对访客开放是「有意设计」还是「坏路径」",
+      "steps": [
+        {
+          "action": "未登录态是否明确标注「未登录」",
+          "expect": "页面明确提示未登录",
+          "actual": "banner=true；文本：\"全部文件 仓库还是空的，点右上角 + 新建第一篇。 Neo MD 未登录 N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 10\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "未登录态是否提供了新建文档入口",
+          "expect": "存在「新建文档」按钮或 Ctrl+N",
+          "actual": "newDocBtn=true, editor=false",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "访客点「新建文档」后出现编辑器",
+          "expect": "存在 .ProseMirror/.cm-content",
+          "actual": "editor=true, tabCount=1",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "访客能输入正文（编辑器可写）",
+          "expect": "编辑器内出现所输入的文字",
+          "actual": "内容=\"访客写作验证-1793427749413这是未登录状态下写入的正文。\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "访客保存后刷新，内容仍在（本地落盘真的可用）",
+          "expect": "刷新后文本含验证标记",
+          "actual": "保存时标签=\"访客写作验证-1793427749413\"；刷新后 hasContent=true, 文件命中=[\"访客写作验证-1793427749413刚刚\",\"访客写作验证-1793427749413\"], tabCount=1",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "未登录态文案是否自相矛盾（同时说「自动同步已就绪」与「未登录」）",
+          "expect": "不应同时出现",
+          "actual": "同步就绪文案=true, 未登录文案=true",
+          "ok": false,
+          "note": "误导：未登录时云端同步不可能工作，却提示「自动同步已就绪」"
+        },
+        {
+          "action": "登录页「进入本机编辑器」点击后进入可编辑界面",
+          "expect": "跳转后有编辑器（.ProseMirror/.cm-content）",
+          "actual": "found=true, path=/app, hasEditor=true, 文本=\"最近打开 访客写作验证-1793427749413 刚刚 全部文件 全部文件已在上方「最近打开」中显示。 Neo MD 未登录 访客写作验证-1793427749413 H1 H2 H3 访客写作验证-1793427749413 这是未登录状态下写入的正文。 自动同步已就绪 Ne\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "全流程无 JS 运行时错误",
+          "expect": "0 条 pageerror",
+          "actual": "0 条 []",
+          "ok": true,
+          "note": ""
+        }
+      ],
+      "status": "partial",
+      "notes": [],
+      "startedAt": "2026-10-31T06:22:24.067Z",
+      "durationMs": 19466
+    }
+  ]
+}

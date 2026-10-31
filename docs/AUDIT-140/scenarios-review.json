@@ -1,0 +1,44 @@
+{
+  "generatedAt": "2026-10-31T07:24:33.596Z",
+  "scenarios": [
+    {
+      "id": "RS",
+      "title": "S11 Wikilink / S12 排序 复核",
+      "goal": "排除「选择器没命中」造成的假缺陷",
+      "steps": [
+        {
+          "action": "排序菜单存在且列出选项",
+          "expect": ">= 4 种",
+          "actual": "1 种：[\"字数 0\"]",
+          "ok": false,
+          "note": "只有 1 种，任务书要求 6 种"
+        },
+        {
+          "action": "排序「字数 0」",
+          "expect": "点击生效（顺序变化或至少可选中）",
+          "actual": "clicked=true, 项数=1, 顺序=[\"2026-10-30 日记\"]",
+          "ok": true,
+          "note": "列表只有 <=1 项，无法验证顺序变化（设计如此，非缺陷）"
+        },
+        {
+          "action": "不同排序产生不同顺序",
+          "expect": "唯一顺序数 >= 2（项数 >1 时）",
+          "actual": "唯一顺序数=1，各项数=[1]",
+          "ok": false,
+          "note": "所有排序结果顺序相同 —— 排序可能未接线，或列表项过少/排序字段相同"
+        },
+        {
+          "action": "重命名后用 renameDoc：B 的 Wikilink 是否重写",
+          "expect": "B 内容含新名、不含旧名",
+          "actual": "store=\"引用：[[复核源6994]]\", vault=\"\"",
+          "ok": false,
+          "note": "重命名成功（title 已变[\"复核源6994\"]）但 B 里的 [[复核源6994]] 未更新 → Wikilink 失效"
+        }
+      ],
+      "status": "partial",
+      "notes": [],
+      "startedAt": "2026-10-31T07:24:13.449Z",
+      "durationMs": 16696
+    }
+  ]
+}

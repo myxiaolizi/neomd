@@ -1,0 +1,202 @@
+{
+  "local": {
+    "health": {
+      "ok": true,
+      "status": 200,
+      "uptime": 3150,
+      "version": "1.4.0",
+      "env": "development"
+    },
+    "result": {
+      "long": {
+        "ok": true,
+        "doc": {
+          "ok": true,
+          "docId": "docmvw5kve9fnlwv3af",
+          "path": "AUDIT-PERF-LONG-1793436152018.md",
+          "contentLen": 0
+        },
+        "phases": {
+          "typingMs": 1155,
+          "blocksMs": 3872,
+          "textCharsAfterTyping": 1152
+        },
+        "fps": {
+          "typing": {
+            "fps": 60.9,
+            "frames": 70,
+            "durMs": 1150,
+            "p50FrameMs": 16.7,
+            "p95FrameMs": 16.7,
+            "maxFrameMs": 16.8,
+            "jankFrames": 0,
+            "jankPct": 0
+          },
+          "blocks": {
+            "fps": 120.5,
+            "frames": 464,
+            "durMs": 3850,
+            "p50FrameMs": 0,
+            "p95FrameMs": 16.7,
+            "maxFrameMs": 16.8,
+            "jankFrames": 0,
+            "jankPct": 0
+          },
+          "scroll": {
+            "fps": 60.2,
+            "frames": 261,
+            "durMs": 4333,
+            "p50FrameMs": 16.7,
+            "p95FrameMs": 16.7,
+            "maxFrameMs": 16.8,
+            "jankFrames": 0,
+            "jankPct": 0
+          }
+        },
+        "heap": {
+          "before": {
+            "usedMB": 11.7,
+            "totalMB": 17.88,
+            "nodes": 604,
+            "documents": 2,
+            "listeners": 317
+          },
+          "afterTyping": {
+            "usedMB": 15.14,
+            "totalMB": 18.38,
+            "nodes": 742,
+            "documents": 14,
+            "listeners": 367
+          },
+          "afterBlocks": {
+            "usedMB": 20.2,
+            "totalMB": 26.38,
+            "nodes": 4527,
+            "documents": 9,
+            "listeners": 345
+          },
+          "afterScroll": {
+            "usedMB": 14.1,
+            "totalMB": 27.63,
+            "nodes": 1256,
+            "documents": 2,
+            "listeners": 317
+          },
+          "afterGC": {
+            "usedMB": 13.89,
+            "totalMB": 27.63,
+            "nodes": 1256,
+            "documents": 2,
+            "listeners": 317
+          },
+          "growthMB": 2.19
+        },
+        "longTasks": 0
+      },
+      "big": {
+        "ok": true,
+        "contentLen": 12283,
+        "headings": 100,
+        "phases": {
+          "createMs": 1918,
+          "renderMs": 2,
+          "reopenMs": 305
+        },
+        "fpsScroll": {
+          "fps": 60.2,
+          "frames": 329,
+          "durMs": 5467,
+          "p50FrameMs": 16.7,
+          "p95FrameMs": 16.7,
+          "maxFrameMs": 16.8,
+          "jankFrames": 0,
+          "jankPct": 0
+        },
+        "searchTimes": [
+          {
+            "q": "正文",
+            "ms": 2,
+            "hits": 1
+          },
+          {
+            "q": "第 50 节",
+            "ms": 4,
+            "hits": 1
+          },
+          {
+            "q": "性能",
+            "ms": 4,
+            "hits": 1
+          }
+        ],
+        "outline": {
+          "textLen": 1588,
+          "itemCount": 100
+        },
+        "heap": {
+          "usedMB": 12.44,
+          "totalMB": 22.88,
+          "nodes": 1201,
+          "documents": 2,
+          "listeners": 317
+        }
+      },
+      "tabs": {
+        "ok": true,
+        "tabCount": 20,
+        "openTimes": [
+          1876,
+          1817,
+          1817,
+          1816,
+          1813,
+          1813,
+          1825,
+          1814,
+          1820,
+          1817,
+          1830,
+          1818,
+          1817,
+          1817,
+          1817,
+          1812,
+          1812,
+          1826,
+          1810,
+          1810
+        ],
+        "switchTimes": [
+          140,
+          135,
+          139,
+          142,
+          138,
+          127,
+          141,
+          139,
+          141,
+          140
+        ],
+        "heap": {
+          "before": {
+            "usedMB": 10.63,
+            "totalMB": 15.88,
+            "nodes": 453,
+            "documents": 2,
+            "listeners": 101
+          },
+          "after": {
+            "usedMB": 13.58,
+            "totalMB": 14.88,
+            "nodes": 909,
+            "documents": 2,
+            "listeners": 488
+          },
+          "growthMB": 2.95,
+          "perTabMB": 0.15
+        }
+      }
+    }
+  }
+}

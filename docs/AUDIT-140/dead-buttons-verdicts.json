@@ -1,0 +1,225 @@
+{
+  "generatedAt": "2026-10-31T07:54:07.259Z",
+  "dead": [
+    {
+      "category": "editorbar-格式",
+      "label": "插入链接",
+      "verdict": "DEAD",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <a> 数量 0→0 ✗无变化"
+    },
+    {
+      "category": "editorbar",
+      "label": "重做",
+      "verdict": "DEAD",
+      "evidence": "输入后长度 22 → 点击重做后 22（无变化；起点 16）"
+    },
+    {
+      "category": "editorbar",
+      "label": "斜杠「/」唤起命令面板（1.4.0 已知遗留）",
+      "verdict": "DEAD",
+      "evidence": "输入 / 后：弹层数=0, 菜单数=1, 编辑器尾部=\"这是一段普通文字用于验证格式按钮撤销测试文本/\" → **仍是死入口：斜杠不唤起任何面板**"
+    },
+    {
+      "category": "bar",
+      "label": "页面预览（1.4.0 已知遗留：悬停/点击无反应）",
+      "verdict": "DEAD",
+      "evidence": "找到按钮=true, 点击后有预览容器=false, 文本=\"最近打开 261031日1553- 刚刚 261031日1543- 8 分钟前 261031日1543- 8 分钟前 261031日1543- 8 分钟前 261031日1543- 8 分钟前 全部文件 日记 2026-10-30 日记 261031日1543- 261031日1\""
+    }
+  ],
+  "falsePositives": [
+    {
+      "category": "editorbar-格式",
+      "label": "加粗",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <strong> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "斜体",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <em> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "下划线",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <u> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "删除线",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <s> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "高亮",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <mark> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "行内代码",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <code> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar",
+      "label": "撤销",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "输入后长度 22 → 点击撤销后 16（生效；起点 16）"
+    },
+    {
+      "category": "editorbar",
+      "label": "正文编辑命令面板",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "弹层数 0→4；页面文本：\"最近打开 261031日1553- 刚刚 261031日1543- 7 分钟前 261031日1543- 7 分钟前 261031日1543- 7 分钟前 261031日1543- 7 分钟前 全部文件 日记 2026-10-30 日记 2\""
+    },
+    {
+      "category": "settings-tab",
+      "label": "通用",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "初始激活页签就是「通用」，点已选中的页签不产生变化 = 设计如此（假阳性）"
+    },
+    {
+      "category": "settings:通用",
+      "label": "日期时间自动命名",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "该项当前已选中（seg 选项列表：[\"跟随系统\",\"浅色\",\"深色\",\"日期时间自动命名\",\"AI 保存后命名\"]）→ 点已选中项无变化 = 假阳性"
+    },
+    {
+      "category": "settings:通用",
+      "label": "恢复默认的 AI 命名提示词",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "点击前提示词长度 163，点击后 163（本来就等于默认值时点它无变化 = 假阳性）"
+    },
+    {
+      "category": "settings:界面布局",
+      "label": "14 个候选（大纲/上方大纲/全库搜索/AI助手/文件操作/…/最左侧/状态栏左侧/右侧）",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "这些都是 seg 单选项，其中已选中的 4 个点了必然无变化：[\"文件列表\",\"替换当前标签页（单文档模式）\",\"日历\",\"状态栏左侧\"]；其余项点击会切换（属于「状态已符合预期」而非死按钮）"
+    },
+    {
+      "category": "settings:快捷键",
+      "label": "修改「漫游笔记」的快捷键",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "点击后出现捕获输入框=true（placeholder=\"按下组合键…\"）→ 正常进入捕获态，只是没有立即的视觉文本变化 = 假阳性"
+    },
+    {
+      "category": "settings:仓库",
+      "label": "12 个仓库操作按钮（重读列表/同步/备份/复制/改名/切换）",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "这些按钮依赖「选中某个仓库」与云端往返；本次审计用假云端拦截 /api/vaults 后它们不发请求、界面无变化。**这是测量环境限制，不能判定为死按钮**。真实可用性需在真实云端环境验证（列入未覆盖项）。页面文本：\"仓库 仓库管理 4 个仓库 每个仓库是一个独立的本地文件夹（或云端仓库）。当前使用的仓库： admin 新建仓库 全部同步 刷新4 仓库·1644 篇文档·占用 8.1 MB已登录：停用状态与改名会同步到云端档案admin当前已启用已同步cloud:admin330 篇·21 KB·上次同步 2026-10-31 07\""
+    }
+  ],
+  "all": [
+    {
+      "category": "editorbar-格式",
+      "label": "加粗",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <strong> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "斜体",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <em> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "下划线",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <u> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "删除线",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <s> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "高亮",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <mark> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "行内代码",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <code> 数量 0→1 ✓生效"
+    },
+    {
+      "category": "editorbar-格式",
+      "label": "插入链接",
+      "verdict": "DEAD",
+      "evidence": "选中「这是一段普通文字用于验证格式按钮」→ 点击 → <a> 数量 0→0 ✗无变化"
+    },
+    {
+      "category": "editorbar",
+      "label": "撤销",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "输入后长度 22 → 点击撤销后 16（生效；起点 16）"
+    },
+    {
+      "category": "editorbar",
+      "label": "重做",
+      "verdict": "DEAD",
+      "evidence": "输入后长度 22 → 点击重做后 22（无变化；起点 16）"
+    },
+    {
+      "category": "editorbar",
+      "label": "正文编辑命令面板",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "弹层数 0→4；页面文本：\"最近打开 261031日1553- 刚刚 261031日1543- 7 分钟前 261031日1543- 7 分钟前 261031日1543- 7 分钟前 261031日1543- 7 分钟前 全部文件 日记 2026-10-30 日记 2\""
+    },
+    {
+      "category": "settings-tab",
+      "label": "通用",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "初始激活页签就是「通用」，点已选中的页签不产生变化 = 设计如此（假阳性）"
+    },
+    {
+      "category": "settings:通用",
+      "label": "日期时间自动命名",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "该项当前已选中（seg 选项列表：[\"跟随系统\",\"浅色\",\"深色\",\"日期时间自动命名\",\"AI 保存后命名\"]）→ 点已选中项无变化 = 假阳性"
+    },
+    {
+      "category": "settings:通用",
+      "label": "恢复默认的 AI 命名提示词",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "点击前提示词长度 163，点击后 163（本来就等于默认值时点它无变化 = 假阳性）"
+    },
+    {
+      "category": "settings:界面布局",
+      "label": "14 个候选（大纲/上方大纲/全库搜索/AI助手/文件操作/…/最左侧/状态栏左侧/右侧）",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "这些都是 seg 单选项，其中已选中的 4 个点了必然无变化：[\"文件列表\",\"替换当前标签页（单文档模式）\",\"日历\",\"状态栏左侧\"]；其余项点击会切换（属于「状态已符合预期」而非死按钮）"
+    },
+    {
+      "category": "settings:快捷键",
+      "label": "修改「漫游笔记」的快捷键",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "点击后出现捕获输入框=true（placeholder=\"按下组合键…\"）→ 正常进入捕获态，只是没有立即的视觉文本变化 = 假阳性"
+    },
+    {
+      "category": "settings:仓库",
+      "label": "12 个仓库操作按钮（重读列表/同步/备份/复制/改名/切换）",
+      "verdict": "FALSE-POSITIVE",
+      "evidence": "这些按钮依赖「选中某个仓库」与云端往返；本次审计用假云端拦截 /api/vaults 后它们不发请求、界面无变化。**这是测量环境限制，不能判定为死按钮**。真实可用性需在真实云端环境验证（列入未覆盖项）。页面文本：\"仓库 仓库管理 4 个仓库 每个仓库是一个独立的本地文件夹（或云端仓库）。当前使用的仓库： admin 新建仓库 全部同步 刷新4 仓库·1644 篇文档·占用 8.1 MB已登录：停用状态与改名会同步到云端档案admin当前已启用已同步cloud:admin330 篇·21 KB·上次同步 2026-10-31 07\""
+    },
+    {
+      "category": "editorbar",
+      "label": "斜杠「/」唤起命令面板（1.4.0 已知遗留）",
+      "verdict": "DEAD",
+      "evidence": "输入 / 后：弹层数=0, 菜单数=1, 编辑器尾部=\"这是一段普通文字用于验证格式按钮撤销测试文本/\" → **仍是死入口：斜杠不唤起任何面板**"
+    },
+    {
+      "category": "bar",
+      "label": "页面预览（1.4.0 已知遗留：悬停/点击无反应）",
+      "verdict": "DEAD",
+      "evidence": "找到按钮=true, 点击后有预览容器=false, 文本=\"最近打开 261031日1553- 刚刚 261031日1543- 8 分钟前 261031日1543- 8 分钟前 261031日1543- 8 分钟前 261031日1543- 8 分钟前 全部文件 日记 2026-10-30 日记 261031日1543- 261031日1\""
+    }
+  ]
+}

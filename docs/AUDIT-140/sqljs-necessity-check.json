@@ -1,0 +1,70 @@
+{
+  "at": "2026-10-31T09:45:28.020Z",
+  "module": "packages/core/src/db/metadata-store.ts",
+  "lines": 497,
+  "exportSymbols": [
+    "SqlDatabase",
+    "MetadataStore"
+  ],
+  "symbolHits": {
+    "SqlDatabase": [],
+    "MetadataStore": []
+  },
+  "pathHits": [
+    {
+      "file": "packages/core/src/index.ts",
+      "lines": [
+        {
+          "line": 11,
+          "code": "export * from './db/metadata-store';"
+        }
+      ]
+    },
+    {
+      "file": "tools/audit140-sqljs.mjs",
+      "lines": [
+        {
+          "line": 3,
+          "code": "* A3 审计 · 核实 `sql.js` / `metadata-store.ts` 是否真的「无调用方」（静态 import 分析）。"
+        },
+        {
+          "line": 6,
+          "code": "*   我在报告里写了「sql.js 不必要，唯一使用者 metadata-store.ts 只被 index.ts 导出、无调用方」，"
+        },
+        {
+          "line": 11,
+          "code": "*   2. **模块路径**：全仓搜 `metadata-store` 的 import 路径；"
+        },
+        {
+          "line": 53,
+          "code": "const TARGET_MODULE = join(REPO, 'packages/core/src/db/metadata-store.ts');"
+        },
+        {
+          "line": 102,
+          "code": "if (/metadata-store/.test(t)) {"
+        },
+        {
+          "line": 103,
+          "code": "const lines = t.split(/\\r?\\n/).map((l, i) => [i + 1, l]).filter(([, l]) => /metadata-store/.test(l));"
+        },
+        {
+          "line": 111,
+          "code": "if (!pathHits.length) log('  无任何文件引用 metadata-store 路径');"
+        },
+        {
+          "line": 191,
+          "code": "* 从 metadata-store.ts 的导出接口反推它「本应提供什么能力」，"
+        }
+      ]
+    }
+  ],
+  "reachableFromEntry": true,
+  "reachableFileCount": 129,
+  "hasSideEffects": false,
+  "verdict": "DEAD",
+  "realUses": [],
+  "capabilitiesToVerify": [
+    "历史版本列表与裁剪（版本历史面板）",
+    "文档元数据列表"
+  ]
+}

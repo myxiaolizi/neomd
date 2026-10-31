@@ -1,0 +1,453 @@
+{
+  "at": "2026-10-31T06:50:25.194Z",
+  "pluginRegistration": [
+    "register(adminRoutes);"
+  ],
+  "adminAddHookPreHandler": 0,
+  "globalPreHandlers": [],
+  "routeCount": 49,
+  "routes": [
+    {
+      "line": 745,
+      "method": "GET",
+      "path": "/api/admin/stats",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 847,
+      "method": "GET",
+      "path": "/api/admin/users",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 889,
+      "method": "GET",
+      "path": "/api/admin/users/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 927,
+      "method": "PUT",
+      "path": "/api/admin/users/:id/credits",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 959,
+      "method": "PUT",
+      "path": "/api/admin/users/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 999,
+      "method": "POST",
+      "path": "/api/admin/users/:id/reset-password",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1020,
+      "method": "DELETE",
+      "path": "/api/admin/users/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1054,
+      "method": "POST",
+      "path": "/api/admin/users/:id/ban",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1100,
+      "method": "POST",
+      "path": "/api/admin/users/:id/unban",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1131,
+      "method": "POST",
+      "path": "/api/admin/users/batch",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1264,
+      "method": "PUT",
+      "path": "/api/admin/users/:id/status",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1346,
+      "method": "POST",
+      "path": "/api/admin/users/:id/role",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1381,
+      "method": "GET",
+      "path": "/api/admin/users/:id/logins",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1454,
+      "method": "GET",
+      "path": "/api/admin/users/:id/overview",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1571,
+      "method": "GET",
+      "path": "/api/admin/users/export.csv",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1672,
+      "method": "GET",
+      "path": "/api/admin/shares",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1703,
+      "method": "DELETE",
+      "path": "/api/admin/shares/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1713,
+      "method": "GET",
+      "path": "/api/admin/shares/:id/comments",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1738,
+      "method": "GET",
+      "path": "/api/admin/publishes",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1767,
+      "method": "DELETE",
+      "path": "/api/admin/publishes/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1780,
+      "method": "GET",
+      "path": "/api/admin/ai",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1790,
+      "method": "PUT",
+      "path": "/api/admin/ai/:provider",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1810,
+      "method": "DELETE",
+      "path": "/api/admin/ai/:provider",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1830,
+      "method": "GET",
+      "path": "/api/admin/ai-providers-meta",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1860,
+      "method": "PUT",
+      "path": "/api/admin/ai-providers-meta",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1909,
+      "method": "GET",
+      "path": "/api/admin/ai-models",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1947,
+      "method": "PUT",
+      "path": "/api/admin/ai-models/:provider",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 1999,
+      "method": "GET",
+      "path": "/api/admin/billing",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2003,
+      "method": "PUT",
+      "path": "/api/admin/billing",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2033,
+      "method": "GET",
+      "path": "/api/admin/redeem-codes",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2065,
+      "method": "POST",
+      "path": "/api/admin/redeem-codes",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2090,
+      "method": "DELETE",
+      "path": "/api/admin/redeem-codes/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2137,
+      "method": "GET",
+      "path": "/api/admin/releases",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2371,
+      "method": "GET",
+      "path": "/api/admin/releases/:file/probe",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2411,
+      "method": "PUT",
+      "path": "/api/admin/password",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2422,
+      "method": "GET",
+      "path": "/api/admin/audit",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2467,
+      "method": "GET",
+      "path": "/api/admin/comments",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2504,
+      "method": "PUT",
+      "path": "/api/admin/comments/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2525,
+      "method": "GET",
+      "path": "/api/admin/dashboard",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2789,
+      "method": "GET",
+      "path": "/api/admin/vaults",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2851,
+      "method": "PUT",
+      "path": "/api/admin/vaults/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2871,
+      "method": "DELETE",
+      "path": "/api/admin/vaults/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2887,
+      "method": "GET",
+      "path": "/api/admin/ledger",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 2952,
+      "method": "GET",
+      "path": "/api/admin/knowledge-tokens",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 3044,
+      "method": "DELETE",
+      "path": "/api/admin/knowledge-tokens/:id",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 3082,
+      "method": "GET",
+      "path": "/api/admin/ai-analytics",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 3386,
+      "method": "GET",
+      "path": "/api/admin/config",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 3403,
+      "method": "PUT",
+      "path": "/api/admin/config",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    },
+    {
+      "line": 3428,
+      "method": "GET",
+      "path": "/api/admin/status",
+      "guards": [
+        "adminOnly"
+      ],
+      "guarded": true
+    }
+  ],
+  "adminOnlySnippet": "slice(0, 4)}-${body.slice(4, 8)}-${body.slice(8, 12)}`;\n    const existing = await queryOne('SELECT id FROM redeem_codes WHERE code = ? LIMIT 1', [code]);\n    if (!existing) return code;\n  }\n  throw conflict('兑换码生成冲突，请重试', 'REDEEM_CODE_CONFLICT');\n}\n\nexport async function adminRoutes(app) {\n  const adminOnly = { preHandler: [app.authenticate, app.requireAdmin] };\n\n  /* ------------------------------ 概览 ------------------------------ */\n\n  app.get('/api/admin/stats', adminOnly, async (_req, reply) => {\n    const [users, shares, publishes, comments, storage, aiToday, vaults, credits, consumed, recharged, backups, enabledProviders] =\n      await Promise.all([\n        queryOne(\n          `SELECT COUNT(*) AS total,\n                  SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) AS active,\n                  SUM(CASE WHEN status = 'disabled' THEN 1 ELSE 0 END) AS disabled,\n                  SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END) AS admins,\n                  SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) AS today,\n                  SUM(CASE WHEN created_at >= DATE_SUB(NOW(), INTERVAL 7 DAY) THEN 1 ELSE 0 END) AS week\n           FROM users`,\n        ),\n        q"
+}

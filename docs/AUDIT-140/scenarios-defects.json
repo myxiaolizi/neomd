@@ -1,0 +1,108 @@
+{
+  "generatedAt": "2026-10-31T06:46:26.289Z",
+  "scenarios": [
+    {
+      "id": "D1",
+      "title": "代码块 → markdown 序列化是否丢失",
+      "goal": "插入代码块后保存，markdown 是否含 ```",
+      "steps": [
+        {
+          "action": "工具栏插入代码块",
+          "expect": "DOM pre>=1",
+          "actual": "clicked=true, pre=1",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "代码块内可输入",
+          "expect": "pre 内出现代码文本",
+          "actual": "domHtml 片段=\"<p>D1 代码块测试</p><pre class=\\\"nm-code-block\\\"><code>const answer = 42;</code></pre><p><br class=\\\"ProseMirror-trailingBreak\\\"></p>\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "D1-a 保存后 markdown 含代码块围栏 ```",
+          "expect": "storeContent 匹配 /^```/m",
+          "actual": "pre(DOM)=1, markdown 含围栏=true, len=38",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "D1-b 重开后代码块仍在",
+          "expect": "DOM pre>=1",
+          "actual": "reopened=false, pre=0, markdown 含围栏=false",
+          "ok": false,
+          "note": "重开后代码块消失（内容丢失）"
+        }
+      ],
+      "status": "partial",
+      "notes": [],
+      "startedAt": "2026-10-31T06:45:48.865Z",
+      "durationMs": 9902
+    },
+    {
+      "id": "D2",
+      "title": "对照模式的预览面板是否存在",
+      "goal": "切到对照模式后是否有独立的预览渲染",
+      "steps": [
+        {
+          "action": "切到对照模式",
+          "expect": "mode 按钮文案变化",
+          "actual": "picked=true, modeBtn=\"\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "对照模式有源码面板",
+          "expect": ".cm-content 存在",
+          "actual": "hasCM=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "对照模式有预览面板（独立渲染容器）",
+          "expect": ".ProseMirror 或 preview/render 容器存在",
+          "actual": "hasPM=false, previewLike=[\".compare\",\"[class*=\\\"compare\\\"]\",\"[class*=\\\"preview\\\"]\"]",
+          "ok": true,
+          "note": ""
+        }
+      ],
+      "status": "ok",
+      "notes": [],
+      "startedAt": "2026-10-31T06:45:58.767Z",
+      "durationMs": 4964
+    },
+    {
+      "id": "D3",
+      "title": "历史版本归档链路",
+      "goal": "多次保存后历史版本是否产生条目",
+      "steps": [
+        {
+          "action": "canSync（云同步能力）",
+          "expect": "true 才可能归档到云端",
+          "actual": "canSync=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "打开历史版本面板",
+          "expect": "hasModal=true",
+          "actual": "opened=true, hasModal=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "多次保存后历史面板有版本条目",
+          "expect": "rows>=1 且不是空态",
+          "actual": "rows=0, empty=false, 文本=\"版本历史 共 3 个版本（本地 0 · 云端 3），按时间倒序 v4刚刚65 B云端v3刚刚44 B云端v2刚刚19 B云端选择左侧任一版本查看差异关闭 恢复此版本\"",
+          "ok": false,
+          "note": ""
+        }
+      ],
+      "status": "partial",
+      "notes": [],
+      "startedAt": "2026-10-31T06:46:03.731Z",
+      "durationMs": 19468
+    }
+  ]
+}
