@@ -65,6 +65,10 @@
 - **Flutter 绿色版不可迁移**：`_resolveDistDir()` 在找不到就近 `web-dist` 时会回退到一个
   写死的本机绝对路径，导致产物拷到别的机器/目录后指向不存在的路径（白屏或 404）。
   改为只依赖 exe 同级 `web-dist/`，并以向上逐级探测作为开发态兜底。
+- **Flutter 版"启动即静默退出"排查结论**：其 `data/` 目录**不是用户数据**，而是程序必需资产
+  （`app.so` / `icudtl.dat` / `flutter_assets/`）。发布目录清理时若把它当用户数据删掉，
+  程序会 exit 0 且不产生任何窗口或日志，极易被误判为构建损坏。
+  已在 `RUN.md` 与对比报告中明确标注这一差异——四个壳的 `data/` 语义并不相同。
 - **Electron 版被误判为「构建损坏」**：实为当前 shell 环境残留 `ELECTRON_RUN_AS_NODE=1`，
   使 Electron 以纯 Node 模式启动、不创建窗口（进程瞬间退出、窗口句柄恒为 0）。
   `tools/bench-desktop.mjs` 已在该处 spawn 时主动剔除该变量，避免后续误诊。
