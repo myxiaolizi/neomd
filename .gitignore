@@ -98,6 +98,32 @@ playwright-report/
 test-results/
 browser-screenshots/
 
+# ---------- 2.0.0 四栈桌面壳的构建产物 ----------
+# 四个壳的源码体积都很小（几十 KB ~ 几 MB），但构建产物加起来约 2 GB：
+# Qt 的 PyInstaller onedir 会把整套 Qt6+Chromium 拷进 build/，
+# Tauri 的 target/ 有 Rust 编译中间产物，WinUI3 的 bin/obj/ 是 .NET 输出，
+# Flutter 的 build/ 与 .dart_tool/ 同理。这些**全部不入库**，只提交源码与文档。
+# 发布用的绿色版在 releases/2.0.0/（同样不入库，另行分发）。
+apps/desktop-qt/build/
+apps/desktop-qt/__pycache__/
+apps/desktop-qt/*.spec
+apps/desktop-tauri/src-tauri/target/
+apps/desktop-tauri/src-tauri/gen/
+apps/desktop-winui3/bin/
+apps/desktop-winui3/obj/
+apps/desktop-flutter/build/
+apps/desktop-flutter/.dart_tool/
+apps/desktop-flutter/windows/flutter/ephemeral/
+# 各壳运行期产生的用户数据目录
+apps/desktop-*/data/
+apps/desktop-*-x64/
+# 桌面壳的本地测试截图
+apps/desktop-*/*.png
+# 基准测试产物（每次跑都会变；人类可读结论见 docs/desktop-2.0-report.md）
+reports/
+# 2.0.0 绿色版发布目录
+releases/
+
 # 发布时由 tools/release-119.mjs notes 生成的 Release body 临时文件
 .release-notes-*.md
 # 验收门禁的机器可读结果（每次跑都会变，不入库；人类可读报告见 docs/ACCEPTANCE-119.md）

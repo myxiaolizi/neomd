@@ -1,0 +1,28 @@
+{
+  "productName": "Neo MD",
+  "version": "2.0.0",
+  "identifier": "vip.zhengl.neomd.tauri",
+  "build": {
+    "frontendDist": "../webdist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Neo MD 2.0.0",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 880,
+        "minHeight": 600,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all"
+  }
+}

@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows10.0.19041.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>NeoMD.WinUI3</RootNamespace>
+    <!-- 产物名保持 NeoMD.WinUI3.exe。
+         曾尝试改成 NeoMD.exe 以和 Tauri/Qt 两版对齐，但 WinUI 3 自包含 apphost
+         依赖与程序集同名的 .dll / .runtimeconfig.json / .deps.json 与 XAML 资源，
+         单纯改 AssemblyName 后产物启动会弹「You must install or update .NET」直接退出。
+         名字不一致只是观感问题，可靠性优先，因此维持原名并在 RUN.md 里写明。 -->
+    <AssemblyName>NeoMD.WinUI3</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <UseWinUI>true</UseWinUI>
+    <!--
+      EnableMsixTooling=true 让 WinAppSDK 用自带的 Microsoft.Build.Msix.dll 生成 resources.pri，
+      不依赖 VS 的 AppxPackage 任务（裸 dotnet SDK 也能编译）。它不表示打成 MSIX：
+      WindowsPackageType=None 才是绿色版/未打包关键开关。
+    -->
+    <EnableMsixTooling>true</EnableMsixTooling>
+    <WindowsPackageType>None</WindowsPackageType>
+    <!-- 绿色版自包含：打包 .NET 运行时 + Windows App SDK 运行时 -->
+    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+  <!-- 1.7：本机 NuGet 缓存已完整存在 + 9.0.10 运行时包已缓存，可完全离线自包含发布；1.8 需联网被系统代理拦截 -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.7.250606001" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.1742" />
+  </ItemGroup>
+
+</Project>

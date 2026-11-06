@@ -13,6 +13,73 @@
 
 ---
 
+## [2.0.0] - 2026-11-07
+
+本版是**桌面端多栈并行**的大版本：在既有 Electron 版之外，用 WinUI 3、Qt 6、Tauri 2、Flutter
+四个技术栈各实现了一版 Windows x64 桌面客户端，全部输出免安装绿色版，并在同一台机器、用同一套
+采集工具测出可横向对比的性能与稳定性数据。本版不改变 Web/服务端功能，只新增桌面承载方式。
+
+### Added
+
+- **四个新桌面端（均 Windows x64 绿色版，解压即用）**
+  - `apps/desktop-winui3`：C# + WinUI 3 + Windows App SDK 1.7 + WebView2，Unpackaged 自包含发布；
+  - `apps/desktop-qt`：Python + PySide6 6.12 + QtWebEngine，PyInstaller `--onedir` 冻结；
+  - `apps/desktop-tauri`：Rust + tauri 2.12 + 系统 WebView2，单 exe 7 MB；
+  - `apps/desktop-flutter`：Dart + Flutter 3.38 + `webview_windows`（WebView2）。
+  - 四者与 Electron 版**共用同一套承载架构**：壳内 `127.0.0.1:随机端口` 起本地 HTTP 服务，
+    托管 `apps/web/dist`、把 `/api/*` 同源反代到 `https://md.zhengl.vip`
+    （附 `x-neomd-shell: <栈名>`）、把 `/__bridge/<method>` 交给原生侧执行，
+    并在返回 `index.html` 时往 `<head>` 注入 `window.NeoMD`。
+    这样页面与 API 全程同源，**不产生任何 CORS 预检**，四版行为一致、可直接横向对比。
+- **统一性能与稳定性测试工具**：`tools/bench-desktop.mjs` + `tools/bench-collect.ps1`
+  - 采集冷启动（进程创建 → 主窗口句柄出现）、内存峰值（同名进程 WorkingSet 之和）、
+    空闲 CPU（按逻辑核归一化）、目录体积、exe 体积、进程数；
+  - 稳定性用例：连续启停 3 轮，每轮要求「主窗口出现 + 3 秒后仍存活」，统计成功率；
+  - 支持 `--all` 自动发现 `releases/2.0.0/` 下所有版本并汇总成对比表，原始数据落 `reports/`。
+- **任务契约文档** `docs/desktop-2.0-spec.md`：统一承载架构决策、四个壳的接口对齐要求
+  （逐字对齐 `packages/core/src/platform.ts` 的 `NativeBridge`）、绿色版规范、
+  性能指标门槛、稳定性用例、红线（不得修改 `apps/web`/`packages`/`services`）、验收标准。
+- **横向对比与验收报告** `docs/desktop-2.0-report.md`：四栈 + Electron 基线的体积/启动/内存/CPU/
+  稳定性对比、各版实测验收记录、过程中修复的真实缺陷、已知限制。
+
+### Changed
+
+- **版本号统一提升到 2.0.0**：根 `package.json` 与 `apps/{web,desktop,android}`、
+  `packages/{core,shared,ui}`、`services/api` 全部对齐；`apps/web/src/env.ts` 的
+  `APP_VERSION` 与三处下载文件名同步更新。
+  源码注释中「某能力在某版本引入」的历史记述（如「1.4.0 新增 xxx」）**保持原样不改**。
+- `apps/desktop-flutter` 的 Web 产物定位改为**只依赖 exe 相对路径**，并向上逐级探测
+  `apps/web/dist` 作为开发态兜底，移除了原先写死的本机绝对路径（见 Fixed）。
+
+### Fixed
+
+- **Tauri 版启动即 panic**：`tauri.conf.json` 的 `app.windows` 已声明 `label = "main"` 的窗口，
+  `setup` 里又用 `WebviewWindowBuilder::new(app, "main", ...)` 重复创建，运行期报
+  `a webview with label 'main' already exists`。改为取出已声明的窗口并 `navigate` 到本地服务地址。
+- **WinUI 3 版编译失败（3 类）**：
+  1. `CoreWebView2.NavigateToString` 是同步 `void`，原代码 `await` 它 → CS4008；
+  2. 缺 `App.DataDir` / `App.AppVersion` / `Win32.IsWindow` 成员 → CS0117（6 处）；
+  3. `dotnet publish` 触发 `MrtCore.PriGen.targets` 需要 `Microsoft.Build.Packaging.Pri.Tasks.dll`，
+     解压版 .NET SDK 不含 AppxPackage 工具 → MSB4062。改用 `dotnet build` 输出目录 +
+     补 `web/dist`，功能等价且已实测运行。
+- **Flutter 绿色版不可迁移**：`_resolveDistDir()` 在找不到就近 `web-dist` 时会回退到一个
+  写死的本机绝对路径，导致产物拷到别的机器/目录后指向不存在的路径（白屏或 404）。
+  改为只依赖 exe 同级 `web-dist/`，并以向上逐级探测作为开发态兜底。
+- **Electron 版被误判为「构建损坏」**：实为当前 shell 环境残留 `ELECTRON_RUN_AS_NODE=1`，
+  使 Electron 以纯 Node 模式启动、不创建窗口（进程瞬间退出、窗口句柄恒为 0）。
+  `tools/bench-desktop.mjs` 已在该处 spawn 时主动剔除该变量，避免后续误诊。
+
+### Security
+
+- 四个壳的本地 HTTP 服务**一律只绑 `127.0.0.1`**（随机端口），不对局域网暴露。
+- Qt 版为解决 PyInstaller 冻结后的 Chromium 沙箱白屏启用了 `--no-sandbox`，
+  属已知安全权衡，已在 `RUN.md` 显式记录；服务仍仅回环可达。
+- `shell.openExternal` 在各壳中均限制为仅允许 `http/https`，拒绝其它协议，防止被页面
+  用于执行任意命令。
+- 未在全仓引入、输出或提交任何数据库密码、私钥、Token。
+
+---
+
 ## [1.4.0] - 2026-10-31
 
 本版是**插件生态 + 后台能力 + 设置体系**三条主线的大版本：把插件从「装了用不了」变成「装了就能在功能区点」，后台补齐插件编辑/翻页/客户端分发/用户管理，设置页做草稿化改造并逐项体检；同时根治了分屏拖动、主题作用域、命名乱码、仓库泛滥等一批用户报障。
