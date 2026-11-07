@@ -1,0 +1,97 @@
+{
+  "meta": {
+    "kind": "a150-desktop-probe2",
+    "generatedAt": "2026-11-02T07:25:40.332Z",
+    "cdpPort": 9419,
+    "note": "离线测试用 CDP 网络模拟，不 reload（reload 会杀窗口并让应用整体退出）"
+  },
+  "steps": {
+    "initialWindowCount": 1,
+    "dom": {
+      "title": "Neo MD-工作台",
+      "url": "neomd://neomd/app",
+      "bodyTextLen": 10876,
+      "bodyHead": "最近打开 QA140 中文文件名 测试 1793410927183 1 分钟前 周报方案方案 5 分钟前 26 10 30 1707- 5 分钟前 自建隧道服务器搭建教程 5 分钟前 QA140 中文文件名 测试 1793410790660 5 分钟前 未命名流程图-700 2 天前 26 10 30 2228- 2 天前 2026-10-15 日记 2 天前 全部文件 日记 2026-10-14 日记 2026-10-08 日记 26 10 30 2220- 26年10月23日0929-NeoMD 26年10月2",
+      "hasRuntimeFlag": "desktop",
+      "hasCodeMirror": false,
+      "hasTextarea": false,
+      "hasContentEditable": true,
+      "tabCount": 1,
+      "buttons": 759
+    },
+    "editableOnline": {
+      "kind": "none",
+      "editable": false,
+      "textLen": 0
+    },
+    "offline": {
+      "offlineFetch": {
+        "reached": false,
+        "error": "Failed to fetch"
+      },
+      "editableOffline": {
+        "kind": "textarea",
+        "editable": true,
+        "textLen": 0
+      },
+      "stillAlive": {
+        "appMounted": true,
+        "textLen": 11452
+      }
+    },
+    "networkRestored": true,
+    "localStorage": {
+      "totalKeys": 17,
+      "interesting": [
+        "neomd.user.cache",
+        "neomd.vaultDeleted.v1",
+        "neomd.appearanceBaseline.v1",
+        "neomd.vaultList.v1",
+        "neomd.firstSyncDone.v1:vaultmvp3augl2m72a0nw",
+        "neomd.layoutBaseline.v1",
+        "neomd.access",
+        "neomd.deviceId",
+        "neomd.firstSyncDone.v1:qa119gate",
+        "neomd.recentOpened.v1",
+        "neomd.tabs",
+        "neomd.refresh",
+        "neomd.lastVault",
+        "neomd.firstSyncDone.v1:admin",
+        "neomd.firstSyncDone.v1:vaultmvuqt3rn8ubd9num",
+        "neomd.settings.v1",
+        "neomd.localLayout"
+      ],
+      "hasAccessTokenKey": true,
+      "hasRefreshTokenKey": true,
+      "accessLen": 276,
+      "refreshLen": 285,
+      "lastVault": "C:\\Data\\obsidian\\郑磊 - 副本\\笔记本"
+    },
+    "multiWindow": {
+      "ipcResult": {
+        "ok": true,
+        "windowId": 2
+      },
+      "beforeCount": 1,
+      "afterPageTargets": [
+        {
+          "title": "Neo MD-工作台",
+          "url": "neomd://neomd/app"
+        },
+        {
+          "title": "Neo MD-工作台",
+          "url": "neomd://neomd/app"
+        }
+      ],
+      "afterCount": 2,
+      "grew": true
+    },
+    "windowControl": {
+      "isMaximized": false,
+      "toggle": true,
+      "isMaximizedAfter": true
+    },
+    "printToPdfAvailable": false
+  },
+  "errors": []
+}

@@ -1,0 +1,105 @@
+{
+  "meta": {
+    "kind": "a150-desktop-runtime",
+    "generatedAt": "2026-11-02T07:21:41.969Z",
+    "cdpPort": 9417,
+    "targetExe": "C:\\Data\\BAC\\neomd\\neomd-V1\\dist-artifacts\\win-unpacked\\Neo MD.exe"
+  },
+  "steps": {
+    "windowCount": 1,
+    "window": {
+      "title": "Neo MD-工作台",
+      "url": "neomd://neomd/app",
+      "readyState": "complete"
+    },
+    "preloadSurface": {
+      "present": true,
+      "env": "desktop",
+      "version": "1.0.0",
+      "topLevelKeys": [
+        "env",
+        "version",
+        "bridge"
+      ],
+      "bridge": {
+        "fs": {
+          "readText": "function",
+          "readBinary": "function",
+          "writeText": "function",
+          "writeBinary": "function",
+          "mkdirp": "function",
+          "remove": "function",
+          "rename": "function",
+          "list": "function",
+          "exists": "function",
+          "stat": "function"
+        },
+        "dialog": {
+          "pickDirectory": "function",
+          "pickFile": "function",
+          "saveFile": "function"
+        },
+        "paths": {
+          "documents": "function",
+          "userData": "function",
+          "vaultDefault": "function"
+        },
+        "secrets": {
+          "encrypt": "function",
+          "decrypt": "function"
+        },
+        "shell": {
+          "openExternal": "function",
+          "showItemInFolder": "function"
+        },
+        "win": {
+          "isMaximized": "function",
+          "toggleMaximize": "function",
+          "minimize": "function",
+          "close": "function",
+          "newWindow": "function",
+          "onStateChange": "function",
+          "offStateChange": "function"
+        },
+        "app": {
+          "version": "function",
+          "onOpenFile": "function",
+          "onThemeChanged": "function"
+        },
+        "printToPdf": "function"
+      },
+      "hasRequire": "undefined",
+      "hasProcess": "undefined",
+      "hasModule": "undefined"
+    },
+    "runtimeBaseline": {
+      "hasNodeRequire": "undefined",
+      "hasNodeProcess": "undefined",
+      "hasGlobalBuffer": "undefined",
+      "neomdBridgeIsBridgeObject": true,
+      "origin": "neomd://neomd",
+      "protocol": "neomd:"
+    },
+    "fsRoundTrip": {
+      "writeOk": true,
+      "fileCreatedOnDisk": true,
+      "diskBytes": 121,
+      "diskMatches": true,
+      "readBackOk": true,
+      "readBackMatches": true,
+      "probePath": "docs\\AUDIT-150\\raw\\fs-probe\\desktop-io-probe.md"
+    },
+    "fsCleanup": {
+      "probeRemoved": true
+    },
+    "arbitraryPathRead": {
+      "canReadArbitrary": true,
+      "sample": "; for 16-bit app support\r\n[fonts]\r\n[extensions]\r\n[mci extensions]\r\n[files]\r\n[Mai",
+      "error": null
+    }
+  },
+  "errors": [
+    "offlineMode: page.waitForTimeout: Target page, context or browser has been closed",
+    "normalShot: page.waitForTimeout: Target page, context or browser has been closed"
+  ]
+}

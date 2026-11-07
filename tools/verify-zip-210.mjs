@@ -17,7 +17,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const RELEASE = 'C:\\Data\\BAC\\neomd\\releases\\2.1.0';
+/*
+ * Version is parameterized: `node tools/verify-zip-210.mjs <shell|all> <version>`.
+ * It used to be baked in as 2.1.0, which meant every release bump silently
+ * re-verified the *old* zips while looking like it had tested the new ones.
+ */
+const VERSION = process.argv[3] ?? '2.2.0';
+const RELEASE = 'C:\\Data\\BAC\\neomd\\releases\\' + VERSION;
 const ZIPS = path.join(RELEASE, 'zips');
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const CDP = 9701;
@@ -26,11 +32,11 @@ const ONLY = argv[0] ?? 'all';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const SHELLS = {
-  tauri: { zip: 'NeoMD-2.1.0-tauri-x64.zip', exe: 'NeoMD.exe', args: [] },
-  flutter: { zip: 'NeoMD-2.1.0-flutter-x64.zip', exe: 'neomd_flutter.exe', args: [] },
-  winui3: { zip: 'NeoMD-2.1.0-winui3-x64.zip', exe: 'NeoMD.WinUI3.exe', args: [] },
-  qt: { zip: 'NeoMD-2.1.0-qt-x64.zip', exe: 'NeoMD.exe', args: ['--no-sandbox'] },
-  electron: { zip: 'NeoMD-2.1.0-electron-x64.zip', exe: 'Neo MD.exe', args: [] },
+  tauri: { zip: `NeoMD-${VERSION}-tauri-x64.zip`, exe: 'NeoMD.exe', args: [] },
+  flutter: { zip: `NeoMD-${VERSION}-flutter-x64.zip`, exe: 'neomd_flutter.exe', args: [] },
+  winui3: { zip: `NeoMD-${VERSION}-winui3-x64.zip`, exe: 'NeoMD.WinUI3.exe', args: [] },
+  qt: { zip: `NeoMD-${VERSION}-qt-x64.zip`, exe: 'NeoMD.exe', args: ['--no-sandbox'] },
+  electron: { zip: `NeoMD-${VERSION}-electron-x64.zip`, exe: 'Neo MD.exe', args: [] },
 };
 
 class Cdp {

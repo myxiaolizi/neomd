@@ -45,7 +45,7 @@ const String _injectScript = r'''<script>
 
   window.NeoMD = {
     env: 'desktop',
-    version: '2.1.0',
+    version: '2.2.0',
     bridge: {
       fs: {
         readText: function (path) {
@@ -130,7 +130,7 @@ const String _injectScript = r'''<script>
       },
       app: {
         version: function () {
-          return Promise.resolve('2.1.0');
+          return Promise.resolve('2.2.0');
         },
         onOpenFile: function (cb) {
           if (typeof cb === 'function') {
@@ -232,7 +232,7 @@ class LocalHostServer {
         'url': 'http://127.0.0.1:${_server!.port}/',
         'port': _server!.port,
         'env': 'desktop',
-        'version': '2.1.0',
+        'version': '2.2.0',
         'up': true,
       };
       await File('$dataDir${Platform.pathSeparator}boot.json')
@@ -422,7 +422,7 @@ class LocalHostServer {
           result = vd;
           break;
         case 'app.version':
-          result = '2.1.0';
+          result = '2.2.0';
           break;
         case 'win.isMaximized':
           result = windowControl().isMaximized();

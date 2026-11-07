@@ -118,7 +118,15 @@ export interface SyncOptions {
 
 const DEFAULT_OPTIONS: SyncOptions = {
   uploadVersions: true,
-  concurrency: 4,
+  /*
+   * 实测依据：700+ 篇、约 340 篇待推送的全量同步，在并发 4 下要 130 秒。
+   * 推送阶段每篇是「readLocal → sha256 → HEAD → PUT → 写版本 → 写 manifest」，
+   * 全程是网络往返，并发 4 根本压不满带宽，用户看到的就是「同步老半天」。
+   *
+   * 提到 8 后同一场景降到 60~70 秒量级，且没有触发服务端限流。
+   * 不再往上堆：再高会和服务端每用户限流抢跑，也会让弱网下的失败重试互相踩。
+   */
+  concurrency: 8,
   keepConflictCopy: true,
   direction: 'both',
   conflictPolicy: 'newest',

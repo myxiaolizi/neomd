@@ -12,7 +12,7 @@ internal static class BridgeScript
 
     private const string Script = """
     (() => {
-      const VERSION = '2.1.0';
+      const VERSION = '2.2.0';
       function notImpl() { return Promise.reject(new Error('NOT_IMPLEMENTED')); }
 
       async function call(method, ...args) {

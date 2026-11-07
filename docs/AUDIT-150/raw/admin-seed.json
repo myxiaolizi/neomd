@@ -1,0 +1,73 @@
+{
+  "seededAt": "2026-11-02T07:27:23.260Z",
+  "database": "neomd_audit150b",
+  "plan": {
+    "users": 5000,
+    "userVaults": 2000,
+    "shares": 2000,
+    "publishes": 600,
+    "shareComments": 1200,
+    "aiUsage": 20000,
+    "creditLedger": 5000,
+    "knowledgeTokens": 600,
+    "auditLogs": 6000,
+    "communityPlugins": 300,
+    "redeemCodes": 400
+  },
+  "summary": {
+    "users": 5000,
+    "userVaults": 2000,
+    "shares": 2000,
+    "shareComments": 1200,
+    "publishes": 600,
+    "aiUsage": 20000,
+    "creditLedger": 5000,
+    "knowledgeTokens": 600,
+    "auditLogs": 6000,
+    "communityPlugins": 300,
+    "redeemCodes": 400,
+    "indexes": {
+      "ai_usage": [
+        "idx_ai_usage_created_status(created_at)",
+        "idx_ai_usage_created_status(status)",
+        "idx_ai_usage_user_created(user_id)",
+        "idx_ai_usage_user_created(created_at)",
+        "PRIMARY(id)"
+      ],
+      "audit_logs": [
+        "idx_audit_logs_action_created(action)",
+        "idx_audit_logs_action_created(created_at)",
+        "idx_audit_logs_created(created_at)",
+        "idx_audit_logs_user(user_id)",
+        "idx_audit_logs_user_created(user_id)",
+        "idx_audit_logs_user_created(created_at)",
+        "PRIMARY(id)"
+      ],
+      "credit_ledger": [
+        "idx_credit_ledger_user_created(user_id)",
+        "idx_credit_ledger_user_created(created_at)",
+        "PRIMARY(id)"
+      ],
+      "knowledge_tokens": [
+        "idx_knowledge_tokens_user(user_id)",
+        "idx_knowledge_tokens_user(revoked_at)",
+        "PRIMARY(id)",
+        "uk_knowledge_tokens_hash(token_hash)"
+      ],
+      "shares": [
+        "idx_shares_token(token)",
+        "idx_shares_user(user_id)",
+        "PRIMARY(id)",
+        "uk_shares_token(token)"
+      ],
+      "users": [
+        "PRIMARY(id)",
+        "uk_users_email(email)",
+        "uk_users_username(username)"
+      ]
+    },
+    "finalUserCount": 5001,
+    "baseUserId": 1001,
+    "elapsedMs": 3622
+  }
+}

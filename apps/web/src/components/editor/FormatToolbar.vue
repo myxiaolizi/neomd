@@ -21,7 +21,15 @@ const GROUPS: Array<Array<{ id: string; icon: string; title: string; arg?: strin
     { id: 'underline', icon: 'underline', title: '下划线 Ctrl+U' },
     { id: 'strike', icon: 'strike', title: '删除线 Ctrl+Shift+X' },
     { id: 'highlight', icon: 'highlighter', title: '高亮 Ctrl+Shift+H' },
-    { id: 'code', icon: 'code', title: '行内代码 Ctrl+E' },
+    /*
+     * 这里原本写「行内代码 Ctrl+E」，但 Ctrl+E 在 EditorPage 的快捷键表里
+     * 已经绑定给 app.cycleMode()（切换编辑视图模式），行内代码**并没有**
+     * 任何键盘绑定。提示与真实绑定不一致，用户按下去会切换视图而不是插入代码，
+     * 于是产生「快捷键不生效 / 串键」的反馈。
+     * 快捷键归属保持不变（Ctrl+E 归 cycleMode，与 EditorBar 的提示一致），
+     * 只把这条误导性提示去掉。
+     */
+    { id: 'code', icon: 'code', title: '行内代码' },
   ],
   [
     { id: 'ul', icon: 'list', title: '无序列表 Ctrl+Shift+8' },

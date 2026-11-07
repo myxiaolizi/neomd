@@ -1,0 +1,37 @@
+{
+  "meta": {
+    "kind": "a150-desktop-shots",
+    "at": "2026-11-02T07:31:44.049Z",
+    "port": 9420
+  },
+  "steps": {
+    "shot_main": "desktop-main.png",
+    "window": {
+      "title": "Neo MD-工作台",
+      "url": "neomd://neomd/app",
+      "viewport": null
+    },
+    "channelLocations": {
+      "printToPdf_top": "undefined",
+      "printToPdf_bridge": "function",
+      "secretsEncrypt": "function",
+      "secretsDecrypt": "function",
+      "safeStorageActuallyUsedByApp": null
+    },
+    "desktopChrome": {
+      "dataRuntime": "desktop",
+      "hasDragRegion": true,
+      "dragAppRegion": "drag",
+      "titlebarH": "40px"
+    },
+    "menuShortcut": {
+      "hasGlobalShortcutApi": "undefined",
+      "menuBarVisibleHint": "autoHideMenuBar=true（主进程），无自定义 Menu"
+    },
+    "offlineShot": {
+      "mounted": true,
+      "textLen": 11012
+    }
+  },
+  "errors": []
+}

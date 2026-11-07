@@ -1,6 +1,6 @@
 [package]
 name = "neomd_tauri"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2021"
 description = "Neo MD desktop shell (Tauri 2)"
 

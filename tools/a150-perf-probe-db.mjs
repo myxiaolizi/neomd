@@ -1,0 +1,13 @@
+﻿import { pathToFileURL } from "node:url";
+const P = "C:/Data/BAC/neomd/neomd-V1/node_modules/.pnpm/mysql2@3.24.6_@types+node@22.19.1/node_modules/mysql2/promise.js";
+const mysql = (await import(pathToFileURL(P).href)).default;
+const c = await mysql.createConnection({host:"tx.zhengl.vip",port:3306,user:"neomd_audit150b",password:"37700a7853ae36fa",database:"neomd_audit150b"});
+const [pl] = await c.query("SHOW PROCESSLIST");
+console.log("connections by db:", pl.map(p=>({db:p.db,user:p.User,host:p.Host})).filter(p=>p.db));
+const [t] = await c.query("SHOW CREATE TABLE audit_logs");
+console.log(t[0]["Create Table"]);
+const [t2] = await c.query("SHOW CREATE TABLE user_vaults");
+console.log(t2[0]["Create Table"]);
+const [t3] = await c.query("SHOW CREATE TABLE users");
+console.log(t3[0]["Create Table"]);
+await c.end();

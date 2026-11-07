@@ -19,21 +19,28 @@ import { spawn, execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+/*
+ * 版本必须参数化。此前 `--release` 只影响 RELEASE 目录，SHELLS 里的**目录名**
+ * 仍写死 2.1.0 —— 于是 `--release 2.2.0` 会去 2.2.0 目录里找
+ * `NeoMD-2.1.0-tauri-x64\NeoMD.exe`，直接报「主程序不存在」。
+ * 这种「看起来像产品缺文件、其实是脚本拼错路径」的失败最容易误导结论。
+ */
 const RELEASE = (() => {
   const i = process.argv.indexOf('--release');
-  const v = i > -1 ? process.argv[i + 1] : '2.1.0';
+  const v = i > -1 ? process.argv[i + 1] : '2.2.0';
   return `C:\\Data\\BAC\\neomd\\releases\\${v}`;
 })();
+const VERSION = RELEASE.split('\\').pop();
 const ACCOUNT = { username: 'admin', password: '6655' };
 const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const CDP_PORT = 9455;
 
 const SHELLS = [
-  { name: 'electron', dir: 'NeoMD-2.1.0-electron-x64', exe: 'Neo MD.exe', args: [] },
-  { name: 'tauri', dir: 'NeoMD-2.1.0-tauri-x64', exe: 'NeoMD.exe', args: [] },
-  { name: 'qt', dir: 'NeoMD-2.1.0-qt-x64', exe: 'NeoMD.exe', args: ['--no-sandbox'] },
-  { name: 'winui3', dir: 'NeoMD-2.1.0-winui3-x64', exe: 'NeoMD.WinUI3.exe', args: [] },
-  { name: 'flutter', dir: 'NeoMD-2.1.0-flutter-x64', exe: 'neomd_flutter.exe', args: [] },
+  { name: 'electron', dir: `NeoMD-${VERSION}-electron-x64`, exe: 'Neo MD.exe', args: [] },
+  { name: 'tauri', dir: `NeoMD-${VERSION}-tauri-x64`, exe: 'NeoMD.exe', args: [] },
+  { name: 'qt', dir: `NeoMD-${VERSION}-qt-x64`, exe: 'NeoMD.exe', args: ['--no-sandbox'] },
+  { name: 'winui3', dir: `NeoMD-${VERSION}-winui3-x64`, exe: 'NeoMD.WinUI3.exe', args: [] },
+  { name: 'flutter', dir: `NeoMD-${VERSION}-flutter-x64`, exe: 'neomd_flutter.exe', args: [] },
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -67,7 +74,17 @@ class CDP {
     return new CDP(ws);
   }
 
-  send(method, params = {}) {
+  /*
+   * 超时不能写死 45s。
+   *
+   * 页面里有些 eval 本身就是「在页面内等异步操作完成」：首拉轮询要等 240s，
+   * 保存后的同步等待要等 300s。它们都通过 awaitPromise 在页面里跑，
+   * 只要外层 CDP 超时先到，就会抛「CDP 超时: Runtime.evaluate」，
+   * 把「还在同步」误报成 runner 崩溃 —— Qt 上正是这样丢掉 6 个检查项。
+   *
+   * 因此允许调用方按需指定超时，默认放宽到 90s。
+   */
+  send(method, params = {}, timeoutMs = 90000) {
     const id = ++this.id;
     return new Promise((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
@@ -77,18 +94,18 @@ class CDP {
           this.pending.delete(id);
           reject(new Error(`CDP 超时: ${method}`));
         }
-      }, 45000);
+      }, timeoutMs);
     });
   }
 
   /** 在页面里求值，返回 JS 值（自动 await Promise） */
-  async eval(expression) {
+  async eval(expression, timeoutMs = 90000) {
     const r = await this.send('Runtime.evaluate', {
       expression,
       awaitPromise: true,
       returnByValue: true,
       userGesture: true,
-    });
+    }, timeoutMs);
     if (r.exceptionDetails) {
       throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? 'eval 失败');
     }
@@ -111,6 +128,36 @@ function killShell(exe) {
     execSync(`taskkill /F /IM "${exe}" /T`, { stdio: 'ignore' });
   } catch {
     /* 不在跑 */
+  }
+}
+
+/**
+ * 查出某个监听端口属于哪个进程（返回进程名）。
+ *
+ * 用于识别「端口被一个改名后的旧壳占着」这种情况：按镜像名 taskkill 杀不到
+ * 改名进程，而端口检查能看出来。返回 null 表示端口空闲。
+ */
+function portOwner(port) {
+  try {
+    const out = execSync('netstat -ano -p TCP', { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+    for (const line of out.split(/\r?\n/)) {
+      if (!/LISTENING/i.test(line)) continue;
+      const f = line.trim().split(/\s+/);
+      if (f.length < 5) continue;
+      const p = Number(f[1].slice(f[1].lastIndexOf(':') + 1));
+      if (p !== port) continue;
+      const pid = Number(f[4]);
+      try {
+        const name = execSync(`tasklist /FI "PID eq ${pid}" /FO CSV /NH`, { encoding: 'utf8' });
+        const m = /^"([^"]+)"/.exec(name.trim());
+        return m ? m[1] : `pid:${pid}`;
+      } catch {
+        return `pid:${pid}`;
+      }
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 
@@ -161,10 +208,43 @@ async function startShell(shell) {
 
   killShell(shell.exe);
   await sleep(1500);
+  /*
+   * 删 boot.json **之前**先记下它指向的端口，并检查那个端口上是否已经有
+   * 别的进程在监听。
+   *
+   * 真实事故：一个改名后的旧壳（Qw38QtShell.exe，2.1.0）还在后台占着 51339。
+   * 验收按「NeoMD.exe」杀进程，杀不到它；然后启动 2.2.0，2.2.0 端口被占后
+   * 顺延到 51340，而下面的候选集合里又加入了**别人写的** boot.json 端口，
+   * 于是验收连到了那个旧壳，全程对着 2.1.0 得出 17/17 全绿 —— 看起来完美，
+   * 实际上一个字都不是被测版本的。
+   *
+   * 因此这里要求：端口必须由**本次 spawn 的进程**持有，否则直接失败，
+   * 宁可不测，也不能测错对象。
+   */
+  let staleBoot = null;
+  try {
+    const b = path.join(dir, 'data', 'boot.json');
+    if (fs.existsSync(b)) {
+      const m = /127\.0\.0\.1:(\d+)/.exec(fs.readFileSync(b, 'utf8'));
+      if (m) staleBoot = Number(m[1]);
+    }
+  } catch {
+    /* ignore */
+  }
   try {
     fs.rmSync(path.join(dir, 'data', 'boot.json'), { force: true });
   } catch {
     /* ignore */
+  }
+  if (staleBoot) {
+    const owner = portOwner(staleBoot);
+    if (owner && !/^NeoMD|^neomd_|^Neo MD|^Qw38/i.test(owner)) {
+      throw new Error(`端口 ${staleBoot} 被外部进程占用（${owner}），拒绝在污染环境下测试`);
+    }
+    if (owner) {
+      // 同名前缀也可能属于一个已改名的旧副本，必须先清掉
+      throw new Error(`端口 ${staleBoot} 仍被 ${owner} 占用（可能是改名后的旧副本），请先结束该进程`);
+    }
   }
 
   const env = { ...process.env };
@@ -185,9 +265,34 @@ async function startShell(shell) {
 
   for (let i = 0; i < 40; i++) {
     await sleep(700);
+    /*
+     * 端口候选：本次进程持有的端口，外加 boot.json 声明的端口。
+     *
+     * 为什么 boot.json 不能直接排除：
+     *   WinUI3 走 HttpListener（http.sys），监听端口归属于 **System (PID 4)**，
+     *   而不是我们 spawn 出来的 NeoMD.WinUI3.exe。只看 listenPorts(proc.pid)
+     *   会让 WinUI3 永远找不到自己的服务（实测 0/1 runner 失败）。
+     *
+     * 为什么又不能无条件信任 boot.json：
+     *   同目录的旧副本也会写这个文件。2026-11-07 就发生过验收连到残留的
+     *   2.1.0 副本、17/17 全绿却与本次构建无关。
+     *
+     * 因此这里只额外放行「归属 System」的 boot.json 端口，
+     * 并在连上之后**强制校验 window.NeoMD.version 必须等于被测版本**（见下方）。
+     */
     const cands = new Set(listenPorts(proc.pid));
     const b = portFromBootJson(dir);
-    if (b) cands.add(b);
+    if (b && !cands.has(b)) {
+      const owner = portOwner(b);
+      if (owner === null) {
+        // 端口空闲：说明本次进程还没起来，继续等
+      } else if (/^System$/i.test(owner)) {
+        // http.sys 托管（WinUI3），放行
+        cands.add(b);
+      } else if (/^NeoMD|^neomd_|^Neo MD/i.test(owner)) {
+        // 同名族的另一个实例，可能是没被 taskkill 干净；不加进来
+      }
+    }
     for (const p of cands) {
       try {
         const r = await fetchText(p, '/', 4000);
@@ -285,9 +390,24 @@ for (const shell of shells) {
     await sleep(3500);
 
     // 1. window.NeoMD 与运行环境
+    /*
+     * 除了「注入成功」，还必须核对**版本号等于被测版本**。
+     *
+     * 这是防「连错实例」的最后一道闸：如果连上的是残留的旧副本，env 依然是
+     * desktop、页面依然能渲染，只有 version 会露馅。曾经有一次 17/17 全绿
+     * 实际测的是 2.1.0 的旧壳，靠的就是事后比对 version 才发现。
+     */
     const env = await cdp.eval('JSON.stringify({ has: !!window.NeoMD, env: window.NeoMD?.env, ver: window.NeoMD?.version, keys: window.NeoMD ? Object.keys(window.NeoMD) : [] })');
     const eo = JSON.parse(env);
-    rep.push('inject.desktop', eo.has && eo.env === 'desktop', `window.NeoMD.env=${eo.env} version=${eo.ver}`);
+    const expectVer = VERSION;
+    const verOk = String(eo.ver ?? '') === expectVer;
+    rep.push(
+      'inject.desktop',
+      eo.has && eo.env === 'desktop' && verOk,
+      eo.has && eo.env === 'desktop'
+        ? `window.NeoMD.env=${eo.env} version=${eo.ver}${verOk ? '' : `（**期望 ${expectVer}，连到的不是本次构建**）`}`
+        : `window.NeoMD 未注入（has=${eo.has}）`,
+    );
 
     // 2. 页面是否真的渲染出内容（白屏检测）
     const bodyInfo = await cdp.eval('JSON.stringify({ textLen: (document.body.innerText||"").trim().length, appChildren: document.querySelector("#app")?.children.length ?? -1, title: document.title })');
@@ -329,15 +449,22 @@ for (const shell of shells) {
 
     // 5. 登录后刷新，确认会话持久化 + 前端真的拉到仓库并渲染出来
     //
-    // 这里**不能只等固定时长**：首拉要把云端 1000+ 篇文档逐个拉进本地引擎，
+      // 这里**不能只等固定时长**：首拉要把云端 1000+ 篇文档逐个拉进本地引擎，
     // 各壳的 WebView 性能差异很大（Flutter/WebView2 明显慢于 Tauri）。
     // 固定 6s 会在慢壳上误判成「没同步」。改为条件轮询：
-    // 每 1.5s 看一次「仓库还是空的」是否消失、正文是否变长，最多等 90s。
+    // 每 2s 看一次「仓库还是空的」是否消失、正文是否变长。
+    //
+    // 窗口从 90s 放宽到 240s：实测 706 篇 + 344 篇待推送的一轮全量同步要
+    // 130s（推送阶段每篇一次 headObject/putObject），90s 完全不够 —— 那会
+    // 把「还在正常同步」误报成「仓库还是空的」，并连带把 edit/history 四项
+    // 全部拖成失败。这类"慢"必须与"坏"分开。
     await cdp.eval('location.reload()');
     await sleep(3500);
 
-    let lastSnap = { empty: true, bodyLen: 0, docs: 0 };
-    for (let i = 0; i < 60; i++) {
+    let lastSnap = { empty: true, bodyLen: 0, docs: 0, syncState: null };
+    const SYNC_RENDER_BUDGET_MS = 240000;
+    const pollStart = Date.now();
+    while (Date.now() - pollStart < SYNC_RENDER_BUDGET_MS) {
       const snap = JSON.parse(
         await cdp.eval(`(async () => {
           const txt = (document.body.innerText || '');
@@ -346,14 +473,15 @@ for (const shell of shells) {
           return JSON.stringify({
             empty: txt.includes('仓库还是空的'),
             bodyLen: txt.trim().length,
-            docs: app?.docs?.length ?? 0
+            docs: app?.docs?.length ?? 0,
+            syncState: app?.syncState ?? null
           });
         })()`),
       );
       lastSnap = snap;
       // 同步完成的判据：空提示消失 且 本地已有文档
       if (snap.empty === false && snap.docs > 0) break;
-      await sleep(1500);
+      await sleep(2000);
     }
 
     const afterReload = await cdp.eval(`(async () => {
@@ -380,7 +508,7 @@ for (const shell of shells) {
     // 仓库列表是否真的渲染出云端文档（不是"仓库还是空的"），且本地 store 真有文档
     rep.push('sync.render', ar.empty === false && ar.localDocs > 0,
       ar.empty
-        ? `左侧仍显示「仓库还是空的」——等待 90s 后仍未拉取（正文 ${ar.bodyLen} 字）`
+        ? `左侧仍显示「仓库还是空的」——等待 240s 后仍未拉取（正文 ${ar.bodyLen} 字，同步态 ${lastSnap.syncState ?? '-'}）`
         : `左侧已渲染云端仓库内容（本地 store ${ar.localDocs} 篇，正文 ${ar.bodyLen} 字）`);
 
     // 6. 原生桥（壳特有）
@@ -435,19 +563,60 @@ for (const shell of shells) {
 
       const list = app.docs || [];
       if (!list.length) return JSON.stringify({ ok:false, reason:'docs empty（仓库无文档）' });
-      // 挑一篇**较小的**文档来测保存：真实仓库里存在几 MB 的大文档，
-      // 用它们测会把「保存链路是否通」和「大文件耗时」混在一起，
-      // 在慢壳上直接超时，掩盖真实结论。
-      const sorted = [...list].sort((a,b)=>(a.size??0)-(b.size??0));
-      const first = sorted[0] ?? list[0];
+      /*
+       * 保存链路用**本轮新建的专用文档**来测，不要复用仓库里的旧文档。
+       *
+       * 原因（Qt 2.2.0 实测踩到）：旧写法挑"最小的一篇"，而那篇文档的云端目录下
+       * 已经有前几轮验收留下的 2-xxxx.md。这次保存写入的新内容如果被判定为
+       * "同一 rev 的替换"或索引已追平，就不会产生新的云端对象；取证按 rev 从前
+       * 往后找也找不到本次标记，于是报「已有对象均不含标记」。
+       * 而同一份代码用 probe-save-disk 单独跑（它也挑最小文档，但只跑一次、
+       * 且刚 write 完就查）是能命中的 —— 差别就在"这个文档被反复写过"。
+       *
+       * 新建文档让 rev 从 1 开始、云端目录里只有本轮的对象，
+       * 「内容是否真的上云」这件事就没有任何历史混淆了。
+       */
+      let docId = null;
+      let docTitle = null;
+      const stampInit = 'ACCEPT-INIT-' + Date.now();
+      try {
+        await app.createDoc({ title: 'accept-save-' + stampInit, content: '初始内容 ' + stampInit });
+        await sleep(2500);
+        const t = app.tabs?.find(x => x.id === app.activeTabId);
+        docId = t?.docId ?? null;
+        docTitle = t?.title ?? null;
+      } catch (e) {
+        // 新建失败就退回旧的"挑一篇最小文档"策略，不能让整项因 CreateDoc 失败而崩掉
+        const sorted = [...list].sort((a,b)=>(a.size??0)-(b.size??0));
+        const first = sorted[0] ?? list[0];
+        docId = first?.docId ?? first?.id ?? null;
+        docTitle = first?.title ?? null;
+      }
+      /*
+       * 文档唯一标识的真实字段名是 docId（见 packages/shared/src/types.ts），
+       * 不是 id。这里曾经写成 first.id，永远是 undefined：
+       *   - openDoc(undefined) 抛错被 catch 吞掉，编辑区却因为别的路径被打开而「可见」，
+       *     于是 edit.open 一直假 PASS；
+       *   - docId 传成 undefined 也让下游的历史版本断言无从定位文档。
+       * 取不到 docId 时必须显式失败，不能再静默通过。
+       */
+      if (!docId) {
+        return JSON.stringify({ ok:false, reason:'文档对象缺少 docId 字段', sample: Object.keys(list[0]||{}).slice(0,20) });
+      }
       const stamp = 'ACCEPT-' + Date.now();
       let openErr = null, saveErr = null, tabId = null;
+      let saveWaitInfo = null;
 
       try {
-        await app.openDoc(first.id);
+        await app.openDoc(docId);
         await sleep(2500);
         tabId = app.activeTabId;
       } catch (e) { openErr = String(e).slice(0,300); }
+
+      // 校验编辑器里打开的确实是这篇文档，而不是残留的旧标签页
+      const activeTab = (app.tabs || []).find(t => t.id === tabId) || null;
+      const activeDocId = activeTab?.docId ?? activeTab?.meta?.docId ?? null;
+      const tabMatches = activeDocId === docId;
 
       const editorVisible = !!document.querySelector('.ProseMirror, [contenteditable="true"], .cm-content, textarea');
 
@@ -457,52 +626,394 @@ for (const shell of shells) {
         await app.updateTabContent(tabId, orig + '\\n\\n' + stamp);
         await sleep(800);
         await app.saveActiveTab();
-        await sleep(4000);
+        /*
+         * 保存后的同步是真异步的：saveActiveTab 内部只是 fireAndLog(syncNow)。
+         * 实测一轮 700+ 篇的全量同步要 60~130 秒（推送阶段每篇一次 HEAD/PUT）。
+         *
+         * 这里的等待本身**不是判定依据**，只是为了别在同步途中就去取证（那样
+         * 取证会白白多等几轮）。真正的"已保存"证据是后面直查云端对象含标记，
+         * 那一步有自己的重试窗口。
+         *
+         * 因此这里放宽为"观察到一轮跑完（syncing -> idle）或索引追平，任一成立即可"。
+         * 之前要求两者同时成立，结果在 flutter 上出现「索引追平=false」却仍然
+         * PASS —— 说明这个条件并不是必要的，写死反而制造了表述上的矛盾。
+         */
+        const docState = () => (app.docs || []).find(d => d.docId === docId) || null;
+        const revAtEditStart = docState()?.rev ?? null;
+        const deadline = Date.now() + 420000;
+        let caughtUp = false;
+        let sawSyncing = false;
+        let sawIdleAfterSyncing = false;
+        while (Date.now() < deadline) {
+          const d = docState();
+          if (app.syncState === 'syncing') sawSyncing = true;
+          if (sawSyncing && app.syncState === 'idle') sawIdleAfterSyncing = true;
+          const revGrew = typeof d?.rev === 'number' && (revAtEditStart === null || d.rev > revAtEditStart);
+          const indexCaughtUp =
+            !!d && typeof d.rev === 'number' && typeof d.syncedRev === 'number' &&
+            d.syncedRev >= d.rev && revGrew;
+          if (indexCaughtUp) caughtUp = true;
+          if (caughtUp || sawIdleAfterSyncing) break;
+          await sleep(3000);
+        }
+        // 记录用于诊断：没追平时到底卡在哪个字段
+        const d2 = docState();
+        saveWaitInfo = {
+          caughtUp, sawSyncing, sawIdleAfterSyncing,
+          revAtEditStart,
+          rev: d2?.rev ?? null, syncedRev: d2?.syncedRev ?? null,
+          syncState: app.syncState,
+        };
       } catch (e) { saveErr = String(e).slice(0,300); }
 
       // 保存成功的更强判据：脏标记已清 且 控制器无未处理异常
       const stillDirty = app.isDirty;
       return JSON.stringify({
-        ok:true, docId:first.id, docTitle:first.title, tabId,
+        ok:true, docId, docTitle, tabId, activeDocId, tabMatches,
         editorVisible, openErr, saveErr, stamp,
+        saveWaitInfo,
         stillDirty, dirty: app.isDirty, docCount: app.docs?.length,
+        syncState: app.syncState,
         summary: app.lastSyncSummary ?? null
       });
-    })()`);
+    })()`, 720000);
     const er = JSON.parse(editRun);
-    rep.push('edit.open', er.ok !== false && er.editorVisible === true,
-      er.ok === false ? `失败：${er.reason}` : `打开《${er.docTitle ?? er.docId}》编辑器可见=${er.editorVisible}${er.openErr ? ' 错误:' + er.openErr : ''}`);
-    rep.push('edit.save', !er.saveErr && er.stillDirty !== true,
+    rep.push(
+      'edit.open',
+      er.ok !== false && er.editorVisible === true && er.tabMatches === true,
+      er.ok === false
+        ? `失败：${er.reason}${er.sample ? ' keys=' + JSON.stringify(er.sample) : ''}`
+        : `打开《${er.docTitle ?? er.docId}》编辑器可见=${er.editorVisible} 标签页匹配=${er.tabMatches}${er.openErr ? ' 错误:' + er.openErr : ''}`,
+    );
+    /*
+     * edit.save 的判据必须落到「内容真的到云端」。
+     *
+     * 旧判据只有 `!saveErr && stillDirty !== true`。问题是 `saveActiveTab()` 会先
+     * 清 dirty、再去 fireAndLog(syncNow)；只要本地盘写成功，dirty 就会被清掉，
+     * 哪怕推送阶段被丢弃也照样 PASS。实测曾出现「dirty=false、摘要显示推送 1 篇，
+     * 但云端 rev 一动不动」的假成功。
+     *
+     * 因此这里补一条硬证据：直查该文档在云端的对象，要求存在**包含本次标记**的对象。
+     */
+    let cloudHasStamp = false;
+    let cloudEvidence = '未检查';
+    if (er.ok && er.docId && er.stamp) {
+      const proof = await cdp.eval(`(async () => {
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        const tok = localStorage.getItem('neomd.access') || '';
+        const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+        const vaultId = app?.vault?.vaultId || '';
+        const docId = ${JSON.stringify(er.docId)};
+        const stamp = ${JSON.stringify(er.stamp)};
+        if (!vaultId) return JSON.stringify({ ok:false, why:'无 vaultId' });
+        const listPrefix = async (p) => {
+          const r = await fetch('/api/storage/list?prefix=' + encodeURIComponent(p) + '&limit=200',
+            { headers: { authorization: 'Bearer ' + tok } });
+          const j = await r.json();
+          return ((j && j.data && j.data.objects) || []).map(function (o) { return o.key || o.Key; }).filter(Boolean);
+        };
+        const revOf = (k) => Number((k.split('/').pop() || '').split('-')[0]) || 0;
+
+        /*
+         * 云端取证必须**轮询**，不能查一次就宣判。
+         *
+         * 实测反例（Flutter/Qt 2.2.0）：本地 rev 已 2、syncedRev 已 2、摘要写着
+         * 「推送 1 篇」，但此刻云端对象还没落全 —— 单次查询只看到旧的
+         * 1-e3b0c...md，于是结论「最新 5 个对象都不含标记」。
+         * 稍后用 probe-save-disk 复核同一份代码：云端 2-010aa5....md 确实含标记。
+         *
+         * 所以「同步索引追平」与「云端对象可读」是两件事，后者还有一段延迟。
+         * 这里给最多 180s 的重试窗口，取到即返回。
+         */
+        let last = null;
+        for (let attempt = 0; attempt < 30; attempt++) {
+          const keys = await listPrefix('vaults/' + vaultId + '/docs/' + docId + '/');
+          if (keys.length) {
+            keys.sort(function (a, b) { return revOf(b) - revOf(a); });
+            // 从最新往前找，命中标记即成功（最新的未必是刚写的，但通常就是）
+            for (let i = 0; i < Math.min(keys.length, 8); i++) {
+              const ro = await fetch('/api/storage/object?key=' + encodeURIComponent(keys[i]),
+                { headers: { authorization: 'Bearer ' + tok } });
+              const text = await ro.text();
+              if (text.indexOf(stamp) >= 0) {
+                return JSON.stringify({ ok:true, key:keys[i], rev:revOf(keys[i]), objects:keys.length,
+                  size:text.length, attempts: attempt + 1 });
+              }
+            }
+            last = { ok:false, why:'已有对象均不含标记', objects:keys.length, maxRev:revOf(keys[0]) };
+          } else {
+            last = { ok:false, why:'云端该文档暂无正文对象', objects:0 };
+          }
+          await sleep(6000);
+        }
+        return JSON.stringify(last ?? { ok:false, why:'取证超时' });
+      })()`, 300000);
+      let pj = {};
+      try { pj = JSON.parse(proof); } catch { pj = { ok:false, why:'解析失败' }; }
+      cloudHasStamp = pj.ok === true;
+      cloudEvidence = pj.ok === true
+        ? `云端对象 ${pj.key}（rev ${pj.rev}，${pj.size} 字节，第 ${pj.attempts ?? 1} 次取证命中）含标记`
+        : `云端未确认：${pj.why ?? '未知'}（对象 ${pj.objects ?? '-'} 个）`;
+    }
+
+    rep.push(
+      'edit.save',
+      !er.saveErr && er.stillDirty !== true && cloudHasStamp,
       er.saveErr
         ? `保存失败：${er.saveErr}`
-        : `写入并保存成功（标记 ${er.stamp ?? '-'}，脏=${er.stillDirty ?? '-'}，${er.summary?.message ?? ''}）`);
+        : `脏=${er.stillDirty ?? '-'}，同步态=${er.syncState ?? '-'}` +
+          (er.saveWaitInfo
+            ? `，同步轮次结束=${er.saveWaitInfo.sawIdleAfterSyncing}（rev ${er.saveWaitInfo.rev}/syncedRev ${er.saveWaitInfo.syncedRev}）`
+            : '') +
+          `，${er.summary?.message ?? ''}；${cloudEvidence}`,
+    );
 
-    // 历史版本：确认云端能列出该文档的历史（跨端可见的前提）
-    //
-    // 注意：这里要查**当前仓库**的 versions 前缀（vaults/<id>/versions/），
-    // 而不是根级 versions/ —— 后者在真实数据里为空，
-    // 会被误判成「历史版本不可用」。同时把可能的失败原因带出来。
+    /*
+     * 历史版本：必须真的存在**某篇文档的**历史对象，且该文档的最新内容已上云。
+     *
+     * 旧断言是 `status === 200 && count >= 0` —— `count >= 0` 恒真，
+     * 即使云端一个历史对象都没有也会 PASS，等于没测。
+     *
+     * 现在改为：
+     *   a) 按「当前打开的文档」查 `vaults/<vid>/versions/<docId>/`，要求对象数 > 0；
+     *   b) 同时查 `vaults/<vid>/docs/<docId>/`，要求对象数 > 0（正文已上云）；
+     *   c) 要求 (a) 的历史对象不是凭空来的：必须与 (b) 的 rev 有交集关系。
+     * 这样「历史版本可用」才是被证明的，而不是被假设的。
+     */
     const hist = await cdp.eval(`(async () => {
       const tok = localStorage.getItem('neomd.access') || '';
       const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
       const vaultId = app?.vault?.vaultId || '';
-      const prefix = vaultId ? 'vaults/' + vaultId + '/versions/' : 'versions/';
-      try {
-        const r = await fetch('/api/storage/list?prefix=' + encodeURIComponent(prefix) + '&limit=10', {
-          headers: { authorization: 'Bearer ' + tok },
-        });
+      const docId = ${JSON.stringify(er.docId)};
+      if (!vaultId || !docId) {
+        return JSON.stringify({ ok:false, why:'无 vaultId 或 docId', vaultId, docId });
+      }
+      const listPrefix = async (p) => {
+        const r = await fetch('/api/storage/list?prefix=' + encodeURIComponent(p) + '&limit=200',
+          { headers: { authorization: 'Bearer ' + tok } });
         const j = await r.json();
-        const objs = j?.data?.objects ?? [];
-        return JSON.stringify({ status: r.status, count: objs.length, prefix, truncated: !!j?.data?.truncated });
-      } catch (e) { return JSON.stringify({ status: 0, count: -1, err: String(e).slice(0,200), prefix }); }
-    })()`);
+        return { status: r.status,
+          keys: ((j && j.data && j.data.objects) || []).map(function (o) { return o.key || o.Key; }).filter(Boolean) };
+      };
+      const revOf = (k) => Number((k.split('/').pop() || '').split('-')[0]) || 0;
+      const vp = 'vaults/' + vaultId + '/versions/' + docId + '/';
+      const dp = 'vaults/' + vaultId + '/docs/' + docId + '/';
+      const v = await listPrefix(vp);
+      const d = await listPrefix(dp);
+      const maxDocRev = d.keys.length ? Math.max.apply(null, d.keys.map(revOf)) : 0;
+      const maxVerRev = v.keys.length ? Math.max.apply(null, v.keys.map(revOf)) : 0;
+      return JSON.stringify({
+        ok: v.status === 200 && d.status === 200,
+        vaultId: vaultId, docId: docId,
+        versionCount: v.keys.length, docCount: d.keys.length,
+        maxDocRev: maxDocRev, maxVerRev: maxVerRev,
+        versionPrefix: vp, docPrefix: dp,
+      });
+    })()`, 180000);
     const hs = JSON.parse(hist);
     rep.push(
       'history.list',
-      hs.status === 200 && hs.count >= 0,
-      hs.status === 200
-        ? `/api/storage/list(${hs.prefix}) -> 200，对象 ${hs.count} 个`
-        : `/api/storage/list 失败：${hs.err ?? hs.status}`,
+      hs.ok === true && hs.versionCount > 0 && hs.docCount > 0,
+      hs.ok !== true
+        ? `/api/storage/list 失败：${hs.why ?? '非 200'}`
+        : hs.versionCount > 0 && hs.docCount > 0
+          ? `《${er.docTitle ?? er.docId}》历史 ${hs.versionCount} 个对象（最高 rev ${hs.maxVerRev}）、正文 ${hs.docCount} 个对象（最高 rev ${hs.maxDocRev}）`
+          : `历史对象 ${hs.versionCount} 个 / 正文对象 ${hs.docCount} 个，不足以证明历史可用`,
+    );
+
+    /*
+     * 快捷键：既要能触发，也不能互相抢占。
+     *
+     * 这一项来自真实事故：云端历史设置里 editor.code 与 app.toggleMode 都绑定
+     * 了 Ctrl+E，而查找用 .find() 取第一条 —— 于是按 Ctrl+E 只会插入行内代码，
+     * 视图模式永远切不了。表面上「快捷键失灵」，实际是数据冲突 + 匹配策略叠加。
+     *
+     * 因此这里断言两件事：
+     *   1. 任意按键在生效的快捷键表里最多只对应一条命令（无重复绑定）
+     *   2. Ctrl+E 真的能把视图模式切走（真的能触发，而不是被前面那条吞掉）
+     */
+    const sc = await cdp.eval(`(async () => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+      const stores = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s;
+      let settingsStore = null;
+      for (const [, v] of stores) {
+        if (v && typeof v === 'object' && ('settings' in v)) { settingsStore = v; break; }
+      }
+      const shortcuts = settingsStore?.settings?.shortcuts ?? [];
+
+      // 1. 重复绑定检测
+      const owner = new Map();
+      const dups = [];
+      for (const s of shortcuts) {
+        for (const k of (s.keys || [])) {
+          const norm = String(k).toLowerCase();
+          if (owner.has(norm)) dups.push(norm + ' -> ' + owner.get(norm) + ' & ' + s.command);
+          else owner.set(norm, s.command);
+        }
+      }
+
+      // 2. Ctrl+E 真的能切模式
+      const tab = () => app.tabs?.find(t => t.id === app.activeTabId);
+      const before = tab()?.mode ?? null;
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'e', code: 'KeyE', ctrlKey: true, bubbles: true, cancelable: true
+      }));
+      await sleep(1600);
+      const after = tab()?.mode ?? null;
+
+      return JSON.stringify({
+        total: shortcuts.length, dups: dups,
+        modeBefore: before, modeAfter: after, modeChanged: before !== after,
+      });
+    })()`, 120000);
+    const sco = JSON.parse(sc);
+    rep.push(
+      'shortcut.noConflict',
+      Array.isArray(sco.dups) && sco.dups.length === 0,
+      sco.dups && sco.dups.length
+        ? `存在重复绑定：${sco.dups.slice(0, 4).join('; ')}`
+        : `快捷键 ${sco.total} 条，无重复绑定`,
+    );
+    rep.push(
+      'shortcut.ctrlE',
+      sco.modeChanged === true,
+      sco.modeChanged
+        ? `Ctrl+E 切换视图模式：${sco.modeBefore} -> ${sco.modeAfter}`
+        : `Ctrl+E 未能切换视图模式（仍是 ${sco.modeAfter}）——被同键命令抢占或未绑定`,
+    );
+
+    /*
+     * 设置功能：走用户真实路径（Ctrl+, 打开设置标签页）。
+     *
+     * 曾经有模型把「/settings 路由打不开」判成产品缺陷 —— 但那是个不存在的
+     * 路由：本应用只有 /login /app /account /admin /s/:token，设置是
+     * openSettings() 插进来的**标签页**（SETTINGS_TAB_ID），不是独立页面。
+     * 用 history.pushState('/settings') 去测，路由当然不会响应，页面留在
+     * /app 是完全正确的行为。
+     *
+     * 所以这里按真实交互断言：快捷键能打开设置标签页、面板渲染出真实控件、
+     * 且改动能落到持久化存储里。这才能真正证明「设置可用」。
+     */
+    const settings = await cdp.eval(`(async () => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+      if (!app) return JSON.stringify({ ok:false, why:'no store' });
+
+      const before = (app.tabs || []).map(t => t.title);
+
+      // 真实键盘事件：Ctrl+,
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: ',', code: 'Comma', ctrlKey: true, bubbles: true, cancelable: true,
+      }));
+      await sleep(2600);
+
+      const after = (app.tabs || []).map(t => t.title);
+      const opened = after.includes('设置');
+      const active = (app.tabs || []).find(t => t.id === app.activeTabId) || null;
+
+      const txt = document.body.innerText || '';
+      const controls = document.querySelectorAll(
+        'input, select, textarea, [role="switch"], .switch, button'
+      ).length;
+      // 设置面板里有这些分组标题才算真的渲染出来了
+      const groups = ['通用', '编辑器', '主题', '快捷键'].filter(k => txt.includes(k));
+      const lsKeys = Object.keys(localStorage).filter(k => /settings|pref|theme/i.test(k));
+
+      // 关掉设置标签页，确认编辑器可继续使用
+      const st = (app.tabs || []).find(t => t.title === '设置');
+      let closed = false;
+      if (st && typeof app.closeTab === 'function') {
+        try { await app.closeTab(st.id); } catch (e) {}
+        await sleep(1600);
+        closed = !(app.tabs || []).some(t => t.title === '设置');
+      }
+
+      return JSON.stringify({
+        ok: true,
+        beforeCount: before.length, afterCount: after.length,
+        opened, activeTitle: active ? active.title : null,
+        controls, groups, lsKeys, closed,
+        bodyLen: txt.length,
+      });
+    })()`, 90000);
+    const sj = JSON.parse(settings);
+    rep.push(
+      'settings.open',
+      sj.ok === true && sj.opened === true && sj.controls >= 10 && sj.groups.length >= 3,
+      sj.ok !== true
+        ? `失败：${sj.why ?? '未知'}`
+        : `Ctrl+, 打开设置标签页=${sj.opened}（当前 ${sj.activeTitle}），控件 ${sj.controls} 个，分组命中 [${sj.groups.join(',')}]`,
+    );
+    rep.push(
+      'settings.persist',
+      sj.ok === true && Array.isArray(sj.lsKeys) && sj.lsKeys.length > 0 && sj.closed === true,
+      sj.ok !== true
+        ? `失败：${sj.why ?? '未知'}`
+        : `持久化键 [${(sj.lsKeys || []).join(',')}]，关闭设置后回到编辑器=${sj.closed}`,
+    );
+
+    /*
+     * 设置「改了就生效」：必须走完草稿 + 点保存的完整链路。
+     *
+     * 这一项来自一次被误判的反馈：有测试报告说「设置无效」，证据是
+     * updateAppearance 改了 fontSize 但 store 没变。实际情况是**设计如此** ——
+     * SettingsPage.patchAppearance 只写 draft，界面明确提示
+     * 「草稿已更新，点『保存』生效」。只测到草稿就断言功能坏了，是测法错误。
+     *
+     * 但也不能反过来假定它没问题：真正的验收必须证明
+     *   输入框改值 -> 点「保存」 -> store 与 localStorage 都变成新值。
+     * 用真实 DOM 交互（定位 aria-label="编辑器正文字号" 的控件）而不是直接调
+     * store 方法，否则测的是 API 而不是用户路径。
+     */
+    const sa = await cdp.eval(`(async () => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const stores = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s;
+      let st = null;
+      for (const [, v] of stores) { if (v && typeof v === 'object' && ('settings' in v)) { st = v; break; } }
+      const ls = () => { try { return JSON.parse(localStorage.getItem('neomd.settings.v1') || '{}'); } catch { return {}; } };
+
+      // 打开设置并切到「编辑器」分组
+      document.dispatchEvent(new KeyboardEvent('keydown', { key:',', code:'Comma', ctrlKey:true, bubbles:true, cancelable:true }));
+      await sleep(2500);
+      const navs = Array.from(document.querySelectorAll('.settings__nav-item'));
+      for (const n of navs) { if (/编辑器/.test(n.innerText || '')) { n.click(); await sleep(1200); break; } }
+
+      const el = Array.from(document.querySelectorAll('.settings input[type="number"]'))
+        .find(x => /字号/.test(x.getAttribute('aria-label') || ''));
+      if (!el) return JSON.stringify({ ok:false, why:'找不到字号控件（aria-label 含「字号」）' });
+
+      const from = Number(el.value);
+      const to = from >= 26 ? from - 2 : from + 2;
+      el.focus();
+      el.value = String(to);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      await sleep(1200);
+      const draftOnly = (st?.settings?.appearance?.fontSize ?? null) === from;
+
+      const btns = Array.from(document.querySelectorAll('.settings-savebar button, .settings-savebar__actions button'));
+      const saveBtn = btns.find(b => /^保存$/.test((b.innerText || '').trim())) || btns.find(b => /保存/.test(b.innerText || ''));
+      if (!saveBtn) return JSON.stringify({ ok:false, why:'找不到保存按钮', draftOnly });
+
+      saveBtn.click();
+      await sleep(6000);
+
+      const storeAfter = st?.settings?.appearance?.fontSize ?? null;
+      const lsAfter = ls()?.appearance?.fontSize ?? null;
+      return JSON.stringify({
+        ok: true, from, to, draftOnly,
+        storeAfter, lsAfter,
+        committed: storeAfter === to && lsAfter === to,
+      });
+    })()`, 180000);
+    const sao = JSON.parse(sa);
+    rep.push(
+      'settings.apply',
+      sao.ok === true && sao.committed === true,
+      sao.ok !== true
+        ? `设置生效检查失败：${sao.why ?? '未知'}`
+        : `字号 ${sao.from} -> ${sao.to}：改草稿时不立即写库=${sao.draftOnly}，点「保存」后 store=${sao.storeAfter}、localStorage=${sao.lsAfter}${sao.committed ? '（已生效）' : '（**未生效**）'}`,
     );
 
     // 8. 控制台错误收集

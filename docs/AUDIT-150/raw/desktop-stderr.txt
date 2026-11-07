@@ -1,0 +1,1 @@
+C:\Data\BAC\neomd\neomd-V1\dist-artifacts\win-unpacked\Neo MD.exe: bad option: --shot

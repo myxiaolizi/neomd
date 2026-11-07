@@ -2163,8 +2163,62 @@ export const useAppStore = defineStore('app', () => {
     notify('已重置对象存储配置，同步将使用平台存储（登录状态）或本机模式。', 'success', 4200);
   }
 
+  /*
+   * ## 为什么需要「同步进行中时排队」而不是直接 return
+   *
+   * 旧实现是 `if (syncState.value === 'syncing') return;`，即并发调用**静默丢弃**。
+   * 这在「保存后同步」这条链路上会丢数据：
+   *
+   *   1. 用户按 Ctrl+S → `saveActiveTab()` 写本地盘、清 dirty、然后
+   *      `fireAndLog(syncNow(...), 'sync:afterSave')`；
+   *   2. 如果此刻后台正好有一轮同步在跑（首拉/定时同步都很常见），
+   *      `syncState` 已经是 `'syncing'` → 这次推送被直接 `return` 丢掉；
+   *   3. 界面表现：dirty 已清、`lastSyncSummary` 还显示「推送 1 篇」，
+   *      但云端对象**没有任何变化**。用户以为保存成功，实际改动从未上云。
+   *
+   * 实测复现：保存后云端 rev 仍为 12；手动再点一次同步才出现 rev 13 且带新内容。
+   *
+   * 现在改为「置脏标记 + 等待当前轮结束」：当前轮跑完后再补跑一轮，保证
+   * 保存的内容一定会被推送一次。排队只保留一个请求（多次调用合并），
+   * 避免连按 Ctrl+S 触发多次全量同步。
+   */
+  let syncQueuedAgain = false;
+  let syncInFlight: Promise<void> | null = null;
+
+  /**
+   * 对外同步入口：串行化，且「同步中再次请求」不会被丢弃。
+   */
   async function syncNow(opts: { silent?: boolean } = {}): Promise<void> {
-    if (syncState.value === 'syncing') return;
+    if (syncInFlight) {
+      /*
+       * 已有一轮在跑：只置「还需要再跑一轮」的标记，然后等当前轮结束。
+       * 当前轮的 drain 循环会补跑，因此本次保存的改动一定会被推送一次。
+       * 多个并发请求合并成一次补跑，避免连按 Ctrl+S 触发多次全量同步。
+       */
+      syncQueuedAgain = true;
+      try {
+        await syncInFlight;
+      } catch {
+        /* 当前轮自己会记录并提示错误，这里只需等它结束 */
+      }
+      return;
+    }
+    const run = (async () => {
+      do {
+        syncQueuedAgain = false;
+        await runSyncOnce(opts);
+      } while (syncQueuedAgain);
+    })();
+    syncInFlight = run;
+    try {
+      await run;
+    } finally {
+      if (syncInFlight === run) syncInFlight = null;
+    }
+  }
+
+  /** 真正跑一轮同步（原 syncNow 本体）。 */
+  async function runSyncOnce(opts: { silent?: boolean } = {}): Promise<void> {
     const engine = buildSyncEngine();
     if (!engine) {
       const msg = canSync()

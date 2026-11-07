@@ -394,7 +394,63 @@ export function mergeSettings(local: Settings, remote: Partial<Settings> | null 
   if (remote.diagram) out.diagram = { ...(out.diagram ?? {}), ...remote.diagram } as Settings['diagram'];
   if (remote.layout) out.layout = { ...out.layout, ...remote.layout };
   if (remote.enabledPlugins) out.enabledPlugins = { ...out.enabledPlugins, ...remote.enabledPlugins };
-  if (remote.shortcuts && Array.isArray(remote.shortcuts)) out.shortcuts = remote.shortcuts;
+  /*
+   * 快捷键：云端数组不能**整体覆盖**本地默认值，必须逐条按 command 合并。
+   *
+   * 真实故障（2026-11-07，Qt/2.2.0 实测）：云端存着一份历史快捷键表，其中
+   *   { command: 'editor.code',    keys: ['Ctrl+E'] }
+   *   { command: 'app.toggleMode', keys: ['Ctrl+E'] }
+   * 两条都绑定 Ctrl+E。源码里的默认值早已改成 app.toggleMode = Ctrl+Shift+V，
+   * 但这里一句 `out.shortcuts = remote.shortcuts` 把默认值整个替换成了云端的
+   * 旧表，于是 Ctrl+E 又变回重复绑定。
+   *
+   * 后果由 EditorPage.onKeydown 的匹配方式放大：它用
+   *   customShortcuts.find(s => s.keys.some(...))
+   * 取**第一条**命中项，而 editor.code 排在前面 → 按 Ctrl+E 只会插入行内代码，
+   * 视图模式永远停在 wysiwyg。用户看到的就是「快捷键失灵 / 切不了视图」。
+   *
+   * 合并规则：
+   *   - 云端有、默认也有的 command：用云端的 keys（用户自定义优先）
+   *   - 云端有、默认没有的 command：保留（用户自己加的）
+   *   - 云端没有、默认有的 command：补上默认值（新增命令能到达老账号）
+   * 这样既能保留用户自定义，又不会让云端旧数据把已修正的默认值顶回去。
+   */
+  if (remote.shortcuts && Array.isArray(remote.shortcuts)) {
+    const byCommand = new Map<string, ShortcutBinding>();
+    for (const s of DEFAULT_SHORTCUTS) byCommand.set(s.command, { ...s, keys: [...s.keys] });
+    for (const s of remote.shortcuts as ShortcutBinding[]) {
+      if (!s || typeof s.command !== 'string') continue;
+      byCommand.set(s.command, { command: s.command, keys: Array.isArray(s.keys) ? [...s.keys] : [] });
+    }
+    /*
+     * 最后去重：一个按键只能归一个命令。
+     *
+     * 云端旧表里 editor.code 和 app.toggleMode 都写着 Ctrl+E，逐条合并后
+     * 这两条都还在，设置页会显示两条一模一样的 Ctrl+E，用户改哪条都说不清。
+     * 运行时已按「全局命令优先」兜底，但数据本身也不该带着冲突往下传。
+     *
+     * 保留顺序即优先级：全局命令（app./daily./random.）先占位，其余先到先得。
+     * 被挤掉的命令保留条目、清空 keys —— 这样它在设置页仍然可见、可重新绑定，
+     * 而不是凭空消失让用户以为命令没了。
+     */
+    const ordered = [...byCommand.values()].sort((a, b) => {
+      const ga = /^(app|daily|random)\./.test(a.command) ? 0 : 1;
+      const gb = /^(app|daily|random)\./.test(b.command) ? 0 : 1;
+      return ga - gb;
+    });
+    const takenKeys = new Set<string>();
+    for (const s of ordered) {
+      const kept: string[] = [];
+      for (const k of s.keys) {
+        const norm = k.toLowerCase();
+        if (takenKeys.has(norm)) continue;
+        takenKeys.add(norm);
+        kept.push(k);
+      }
+      s.keys = kept;
+    }
+    out.shortcuts = ordered;
+  }
   if (remote.storage) {
     // 云端不下发密钥时保留本地
     const merged = { ...out.storage, ...remote.storage };

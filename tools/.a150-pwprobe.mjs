@@ -1,0 +1,15 @@
+﻿import { pathToFileURL } from "node:url";
+const P = "C:/Data/BAC/neomd/neomd-V1/node_modules/.pnpm/playwright-core@1.64.1/node_modules/playwright-core/index.mjs";
+const { chromium } = await import(pathToFileURL(P).href);
+const t0=Date.now();
+const b = await chromium.launch({ args:["--no-sandbox","--disable-gpu","--disable-dev-shm-usage","--js-flags=--expose-gc"] });
+console.log("launch ok in", Date.now()-t0, "ms; version:", b.version());
+const ctx = await b.newContext({ viewport:{width:1600,height:950} });
+const p = await ctx.newPage();
+await p.goto("http://127.0.0.1:5178/app",{waitUntil:"domcontentloaded",timeout:60000});
+console.log("title:", await p.title(), "url:", p.url());
+const shell = await p.waitForSelector(".shell__main",{timeout:40000}).then(()=>true).catch(()=>false);
+console.log("shell mounted:", shell);
+console.log("editor nodes:", await p.locator(".ProseMirror, .cm-content, .read-view").count());
+await b.close();
+console.log("OK total", Date.now()-t0);

@@ -871,10 +871,26 @@ function onKeydown(e: KeyboardEvent): void {
   const combo = keyCombo(e);
 
   // 1. 优先匹配用户在设置页自定义的快捷键（settingsStore.settings.shortcuts）
+  /*
+   * 一个按键可能命中多条命令 —— 云端历史数据里就出现过
+   * editor.code 与 app.toggleMode 都写 Ctrl+E 的情况。
+   *
+   * 旧写法用 `.find()` 取第一条，谁在数组里靠前谁赢，于是 Ctrl+E 永远只会
+   * 插入行内代码，视图模式切不了；更糟的是这种"谁先谁赢"取决于数据顺序，
+   * 用户完全无法预期。
+   *
+   * 现在按明确优先级挑：
+   *   全局命令（app./daily./random.）> 编辑命令（editor.）
+   * 全局命令影响的是整个工作台状态，不该被某个格式快捷键顶掉。
+   * 设置合并侧已修掉重复来源，这里再做一层兜底，防止旧数据复发。
+   */
+  const PLATFORM_PREFIXES = ['app.', 'daily.', 'random.'];
+  const isGlobalCmd = (c: string): boolean => PLATFORM_PREFIXES.some((p) => c.startsWith(p));
   const customShortcuts = settingsStore.settings.shortcuts ?? [];
-  const matchedCustom = customShortcuts.find((s) =>
+  const candidates = customShortcuts.filter((s) =>
     s.keys.some((k) => k.toLowerCase() === combo.toLowerCase()),
   );
+  const matchedCustom = candidates.find((s) => isGlobalCmd(s.command)) ?? candidates[0];
   if (matchedCustom) {
     // 若在普通 input/textarea 输入框内，仅放行全局 app.* 快捷键，避免拦截正常打字
     const inInput = isEditable(e.target) && !(e.target as HTMLElement | null)?.closest('.ProseMirror, .cm-editor');

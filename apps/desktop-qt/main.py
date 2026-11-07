@@ -33,7 +33,7 @@ from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow
 
 APP_NAME = "Neo MD"
-APP_VERSION = "2.1.0"
+APP_VERSION = "2.2.0"
 API_ORIGIN = "https://md.zhengl.vip"
 
 # 反代固定直连上游，显式忽略系统代理。

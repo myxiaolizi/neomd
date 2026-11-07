@@ -1,0 +1,766 @@
+{
+  "generatedAt": "2026-11-02T07:31:26.477Z",
+  "base": "http://127.0.0.1:5178",
+  "api": "http://127.0.0.1:3200",
+  "scenarios": [
+    {
+      "id": "S1",
+      "title": "首次访问游客：首页营销页",
+      "goal": "未登录访客打开首页，能否在 5 秒内看懂产品是什么、找到注册/登录入口、理解主 CTA",
+      "steps": [
+        {
+          "action": "打开首页（未登录、全新上下文）",
+          "expect": "HTTP 200 且首屏渲染出营销内容",
+          "actual": "HTTP 200，networkidle 耗时 848ms",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "首屏 H1（产品定位文案）",
+          "expect": "存在明确 H1，一句话说清产品是什么",
+          "actual": "H1 = \"新一代商务级 Markdown\n个人与团队知识生产力平台\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "首屏可点 CTA 数量与文案",
+          "expect": "至少 1 个主 CTA（进入工作台/注册），文案动词明确",
+          "actual": "首屏 CTA: [\"NNeo MDEnterprise\",\"核心价值\",\"产品对比\",\"插件开放平台\",\"客户端下载\",\"常见问题\",\"登录\",\"免费注册\",\"立即进入在线工作台\",\"下载 Windows / Android 客户端\"]",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "顶部导航项是否为真实可跳转入口",
+          "expect": "导航项点击有明确目的地（锚点或路由）",
+          "actual": "导航/按钮共 17 项，其中锚点 5 项，href=\"#\" 或空 href 8 项",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "营销内容真实性（对比表 / FAQ / 下载区 / 图片）",
+          "expect": "对比表有数据、FAQ 可展开、下载区列出真实条目",
+          "actual": "对比表=true；FAQ 元素 5 个；下载区=true；正文 3257 字；图片 0 张",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "FAQ 手风琴展开",
+          "expect": "点击问题后答案展开（aria-expanded=true 或高度增加）",
+          "actual": "找到 6 个触发器；aria null→null；高度 44→0px；展开=false",
+          "ok": false,
+          "note": "疑似死按钮：点击后无展开"
+        },
+        {
+          "action": "主 CTA「进入在线工作台」存在",
+          "expect": "存在且文案明确",
+          "actual": "未找到主 CTA",
+          "ok": false,
+          "note": ""
+        },
+        {
+          "action": "无障碍基础项（H1 数量 / 图片 alt / 无标签按钮 / lang）",
+          "expect": "h1 恰好 1 个、图片有 alt、按钮有可访问名",
+          "actual": "h1=1；img 缺 alt=0；按钮无名称=0；lang=\"zh-CN\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "游客首页控制台无报错、无请求失败",
+          "expect": "0 个 pageerror，0 个非 favicon 请求失败",
+          "actual": "pageerror=0；console.error=0；失败请求=0",
+          "ok": true,
+          "note": ""
+        }
+      ],
+      "status": "partial",
+      "notes": [
+        "游客首页 / FAQ 宣称「不登录也能使用完整编辑功能」，首页 footer 有「进入本机编辑器」入口=true"
+      ],
+      "defectIds": [],
+      "startedAt": "2026-11-02T07:29:58.206Z",
+      "durationMs": 1545
+    },
+    {
+      "id": "S2",
+      "title": "注册与登录：成功/失败/提示/限流/Token 过期",
+      "goal": "真实用户从注册到进入工作台，并验证各类失败路径是否有明确提示",
+      "steps": [
+        {
+          "action": "登录页表单字段与 label 关联",
+          "expect": "每个 input 都有 label 或 aria-label；密码框 type=password 且 autocomplete 正确",
+          "actual": "2 个输入；无 label=0 个；密码 autocomplete=current-password",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "空表单提交",
+          "expect": "出现明确错误提示（必填校验）",
+          "actual": "URL=/login；错误文案=\"请填写账号与密码\"；toast=[]",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "错误密码登录",
+          "expect": "页面可见错误提示，停留在登录页，按钮恢复可点",
+          "actual": "错误文案=\"邮箱/用户名或密码不正确\"；URL=/login；按钮 disabled=false",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "正确账号密码登录",
+          "expect": "跳转 /app 并渲染工作台外壳",
+          "actual": "已进入 /app",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "刷新后登录态保持",
+          "expect": "不跳登录页，工作台正常渲染，用户名可见",
+          "actual": "shell=true；用户名可见=true；URL=/app",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "注册新账号",
+          "expect": "填写邮箱/用户名/密码后成功注册并进入 /app",
+          "actual": "字段=[\"email\",\"username\",\"newpass\"]；结果 URL=/app；错误文案=\"\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "重复邮箱注册",
+          "expect": "提示「该邮箱已被注册」类明确文案",
+          "actual": "错误区=\"该邮箱已被注册\"；页面含冲突文案=true；URL=/login",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "登录限流（连续 12 次错误密码）",
+          "expect": "第 11 次起返回 429 + Retry-After",
+          "actual": "429 次数=4；首次 429 出现在第 9 次；Retry-After=41",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "限流时前端提示可读性",
+          "expect": "用户能看到「请求过于频繁/请稍后」类文案，而非原始 code",
+          "actual": "UI 错误文案=\"登录过于频繁，请 38 秒后再试\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "无效/过期 token 打开 /app",
+          "expect": "要么重定向登录页并说明会话过期，要么以游客本机模式继续可用",
+          "actual": "URL=/app；shell=true；token 仍保留=true；首屏文案=\"全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 100%\"",
+          "ok": true,
+          "note": ""
+        }
+      ],
+      "status": "ok",
+      "notes": [
+        "限流期 429 文案：登录过于频繁，请 41 秒后再试 —— 前端是否把它呈现给用户需单独验证（见 S2.8）",
+        "过期 token 场景 pageerror=0，console.error=11"
+      ],
+      "defectIds": [],
+      "startedAt": "2026-11-02T07:29:59.751Z",
+      "durationMs": 30280
+    },
+    {
+      "id": "S3",
+      "title": "建仓库 → 建文档 → 写作核心链路",
+      "goal": "从零建仓库、新建文档、写满一段正文并确认保存与同步",
+      "steps": [
+        {
+          "action": "打开工作台并读取仓库列表",
+          "expect": "至少一个仓库，能加载文档索引",
+          "actual": "仓库=[{\"id\":\"admin\",\"name\":\"admin\",\"docCount\":353}]；当前=admin；文档索引 353 篇；vaultReady=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "仓库切换菜单（页脚仓库按钮）",
+          "expect": "菜单可打开，列出已有仓库与「新建仓库」入口",
+          "actual": "按钮=true；菜单项=[\"admin\",\"关联本地文件夹…\",\"新建仓库…\"]",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "菜单里有「新建仓库」入口",
+          "expect": "存在新建仓库入口",
+          "actual": "存在",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "点「新建文档」按钮",
+          "expect": "文档数 +1，新标签打开且标题非空",
+          "actual": "文档数 353→353；新标签标题=\"undefined\"",
+          "ok": false,
+          "note": ""
+        },
+        {
+          "action": "新建文档默认命名",
+          "expect": "默认名可读（不含空模板尾巴，如「261031日1553-」）",
+          "actual": "模板=\"YYMMDD日HHMM-{input}\" 模式=datetime-input → 实际标题=\"undefined\"；疑似空尾巴=false",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "在所见即所得编辑器写入多段 Markdown",
+          "expect": "store 内 content 与输入一致",
+          "actual": "content 长度=123；dirty=true",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "所见即所得结构渲染（h1/h2/strong/ul/li/blockquote）",
+          "expect": "各自元素数量与 Markdown 语法匹配",
+          "actual": "h1=0 h2=0 strong=0 ul=0 li=0 blockquote=0",
+          "ok": false,
+          "note": ""
+        },
+        {
+          "action": "Ctrl+S 保存",
+          "expect": "dirty 变为 false，状态栏给出已保存/同步状态",
+          "actual": "dirty=false；状态栏=\"正在同步…\"；syncState=\"syncing\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "服务端对象存储确认正文已上传",
+          "expect": "docs/undefined/ 下至少 1 个版本对象",
+          "actual": "HTTP 200，对象 0 个：[]",
+          "ok": false,
+          "note": ""
+        },
+        {
+          "action": "刷新页面后重新打开该文档",
+          "expect": "正文完整保留（含最后一行）",
+          "actual": "长度=123；含尾行=true；标题=\"审计 150 写作链路验证\"",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "左侧文件列表出现新文档",
+          "expect": "列表首项为刚建的文档",
+          "actual": "列表 355 行，样例=[\"审计 150 写作链路验证刚刚\",\"审计测试标题6 分钟前\",\"261031日1553-1 天前\",\"261031日1543-1 天前\",\"261031日1543-1 天前\",\"261031日1543-1 天前\"]",
+          "ok": true,
+          "note": ""
+        },
+        {
+          "action": "写作链路全程无控制台报错",
+          "expect": "0 pageerror",
+          "actual": "pageerror=0；console.error=5；失败请求=2",
+          "ok": true,
+          "note": ""
+        }
+      ],
+      "status": "partial",
+      "notes": [],
+      "defectIds": [],
+      "startedAt": "2026-11-02T07:30:30.031Z",
+      "durationMs": 56445
+    }
+  ],
+  "findings": [],
+  "section": "S1-S3 游客/登录注册/写作链路",
+  "results": {
+    "s1Fold": {
+      "h1": "新一代商务级 Markdown\n个人与团队知识生产力平台",
+      "btnText": [
+        "NNeo MDEnterprise",
+        "核心价值",
+        "产品对比",
+        "插件开放平台",
+        "客户端下载",
+        "常见问题",
+        "登录",
+        "免费注册",
+        "立即进入在线工作台",
+        "下载 Windows / Android 客户端"
+      ],
+      "inFoldHead": [
+        "N Neo MD Enterprise 核心价值 产品对比 插件开放平台 客户端下载 常见问题 登录 免费注册",
+        "N Neo MD Enterprise 核心价值 产品对比 插件开放平台 客户端下载 常见问题 登录 免费注册",
+        "N Neo MD Enterprise",
+        "N",
+        "Neo MD",
+        "Enterprise",
+        "核心价值 产品对比 插件开放平台 客户端下载 常见问题",
+        "核心价值",
+        "产品对比",
+        "插件开放平台",
+        "客户端下载",
+        "常见问题"
+      ]
+    },
+    "s1Nav": [
+      {
+        "text": "NNeo MDEnterprise",
+        "href": "/",
+        "tag": "a"
+      },
+      {
+        "text": "核心价值",
+        "href": "#value",
+        "tag": "a"
+      },
+      {
+        "text": "产品对比",
+        "href": "#compare",
+        "tag": "a"
+      },
+      {
+        "text": "插件开放平台",
+        "href": "#ecosystem",
+        "tag": "a"
+      },
+      {
+        "text": "客户端下载",
+        "href": "#download",
+        "tag": "a"
+      },
+      {
+        "text": "常见问题",
+        "href": "#faq",
+        "tag": "a"
+      },
+      {
+        "text": "登录",
+        "href": "",
+        "tag": "button"
+      },
+      {
+        "text": "免费注册",
+        "href": "",
+        "tag": "button"
+      },
+      {
+        "text": "立即进入在线工作台",
+        "href": "",
+        "tag": "button"
+      },
+      {
+        "text": "下载 Windows / Android 客户端",
+        "href": "",
+        "tag": "button"
+      },
+      {
+        "text": "插件开放平台",
+        "href": "",
+        "tag": "button"
+      },
+      {
+        "text": "前往插件开放平台与开发指南",
+        "href": "",
+        "tag": "button"
+      },
+      {
+        "text": "立即下载",
+        "href": "/api/download/NeoMD-1.4.0-win-x64.zip",
+        "tag": "a"
+      },
+      {
+        "text": "立即下载",
+        "href": "/api/download/NeoMD-1.4.0-setup.exe",
+        "tag": "a"
+      },
+      {
+        "text": "下载 APK",
+        "href": "/api/download/NeoMD-1.4.0.apk",
+        "tag": "a"
+      },
+      {
+        "text": "进入在线工作台",
+        "href": "",
+        "tag": "button"
+      },
+      {
+        "text": "下载客户端",
+        "href": "",
+        "tag": "button"
+      }
+    ],
+    "s1Sections": {
+      "hasCompare": true,
+      "faqCount": 5,
+      "hasDownload": true,
+      "textLen": 3257,
+      "imgCount": 0
+    },
+    "s1Faq": {
+      "found": 6,
+      "trigger": "button",
+      "beforeAria": null,
+      "afterAria": null,
+      "beforeH": 44,
+      "afterH": 0,
+      "opened": false
+    },
+    "s1Cta": {
+      "found": false
+    },
+    "s1GuestWrite": {
+      "hasLocalEntry": true,
+      "url": "/login"
+    },
+    "s1A11y": {
+      "h1Count": 1,
+      "imgNoAlt": 0,
+      "btnNoLabel": 0,
+      "lang": "zh-CN"
+    },
+    "s1Logs": {
+      "consoleErrors": [],
+      "pageErrors": [],
+      "failed": []
+    },
+    "s2NewUser": {
+      "email": "audit150_mvyxvak1@example.com",
+      "username": "audit150_mvyxvak1"
+    },
+    "s2Form": {
+      "labels": [
+        {
+          "for": "account",
+          "text": "邮箱或用户名"
+        },
+        {
+          "for": "password",
+          "text": "密码"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "account",
+          "type": "text",
+          "placeholder": "you@example.com",
+          "autocomplete": "username",
+          "hasLabel": true
+        },
+        {
+          "id": "password",
+          "type": "password",
+          "placeholder": "至少 8 位",
+          "autocomplete": "current-password",
+          "hasLabel": true
+        }
+      ],
+      "submitText": "登录"
+    },
+    "s2EmptySubmit": {
+      "errorText": "请填写账号与密码",
+      "toasts": [],
+      "stillOnLogin": true,
+      "url": "/login"
+    },
+    "s2WrongPass": {
+      "errorText": "邮箱/用户名或密码不正确",
+      "bodyHasError": true,
+      "url": "/login",
+      "btnDisabled": false
+    },
+    "s2Register": {
+      "fields": [
+        {
+          "id": "email",
+          "type": "email"
+        },
+        {
+          "id": "username",
+          "type": "text"
+        },
+        {
+          "id": "newpass",
+          "type": "password"
+        }
+      ],
+      "ok": true,
+      "errText": "",
+      "url": "/app"
+    },
+    "s2DupRegister": {
+      "errText": "该邮箱已被注册",
+      "url": "/login",
+      "pwCount": 1,
+      "bodyHas": true
+    },
+    "s2RateLimit": [
+      {
+        "i": 0,
+        "status": 401,
+        "code": "LOGIN_FAILED",
+        "msg": "邮箱/用户名或密码不正确"
+      },
+      {
+        "i": 1,
+        "status": 401,
+        "code": "LOGIN_FAILED",
+        "msg": "邮箱/用户名或密码不正确"
+      },
+      {
+        "i": 2,
+        "status": 401,
+        "code": "LOGIN_FAILED",
+        "msg": "邮箱/用户名或密码不正确"
+      },
+      {
+        "i": 3,
+        "status": 401,
+        "code": "LOGIN_FAILED",
+        "msg": "邮箱/用户名或密码不正确"
+      },
+      {
+        "i": 4,
+        "status": 401,
+        "code": "LOGIN_FAILED",
+        "msg": "邮箱/用户名或密码不正确"
+      },
+      {
+        "i": 5,
+        "status": 401,
+        "code": "LOGIN_FAILED",
+        "msg": "邮箱/用户名或密码不正确"
+      },
+      {
+        "i": 6,
+        "status": 401,
+        "code": "LOGIN_FAILED",
+        "msg": "邮箱/用户名或密码不正确"
+      },
+      {
+        "i": 7,
+        "status": 401,
+        "code": "LOGIN_FAILED",
+        "msg": "邮箱/用户名或密码不正确"
+      },
+      {
+        "i": 8,
+        "status": 429,
+        "code": "RATE_LIMITED",
+        "msg": "登录过于频繁，请 41 秒后再试",
+        "retryAfter": "41"
+      },
+      {
+        "i": 9,
+        "status": 429,
+        "code": "RATE_LIMITED",
+        "msg": "登录过于频繁，请 41 秒后再试",
+        "retryAfter": "41"
+      },
+      {
+        "i": 10,
+        "status": 429,
+        "code": "RATE_LIMITED",
+        "msg": "登录过于频繁，请 41 秒后再试",
+        "retryAfter": "41"
+      },
+      {
+        "i": 11,
+        "status": 429,
+        "code": "RATE_LIMITED",
+        "msg": "登录过于频繁，请 41 秒后再试",
+        "retryAfter": "41"
+      }
+    ],
+    "s2UiRateLimit": {
+      "errText": "登录过于频繁，请 38 秒后再试"
+    },
+    "s2ExpiredToken": {
+      "url": "/app",
+      "hasShell": true,
+      "bodyHead": "全部文件 仓库还是空的，点右上角 + 新建第一篇。 admin A N 还没有打开任何文档 从左侧选择一篇，或新建一篇开始写作。 新建文档 Ctrl+N 编辑命令 Ctrl+P 自动同步已就绪 字数 0 字符 0 阅读 1 分钟 100%",
+      "token": "invalid.expired.token",
+      "hasRefresh": true,
+      "logs": {
+        "consoleErrors": [
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)",
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+          "Failed to load resource: the server responded with a status of 400 (Bad Request)"
+        ],
+        "consoleWarnings": [],
+        "pageErrors": [],
+        "failedRequests": [],
+        "apiCalls": [
+          {
+            "method": "GET",
+            "url": "/src/api/client.ts",
+            "status": 200
+          },
+          {
+            "method": "GET",
+            "url": "/api/auth/me",
+            "status": 401
+          },
+          {
+            "method": "POST",
+            "url": "/api/auth/refresh",
+            "status": 400
+          },
+          {
+            "method": "GET",
+            "url": "/api/vaults",
+            "status": 401
+          },
+          {
+            "method": "POST",
+            "url": "/api/auth/refresh",
+            "status": 400
+          },
+          {
+            "method": "POST",
+            "url": "/api/vaults",
+            "status": 401
+          },
+          {
+            "method": "GET",
+            "url": "/api/credits",
+            "status": 401
+          },
+          {
+            "method": "GET",
+            "url": "/api/settings?platform=web",
+            "status": 401
+          },
+          {
+            "method": "POST",
+            "url": "/api/auth/refresh",
+            "status": 400
+          },
+          {
+            "method": "GET",
+            "url": "/api/vaults",
+            "status": 401
+          },
+          {
+            "method": "GET",
+            "url": "/api/storage/list?prefix=index%2F&maxKeys=1000",
+            "status": 401
+          },
+          {
+            "method": "POST",
+            "url": "/api/auth/refresh",
+            "status": 400
+          }
+        ]
+      }
+    },
+    "s2Logs": {
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 401 (Unauthorized)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "pageErrors": [],
+      "failed": []
+    },
+    "s3VaultState": {
+      "vaults": [
+        {
+          "id": "admin",
+          "name": "admin",
+          "docCount": 353
+        }
+      ],
+      "current": "admin",
+      "docs": 353,
+      "vaultReady": true
+    },
+    "s3VaultMenu": {
+      "createVaultEntry": {
+        "found": true,
+        "text": "admin"
+      },
+      "vaultMenu": [
+        "admin",
+        "关联本地文件夹…",
+        "新建仓库…"
+      ]
+    },
+    "s3CreateDoc": {
+      "before": {
+        "docs": 353,
+        "tabs": 0
+      },
+      "created": {
+        "docs": 353
+      }
+    },
+    "s3Naming": {
+      "template": "YYMMDD日HHMM-{input}",
+      "mode": "datetime-input",
+      "looksPlaceholder": false
+    },
+    "s3Typing": {
+      "len": 123,
+      "dirty": true
+    },
+    "s3Render": {
+      "h1": 0,
+      "h2": 0,
+      "strong": 0,
+      "ul": 0,
+      "li": 0,
+      "quote": 0,
+      "html": "<p># 审计 150 写作链路验证</p><p><br class=\"ProseMirror-trailingBreak\"></p><p>这是一段用于验证**所见即所得**写作与保存链路的正文。</p><p><br class=\"ProseMirror-trailingBreak\"></p><p>## 二级标题</p><p><br class=\"ProseMirror-trailingBreak\"></p><p>- 列表项 A</p><p>- 列表项 B</p><p><br class=\"ProseMirror-trailingBreak\"></p><p>&gt; 引用块用于验证 blockquote 渲染。</p><p><br class=\"ProseMirror-trailingBreak\"></p><p>结尾一行用于确认保存后全文完整。</p><p data-placeholder=\"开始写作…\" class=\"is-empty\"><br class=\"ProseMirror-trailingBreak\"></p>"
+    },
+    "s3Saved": {
+      "dirty": false,
+      "statusText": "正在同步…",
+      "syncState": "\"syncing\"",
+      "lastSyncAt": 1793604675369
+    },
+    "s3RemoteObjects": {
+      "status": 200,
+      "count": 0,
+      "sample": []
+    },
+    "s3Persisted": {
+      "len": 123,
+      "hasTail": true,
+      "title": "审计 150 写作链路验证"
+    },
+    "s3DocList": {
+      "rowCount": 355,
+      "sample": [
+        "审计 150 写作链路验证刚刚",
+        "审计测试标题6 分钟前",
+        "261031日1553-1 天前",
+        "261031日1543-1 天前",
+        "261031日1543-1 天前",
+        "261031日1543-1 天前"
+      ]
+    },
+    "s3Logs": {
+      "consoleErrors": [
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)",
+        "Failed to load resource: the server responded with a status of 404 (Not Found)"
+      ],
+      "pageErrors": [],
+      "failed": [
+        {
+          "url": "/api/storage/object?key=docs%2Fdocmvyxwy5xlciboqhz%2F2-a2ca2b209bed6ad9.md",
+          "method": "HEAD",
+          "error": "net::ERR_ABORTED"
+        },
+        {
+          "url": "/api/storage/object?key=versions%2Fdocmvyxwy5xlciboqhz%2F1793604685241-2-a2ca2b209bed6ad9.md",
+          "method": "HEAD",
+          "error": "net::ERR_ABORTED"
+        }
+      ]
+    }
+  },
+  "createdDocTitle": null
+}

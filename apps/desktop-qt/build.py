@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -8,7 +9,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PROJECT = ROOT.parent.parent
 DIST_SOURCE = PROJECT / "apps" / "web" / "dist"
-RELEASE_ROOT = Path(r"C:\Data\BAC\neomd\releases\2.1.0\NeoMD-2.1.0-qt-x64")
+# 发布目录要跟着版本走。之前这里写死 2.1.0，且 main() 一开始就 rmtree(RELEASE_ROOT)，
+# 于是「构建 2.2.0」会把 2.1.0 的 Qt 产物直接删掉并覆盖 —— 既污染历史发布，
+# 也让回滚失效。现在从环境变量 NEOMD_VERSION 取版本，默认 2.2.0。
+APP_VERSION = os.environ.get("NEOMD_VERSION", "2.2.0")
+RELEASE_ROOT = Path(rf"C:\Data\BAC\neomd\releases\{APP_VERSION}\NeoMD-{APP_VERSION}-qt-x64")
 BUILD_DIR = ROOT / "build"
 PYINSTALLER_DIST = BUILD_DIR / "pyinstaller-dist"
 

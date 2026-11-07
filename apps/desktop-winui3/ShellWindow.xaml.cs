@@ -118,7 +118,7 @@ public sealed partial class ShellWindow : Window
             var baseUrl = _backend.Start();
 
             /*
-             * Portable WebView2 profile (2.1.0 fix).
+             * Portable WebView2 profile.
              *
              * The parameterless EnsureCoreWebView2Async() uses the default
              * user-data folder under %LOCALAPPDATA%. A "green" (portable) build
@@ -128,27 +128,22 @@ public sealed partial class ShellWindow : Window
              *
              * Point the user-data folder at <exe>/data/webview2 so the profile
              * travels with the folder and survives restarts.
+             *
+             * 为什么用环境变量而不是 CoreWebView2Environment.CreateAsync：
+             * 本壳的 WebView2 是 WindowsAppSDK 1.7 带进来的传递依赖
+             * （Microsoft.Web.WebView2 1.0.2903.40），该版本 C# 代码里能看到的
+             * 只有 WinRT 投影 Microsoft.Web.WebView2.Core.Projection.dll，它
+             * **不提供** CoreWebView2Environment.CreateAsync / EnsureCoreWebView2Async(env)
+             * 这组 API —— 无论写 (string,string) 还是 (string,string,options) 都会
+             * 得到 CS1501「CreateAsync 没有采用 N 个参数的重载」。
+             *
+             * WebView2 官方支持在**进程启动前**用 WEBVIEW2_USER_DATA_FOLDER
+             * 指定 profile 目录，语义完全等价（且是官方推荐的可移植化做法）。
+             * 因此改为在 App 启动最早期设置该环境变量，页面侧仍用无参
+             * EnsureCoreWebView2Async()，既保住绿色版可移植性，也不再依赖
+             * 那个随 SDK 版本漂移的托管 API。
              */
-            var userDataFolder = Path.Combine(AppContext.BaseDirectory, "data", "webview2");
-            try
-            {
-                Directory.CreateDirectory(userDataFolder);
-            }
-            catch
-            {
-                // Fall back to the default folder when the directory is read-only.
-                userDataFolder = null;
-            }
-
-            if (!string.IsNullOrEmpty(userDataFolder))
-            {
-                var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
-                await WebView.EnsureCoreWebView2Async(env);
-            }
-            else
-            {
-                await WebView.EnsureCoreWebView2Async();
-            }
+            await WebView.EnsureCoreWebView2Async();
 
             var settings = WebView.CoreWebView2.Settings;
             settings.AreDevToolsEnabled = true;

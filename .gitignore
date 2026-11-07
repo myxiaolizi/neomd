@@ -132,3 +132,8 @@ docs/acceptance-*.json
 *.bak
 # 浠撳簱鏍圭洰褰曠殑涓存椂鎴浘鐩綍
 .shots/
+
+# 临时 CDP/Chrome profile 与探针产物（含本地登录态，禁止入库）
+.tmp-*/
+reports/model-verify/.tmp-*/
+
