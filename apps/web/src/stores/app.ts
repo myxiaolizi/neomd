@@ -2605,7 +2605,7 @@ export const useAppStore = defineStore('app', () => {
 
     firstSyncRunning = true;
     try {
-      let remoteVaults: Array<{ vaultId: string; name: string }> = [];
+      let remoteVaults: Array<{ vaultId: string; name: string; docCount?: number }> = [];
       try {
         const res = await vaultsApi.list();
         remoteVaults = res.vaults ?? [];
@@ -2620,7 +2620,34 @@ export const useAppStore = defineStore('app', () => {
       const curLoc = vault.value.location || '';
       const curNameLower = (vaultName.value || '').trim().toLowerCase();
       const locTargetLower = curLoc.startsWith('cloud:') ? curLoc.slice(6).trim().toLowerCase() : '';
-      const isPseudoVault =
+
+      /*
+       * ## 2.1.0 修复：桌面端首次登录后不切换到云端已有仓库
+       *
+       * 原实现只在「当前是 `cloud:<用户名>` 这种伪仓库」时才切到云端真实仓库，
+       * 条件里写死了 `curLoc.startsWith('cloud:')`。但**桌面端（四个壳全一样）**
+       * 的默认仓库 location 是真实文件系统路径（`<exe同级>/data/vault`），
+       * 名称是 `vault`，vaultId 是本地随机生成的 —— 三者都不满足该条件，
+       * 于是首次登录后**永远不会切到云端仓库**。
+       *
+       * 用户侧表现（四个版本一致，已实测复现）：
+       *   登录成功 → 左侧仍显示「仓库还是空的」→ 云端的 702 篇文档看不见
+       *   → 用户判定为「登录了但仓库不同步」。
+       * 而实际上同步引擎是好的：手动 `openVault('vaultmvuqt…')` 后
+       * 702 篇文档立刻全部渲染（正文长度 125 → 15092）。
+       *
+       * 修复思路：把判据从「location 是不是 cloud: 伪协议」改为
+       * **「当前仓库是否为空、且未在云端登记」**——这才是「该不该采用云端仓库」
+       * 的真正语义，与 location 的表示形式无关，因此对 web/桌面/移动端一体适用。
+       *
+       * 安全边界（必须保留，否则会吞掉用户本地真实资产）：
+       *   - `docs.value.length === 0`：当前仓库必须**一篇文档都没有**才允许切换，
+       *     本地有任何内容都不切，绝不拿云端覆盖本地工作；
+       *   - `!remoteIds.has(vaultId)`：当前仓库不在云端清单里（说明它是本地空壳，
+       *     而不是一个真实存在但暂时为空的云端仓库）；
+       *   - `remoteIds.size > 0`：云端确实有仓库可切。
+       */
+      const isCloudPseudoVault =
         !remoteIds.has(vaultId) &&
         curLoc.startsWith('cloud:') &&
         (curNameLower === username ||
@@ -2631,15 +2658,73 @@ export const useAppStore = defineStore('app', () => {
           locTargetLower === 'my') &&
         docs.value.length === 0;
 
+      /**
+       * 判断当前仓库是否为「空壳」——即应当放弃、改用云端已有仓库。
+       *
+       * ## 2.1.0 修复：首次安装的桌面端永远不会采纳云端仓库
+       *
+       * 上一版只判 `!remoteIds.has(vaultId) && docs.length === 0`。
+       * 但桌面端首次启动时会**立刻新建一个空仓库并自动登记到云端**
+       * （`pushVaultEntry` 在本机清单变化时就会调用），
+       * 于是登录时这个空壳仓库**已经在云端清单里**了 → 条件恒为 false
+       * → 永远不切到用户真正在用的那个有内容的仓库。
+       *
+       * 实测证据（Qt 版全新 data 目录，登录 admin）：
+       *   remoteCount=9，其中有 702 篇的「笔记本」仓库就在清单里，
+       *   但 isSyncFailed 前 syncState=idle、拉取 0 篇、推送 0 篇，
+       *   左侧始终「仓库还是空的」。Tauri/WinUI3 之前能过，
+       *   仅因为它们的数据目录沿用了旧会话、当前仓库恰好已有内容。
+       *
+       * 修正后判据（三者同时满足才采纳云端仓库）：
+       *   a. 本地当前仓库**一篇文档都没有**（绝不拿云端覆盖本地资产）；
+       *   b. 云端存在**其它**可用仓库；
+       *   c. 当前仓库自身在云端也是空的（`docCount` 为 0 或缺失），
+       *      说明它是「空壳登记」，不是用户真正在用的仓库。
+       *
+       * 若当前仓库虽然本地为空、但云端 docCount > 0，则不采纳，
+       * 交给正常同步流程把它拉下来 —— 那才是用户要的内容。
+       */
+      const currentRemote = remoteVaults.find((v) => v.vaultId === vaultId) as
+        | { docCount?: number }
+        | undefined;
+      const currentRemoteEmpty = !currentRemote || !(Number(currentRemote.docCount) > 0);
+
+      /** 其它仓库里是否有「云端确实有内容」的仓库可切 */
+      const hasOtherPopulatedRemoteVault = remoteVaults.some(
+        (v) => v.vaultId !== vaultId && Number((v as { docCount?: number }).docCount) > 0,
+      );
+
+      const isEmptyShellVault =
+        docs.value.length === 0 && currentRemoteEmpty && hasOtherPopulatedRemoteVault;
+
+      /** 空且未登记到云端的本地仓库：早期桌面端默认仓库就是这种形态 */
+      const isEmptyUnregisteredLocalVault = !remoteIds.has(vaultId) && docs.value.length === 0;
+
+      /** 是否应放弃当前空仓库、改用云端第一个可用仓库 */
+      const shouldAdoptRemoteVault =
+        remoteIds.size > 0 && (isCloudPseudoVault || isEmptyUnregisteredLocalVault || isEmptyShellVault);
+
       if (remoteIds.size > 0) {
         const pruned = vaultRegistry.prunePseudoCloudVaults(remoteIds, username ? [username] : []);
         if (pruned) refreshVaultList();
       }
 
-      if (isPseudoVault && remoteIds.size > 0) {
-        const firstReal = vaultRegistry
+      if (shouldAdoptRemoteVault) {
+        /*
+         * 优先切到**有内容的**云端仓库，而不是清单里的第一个。
+         * 首次安装的实例会留下一堆 0 篇的空壳仓库，
+         * 按顺序取第一个很可能又是个空壳，用户依旧看到空白。
+         */
+        const sorted = vaultRegistry
           .listSorted()
-          .find((e) => remoteIds.has(e.vaultId) && e.status === 'active');
+          .filter((e) => remoteIds.has(e.vaultId) && e.status === 'active');
+        const firstReal =
+          sorted.find((e) => {
+            const rv = remoteVaults.find((v) => v.vaultId === e.vaultId) as
+              | { docCount?: number }
+              | undefined;
+            return Number(rv?.docCount) > 0;
+          }) ?? sorted[0];
         if (firstReal) {
           const targetLoc = firstReal.location || `cloud:${firstReal.vaultId}`;
           await switchVault(targetLoc, firstReal.name);

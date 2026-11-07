@@ -4,6 +4,18 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Neo MD">
     <Grid>
+        <!--
+            标题栏合并（2.1.0）：只放 WebView，不再叠加任何拖拽热区。
+
+            为什么不用 SetTitleBar 叠一层“拖拽区块”：
+            那层元素会盖在 WebView 上方，把标签页、按钮的点击全部吃掉
+            （系统把该区域当作标题栏处理），标签就点不动了。
+
+            这里改为让内容铺满整窗（ExtendsContentIntoTitleBar），
+            拖动则交给页面：页面在 `.nm-drag` 区域按下时调
+            win.startDrag → WM_NCLBUTTONDOWN(HTCAPTION)，由系统拖动窗口。
+            这样既没有遮挡，拖拽、双击最大化、系统按钮三件事都是通的。
+        -->
         <WebView2 x:Name="WebView" />
     </Grid>
 </Window>

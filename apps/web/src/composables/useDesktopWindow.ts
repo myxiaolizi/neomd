@@ -116,3 +116,104 @@ export function measureControlsInset(): number {
   const viewport = globalThis.innerWidth || 0;
   return Math.max(0, Math.round(viewport - rect.x - rect.width));
 }
+
+/* ---------------- 拖拽区：非 Electron 壳的原生拖动回退 ---------------- */
+
+/**
+ * 该壳是否会自己把 `-webkit-app-region: drag` 翻译成窗口拖动。
+ *
+ * 只有 Electron 会。其余四个壳（Tauri/WebView2、Qt/WebEngine、
+ * WinUI3/WebView2、Flutter/WebView2）用的都是普通浏览器控件，
+ * 它们不认识这个 CSS 属性 —— 页面表现是「顶部能看见、能点，
+ * 但按住拖不动窗口」。所以这些壳必须走 `win.startDrag()`。
+ *
+ * 判据用 electron 的存在性，而不是猜测壳名：Electron 一定注入
+ * `window.electron` / `process.versions.electron`，其余壳不会。
+ */
+const usesNativeAppRegionDrag = (() => {
+  if (!isDesktopShell) return false;
+  const g = globalThis as unknown as {
+    electron?: unknown;
+    process?: { versions?: { electron?: string } };
+  };
+  return Boolean(g.electron || g.process?.versions?.electron);
+})();
+
+/**
+ * 让标题栏拖拽区在「浏览器不认 app-region」的壳里也能拖动窗口。
+ *
+ * 做法：在文档捕获阶段监听 `mousedown`，如果按下的元素命中
+ * `app-region: drag` 且不是交互元素，就请求原生侧发起窗口拖动。
+ *
+ * 用捕获阶段而不是给每个元素绑事件，是为了覆盖 TabBar 里
+ * 动态生成的标签、空白填充区等所有拖拽区域，无需逐个改模板。
+ * 拖动期间浏览器不会再送 mousemove 给页面（系统接管了鼠标捕获），
+ * 因此只需处理 mousedown 这一次。
+ */
+export function installTitlebarDragFallback(): void {
+  if (!isDesktopShell || usesNativeAppRegionDrag) return;
+  const win = getWinBridge();
+  if (!win?.startDrag) return;
+
+  // 同一文档只装一次（HMR / 路由切换可能重复调用）
+  const flag = '__neomdDragFallbackInstalled';
+  const g = globalThis as unknown as Record<string, boolean>;
+  if (g[flag]) return;
+  g[flag] = true;
+
+  document.addEventListener(
+    'mousedown',
+    (e) => {
+      // 只处理鼠标左键
+      if (e.button !== 0) return;
+      const el = e.target as HTMLElement | null;
+      if (!el) return;
+      // 交互元素（按钮、标签页、输入框…）自己处理点击，不触发拖动
+      if (el.closest(INTERACTIVE)) return;
+      // 必须真的处在 drag 区域
+      if (appRegionOf(el) !== 'drag') return;
+      // 双击交给 onTitlebarDblClick 处理最大化，避免拖动与双击打架
+      if (e.detail > 1) return;
+      void win.startDrag?.();
+    },
+    true,
+  );
+}
+
+/* ---------------- 自绘窗口按钮（无原生 WCO 的壳） ---------------- */
+
+/**
+ * 该壳是否自带右上角原生窗口按钮（最小化/最大化/关闭）覆盖层。
+ *
+ * Electron 用 `titleBarOverlay` 提供（对应 `navigator.windowControlsOverlay`）；
+ * 其余四个壳是无边框窗口，系统不画按钮，必须由页面自己画。
+ */
+export function hasNativeWindowControls(): boolean {
+  if (!isDesktopShell) return false;
+  const wco = (navigator as Navigator & { windowControlsOverlay?: { visible?: boolean } })
+    .windowControlsOverlay;
+  return Boolean(wco?.visible);
+}
+
+/** 当前是否为「页面自绘窗口按钮」模式 */
+export function needsCustomWindowControls(): boolean {
+  return isDesktopShell && !hasNativeWindowControls() && Boolean(getWinBridge()?.minimize);
+}
+
+/** 窗口自绘按钮的宽度（3 个按钮 × 46px，与 Windows 原生按钮尺寸一致） */
+export const CUSTOM_WCONTROLS_W = 138;
+
+/** 自绘窗口按钮动作 */
+export async function winControl(action: 'minimize' | 'maximize' | 'close'): Promise<void> {
+  const win = getWinBridge();
+  if (!win) return;
+  if (action === 'minimize') await win.minimize?.();
+  else if (action === 'maximize') await win.toggleMaximize?.();
+  else await win.close?.();
+}
+
+/** 对外暴露最大化状态，供自绘按钮切换图标 */
+export function useWindowMaximizedState(): Readonly<Ref<boolean>> {
+  ensureMaximizeSubscription();
+  return maximized;
+}

@@ -26,7 +26,7 @@ use std::thread;
 use std::time::UNIX_EPOCH;
 
 const UPSTREAM: &str = "https://md.zhengl.vip";
-const APP_VERSION: &str = "2.0.0";
+const APP_VERSION: &str = "2.1.0";
 
 // ---------------------------------------------------------------- 路径解析
 
@@ -178,7 +178,15 @@ fn injection_script() -> String {
         openExternal: function (u) {{ return call('shell.openExternal', [u]); }},
         showItemInFolder: function (p) {{ return call('shell.showItemInFolder', [p]); }}
       }},
-      win: {{ isMaximized: noop, toggleMaximize: noop, minimize: noop, close: noop }},
+      // 2.1.0：窗口控制接上真实实现。2.0.0 时这四个全是 noop，
+      // 于是标题栏拖拽、双击最大化、以及最大化状态订阅全部静默失效。
+      win: {{
+        isMaximized: function () {{ return call('win.isMaximized', []); }},
+        toggleMaximize: function () {{ return call('win.toggleMaximize', []); }},
+        minimize: function () {{ return call('win.minimize', []); }},
+        close: function () {{ return call('win.close', []); }},
+        startDrag: function () {{ return call('win.startDrag', []); }}
+      }},
       app: {{
         version: function () {{ return Promise.resolve('{ver}'); }},
         onOpenFile: function (cb) {{ window.__neoMDOpenFile = cb; }}
@@ -393,7 +401,186 @@ fn bridge_call(method: &str, args: &[serde_json::Value]) -> String {
         // ---------------- app ----------------
         "app.version" => json_ok(serde_json::Value::String(APP_VERSION.to_string())),
 
+        // ---------------- win（2.1.0 新增）----------------
+        //
+        // 2.0.0 时这里全是 noop，导致页面里的 `.nm-drag` 拖拽区与
+        // `useDesktopWindow()` 调 `win.toggleMaximize()` 全部静默失效。
+        // 现在改为真正操作 Win32 窗口，并用 SetWindowLong 把窗口变成无边框，
+        // 让 Web 的 TabBar 成为唯一标题栏（和 Electron 版一致）。
+        "win.isMaximized" => json_ok(serde_json::Value::Bool(win_is_maximized())),
+        "win.toggleMaximize" => {
+            win_toggle_maximize();
+            json_ok(serde_json::Value::Null)
+        }
+        "win.minimize" => {
+            win_minimize();
+            json_ok(serde_json::Value::Null)
+        }
+        "win.close" => {
+            win_close();
+            json_ok(serde_json::Value::Null)
+        }
+        // 页面在顶部拖拽区按下时调用，交给系统做原生窗口拖动
+        "win.startDrag" => {
+            win_start_drag();
+            json_ok(serde_json::Value::Null)
+        }
+
         other => json_err(&format!("NOT_IMPLEMENTED:{other}")),
+    }
+}
+
+// ---------------------------------------------------------------- 窗口控制（Win32）
+
+/// 主窗口句柄。由 `main()` 在 setup 里填入，bridge 线程只读。
+static MAIN_HWND: std::sync::atomic::AtomicIsize = std::sync::atomic::AtomicIsize::new(0);
+
+fn set_main_hwnd(h: isize) {
+    MAIN_HWND.store(h, std::sync::atomic::Ordering::SeqCst);
+}
+
+fn main_hwnd() -> *mut std::ffi::c_void {
+    let h = MAIN_HWND.load(std::sync::atomic::Ordering::SeqCst);
+    h as *mut std::ffi::c_void
+}
+
+#[cfg(windows)]
+mod w32 {
+    #[link(name = "user32")]
+    extern "system" {
+        pub fn IsZoomed(h: *mut std::ffi::c_void) -> i32;
+        pub fn ShowWindow(h: *mut std::ffi::c_void, cmd: i32) -> i32;
+        pub fn PostMessageW(h: *mut std::ffi::c_void, msg: u32, w: usize, l: isize) -> i32;
+        pub fn IsWindow(h: *mut std::ffi::c_void) -> i32;
+        pub fn SetWindowLongPtrW(h: *mut std::ffi::c_void, idx: i32, val: isize) -> isize;
+        pub fn GetWindowLongPtrW(h: *mut std::ffi::c_void, idx: i32) -> isize;
+        pub fn SetWindowPos(
+            h: *mut std::ffi::c_void,
+            after: *mut std::ffi::c_void,
+            x: i32,
+            y: i32,
+            cx: i32,
+            cy: i32,
+            flags: u32,
+        ) -> i32;
+        pub fn SendMessageW(h: *mut std::ffi::c_void, msg: u32, w: usize, l: isize) -> isize;
+        pub fn ReleaseCapture() -> i32;
+    }
+
+    pub const SW_MINIMIZE: i32 = 6;
+    pub const SW_RESTORE: i32 = 9;
+    pub const SW_MAXIMIZE: i32 = 3;
+    pub const WM_CLOSE: u32 = 0x0010;
+    pub const WM_NCLBUTTONDOWN: u32 = 0x00A1;
+    pub const HTCAPTION: usize = 2;
+    pub const GWL_STYLE: i32 = -16;
+    pub const WS_CAPTION: isize = 0x00C0_0000;
+    pub const WS_THICKFRAME: isize = 0x0004_0000;
+    pub const SWP_FRAMECHANGED: u32 = 0x0020;
+    pub const SWP_NOMOVE: u32 = 0x0002;
+    pub const SWP_NOSIZE: u32 = 0x0001;
+    pub const SWP_NOZORDER: u32 = 0x0004;
+}
+
+/// 窗口是否最大化
+fn win_is_maximized() -> bool {
+    let h = main_hwnd();
+    if h.is_null() {
+        return false;
+    }
+    unsafe { w32::IsZoomed(h) != 0 }
+}
+
+/// 最大化 / 还原切换
+fn win_toggle_maximize() {
+    let h = main_hwnd();
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        if w32::IsWindow(h) == 0 {
+            return;
+        }
+        let cmd = if w32::IsZoomed(h) != 0 {
+            w32::SW_RESTORE
+        } else {
+            w32::SW_MAXIMIZE
+        };
+        w32::ShowWindow(h, cmd);
+    }
+}
+
+fn win_minimize() {
+    let h = main_hwnd();
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        if w32::IsWindow(h) != 0 {
+            w32::ShowWindow(h, w32::SW_MINIMIZE);
+        }
+    }
+}
+
+fn win_close() {
+    let h = main_hwnd();
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        if w32::IsWindow(h) != 0 {
+            w32::PostMessageW(h, w32::WM_CLOSE, 0, 0);
+        }
+    }
+}
+
+/// 去掉系统标题栏边框，让 Web 的 TabBar 成为唯一标题栏。
+///
+/// 保留 `WS_THICKFRAME`（窗口边缘拖拽改尺寸、贴边、Aero Snap），
+/// 只清掉 `WS_CAPTION`（标题栏本体 + 原生标题文字）。
+/// 这是「去掉一整行系统标题栏、但仍能拖边缩放」的标准做法。
+fn win_strip_caption() {
+    let h = main_hwnd();
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        if w32::IsWindow(h) == 0 {
+            return;
+        }
+        let style = w32::GetWindowLongPtrW(h, w32::GWL_STYLE);
+        let next = (style & !w32::WS_CAPTION) | w32::WS_THICKFRAME;
+        if next != style {
+            w32::SetWindowLongPtrW(h, w32::GWL_STYLE, next);
+            w32::SetWindowPos(
+                h,
+                std::ptr::null_mut(),
+                0,
+                0,
+                0,
+                0,
+                w32::SWP_FRAMECHANGED | w32::SWP_NOMOVE | w32::SWP_NOSIZE | w32::SWP_NOZORDER,
+            );
+        }
+    }
+}
+
+/// 让页面顶部拖拽区真正能拖动窗口。
+///
+/// WebView2 不会把 `app-region: drag` 翻译成 Win32 的拖动消息
+/// （那是 Electron 自己实现的行为），所以这里由页面主动调用：
+/// 命中拖拽区时发 `WM_NCLBUTTONDOWN(HTCAPTION)`，交给系统走原生拖动。
+fn win_start_drag() {
+    let h = main_hwnd();
+    if h.is_null() {
+        return;
+    }
+    unsafe {
+        if w32::IsWindow(h) == 0 {
+            return;
+        }
+        w32::ReleaseCapture();
+        w32::SendMessageW(h, w32::WM_NCLBUTTONDOWN, w32::HTCAPTION, 0);
     }
 }
 
@@ -642,9 +829,15 @@ fn main() {
         .setup(move |app| {
             use tauri::Manager;
             if let Some(win) = app.get_webview_window("main") {
+                // 记下窗口句柄供 bridge 的 win.* 使用（跨线程只读原子）
+                if let Ok(h) = win.hwnd() {
+                    set_main_hwnd(h.0 as isize);
+                }
                 let target = url.parse().expect("bad url");
                 let _ = win.navigate(target);
                 let _ = win.set_focus();
+                // 去掉系统标题栏，让 Web 的 TabBar 成为唯一标题栏（与 Electron 版一致）
+                win_strip_caption();
             }
             Ok(())
         })

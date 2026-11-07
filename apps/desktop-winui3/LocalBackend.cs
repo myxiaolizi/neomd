@@ -192,6 +192,7 @@ internal sealed class LocalBackend
                 "win.toggleMaximize" => WinToggleMaximize(),
                 "win.minimize" => WinMinimize(),
                 "win.close" => WinClose(),
+                "win.startDrag" => WinStartDrag(),
                 "secrets.encrypt" => SecretsEncrypt(Str(args, 0)),
                 "secrets.decrypt" => SecretsDecrypt(Str(args, 0)),
                 _ => throw new NotSupportedException("NOT_IMPLEMENTED"),
@@ -506,6 +507,27 @@ internal sealed class LocalBackend
         return true;
     }
 
+    /// <summary>
+    /// 由页面顶部拖拽区触发原生窗口拖动（2.1.0）。
+    ///
+    /// WebView2 不认 CSS 的 `-webkit-app-region: drag`（那是 Electron 自己的实现），
+    /// 所以页面会调 win.startDrag()，这里向系统发 WM_NCLBUTTONDOWN(HTCAPTION)
+    /// 让窗口管理器接管拖动。必须在 UI 线程执行。
+    /// </summary>
+    private bool WinStartDrag()
+    {
+        var h = WindowHost.Hwnd;
+        if (h == IntPtr.Zero || !Win32.IsWindow(h)) return false;
+        WindowHost.TryEnqueue(() =>
+        {
+            var hw = WindowHost.Hwnd;
+            if (hw == IntPtr.Zero || !Win32.IsWindow(hw)) return;
+            Win32.ReleaseCapture();
+            Win32.SendMessage(hw, Win32.WM_NCLBUTTONDOWN, Win32.HTCAPTION, IntPtr.Zero);
+        });
+        return true;
+    }
+
     private static string SecretsEncrypt(string plain) =>
         Convert.ToBase64String(ProtectedDataLocal.Protect(Encoding.UTF8.GetBytes(plain ?? "")));
 
@@ -549,7 +571,17 @@ internal sealed class LocalBackend
                 key.Equals("Keep-Alive", StringComparison.OrdinalIgnoreCase) ||
                 key.Equals("Transfer-Encoding", StringComparison.OrdinalIgnoreCase) ||
                 key.Equals("Proxy-Connection", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("Upgrade", StringComparison.OrdinalIgnoreCase))
+                key.Equals("Upgrade", StringComparison.OrdinalIgnoreCase) ||
+                /*
+                 * Content-Type 必须跳过（2.1.0 修复）。
+                 *
+                 * 上面构造 body 时已经用 `req.ContentType` 设过一次；
+                 * 这里若再走一遍，TryAddWithoutValidation 不会去重，
+                 * 结果上游收到 `application/json, application/json`，
+                 * Fastify 判定为不支持的类型 → 直接 415，
+                 * 表现为「登录失败」。四壳里只有这版会重复添加。
+                 */
+                key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
                 continue;
             foreach (var v in req.Headers.GetValues(key) ?? Array.Empty<string>())
                 if (!upstreamReq.Headers.TryAddWithoutValidation(key, v))
@@ -598,6 +630,32 @@ internal sealed class LocalBackend
 
         var ct = ContentTypeFor(rel);
         var bytes = File.ReadAllBytes(full);
+
+        /*
+         * 返回 index.html 时把 window.NeoMD 注入 <head>（2.1.0 修复）。
+         *
+         * 为什么必须在这里做：原先只靠 WebView2 的
+         * AddScriptToExecuteOnDocumentCreatedAsync 注入桥脚本，但那段脚本
+         * 在**每次导航**时都会重新执行、且与页面自身脚本存在竞态，
+         * 结果 window.NeoMD 有时为 undefined —— 页面就退化成「网页版」，
+         * 表现为：没有桌面能力、标题栏/窗口按钮失效、仓库同步不触发。
+         *
+         * Tauri 版一直是这么做的（返回 HTML 时注入），实测稳定。
+         * 这里对齐它的做法，形成双保险：
+         *   - 首帧前由 HTML 内联脚本提供 window.NeoMD；
+         *   - WebView2 的文档创建脚本作为兜底（已存在则不覆盖）。
+         */
+        if (rel.EndsWith(".html", StringComparison.OrdinalIgnoreCase))
+        {
+            var text = Encoding.UTF8.GetString(bytes);
+            var script = BridgeScript.Build();
+            var idx = text.IndexOf("<head>", StringComparison.OrdinalIgnoreCase);
+            text = idx >= 0
+                ? text.Insert(idx + "<head>".Length, "\n<script>\n" + script + "\n</script>")
+                : "<script>\n" + script + "\n</script>" + text;
+            bytes = Encoding.UTF8.GetBytes(text);
+        }
+
         ctx.Response.StatusCode = 200;
         ctx.Response.ContentType = ct;
         ctx.Response.ContentLength64 = bytes.LongLength;

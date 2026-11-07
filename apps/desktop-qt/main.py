@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import datetime
 import json
 import mimetypes
 import os
@@ -25,15 +26,20 @@ if getattr(sys, "frozen", False):
     if "--no-sandbox" not in _chromium_flags.split():
         os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = (_chromium_flags + " --no-sandbox").strip()
 
-from PySide6.QtCore import QObject, QUrl, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QUrl, Signal, Slot
 from PySide6.QtGui import QIcon
 from PySide6.QtWebEngineCore import QWebEnginePage, QWebEngineProfile, QWebEngineScript
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QApplication, QFileDialog, QMainWindow
 
 APP_NAME = "Neo MD"
-APP_VERSION = "2.0.0"
+APP_VERSION = "2.1.0"
 API_ORIGIN = "https://md.zhengl.vip"
+
+# 反代固定直连上游，显式忽略系统代理。
+# 本机 WinINET 的系统代理曾被指向一个已关闭的本地端口（127.0.0.1:10801），
+# 而 urllib 默认会读它，导致壳内反代连登录都发不出去。
+PROXYLESS_OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def bundle_root() -> Path:
@@ -97,6 +103,34 @@ def mtime_ms(path: Path) -> int:
     return int(path.stat().st_mtime * 1000)
 
 
+class WindowBus(QObject):
+    """
+    窗口控制指令总线（2.1.0）。
+
+    bridge 请求跑在 HTTP 线程上，而所有窗口操作**必须**在 Qt 主线程执行。
+    直接跨线程调 QWidget 会崩，所以这里用信号做线程安全的转投：
+    跨线程 emit 时 Qt 自动按 QueuedConnection 排到主线程事件循环里执行。
+
+    2.0.0 时 Qt 版根本没有 win.* 方法，页面里 `win.toggleMaximize()`、
+    `.nm-drag` 拖拽区、以及最大化状态全都静默失效 —— 用户看到的是
+    「标题栏能点但拖不动、双击不变大」。
+    """
+
+    minimizeReq = Signal()
+    toggleReq = Signal()
+    closeReq = Signal()
+    startDragReq = Signal()
+    isMaximizedReq = Signal()
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._maximized = False
+
+
+# 进程内单例。bridge_call 从这里发指令，MainWindow 负责连接与真正执行。
+WINDOW_BUS = WindowBus()
+
+
 def bridge_call(method: str, args: list[Any], dialogs: DialogBridge) -> Any:
     try:
         if method == "fs.readText":
@@ -146,6 +180,22 @@ def bridge_call(method: str, args: list[Any], dialogs: DialogBridge) -> Any:
             return str(vault)
         if method == "app.version":
             return APP_VERSION
+        # ---------------- win（2.1.0 新增）----------------
+        if method == "win.isMaximized":
+            WINDOW_BUS.isMaximizedReq.emit()
+            return WINDOW_BUS._maximized
+        if method == "win.toggleMaximize":
+            WINDOW_BUS.toggleReq.emit()
+            return None
+        if method == "win.minimize":
+            WINDOW_BUS.minimizeReq.emit()
+            return None
+        if method == "win.close":
+            WINDOW_BUS.closeReq.emit()
+            return None
+        if method == "win.startDrag":
+            WINDOW_BUS.startDragReq.emit()
+            return None
         raise NotImplementedError("NOT_IMPLEMENTED")
     except FileNotFoundError:
         if method == "fs.stat":
@@ -169,7 +219,7 @@ BRIDGE_SCRIPT = r"""
     return btoa(raw);
   };
   window.NeoMD = {
-    env: 'desktop', version: '2.0.0',
+    env: 'desktop', version: '__APP_VERSION__',
     bridge: {
       fs: {
         readText: p => call('fs.readText', [p]),
@@ -186,6 +236,13 @@ BRIDGE_SCRIPT = r"""
         saveFile: defaultName => call('dialog.saveFile', [defaultName])
       },
       paths: { documents: () => call('paths.documents', []), userData: () => call('paths.userData', []), vaultDefault: () => call('paths.vaultDefault', []) },
+      win: {
+        isMaximized: () => call('win.isMaximized', []),
+        toggleMaximize: () => call('win.toggleMaximize', []),
+        minimize: () => call('win.minimize', []),
+        close: () => call('win.close', []),
+        startDrag: () => call('win.startDrag', [])
+      },
       app: { version: () => call('app.version', []), onOpenFile: cb => { window.__neoMDOpenFile = cb; } }
     }
   };
@@ -210,7 +267,32 @@ class NeoMDHandler(SimpleHTTPRequestHandler):
         if self.path in {"/", "/index.html"}:
             self.serve_index()
             return
-        super().do_GET()
+
+        # ---------------- SPA 路由兜底（2.1.0 修复）----------------
+        #
+        # 前端用 history 模式路由，登录后地址会变成 `/app`。
+        # 2.0.0 时代码只把 `/` 和 `/index.html` 交给 serve_index()，
+        # 其余路径直接落到 SimpleHTTPRequestHandler —— 它在磁盘上找不到
+        # `/app` 这个文件，返回 **404 空白页**。
+        #
+        # 用户侧表现：
+        #   - 「打开后页面空白」（刷新 / 被系统恢复 URL 时）
+        #   - 「登录无法打开」（登录后地址变成 /app，再加载就 404）
+        #   - 页面里也没有 window.NeoMD（404 页面不含注入脚本），
+        #     于是所有原生能力一起失效。
+        #
+        # 正确做法（Tauri / WinUI3 / Flutter 三版一直是这么做的）：
+        # 路径能对应到磁盘文件就正常返回，否则一律回 index.html，
+        # 让前端路由自己处理。这样深链接、刷新、前进后退都正常。
+        local = (DIST_DIR / urllib.parse.unquote(self.path.split("?", 1)[0]).lstrip("/")).resolve()
+        try:
+            inside = str(local).startswith(str(DIST_DIR.resolve()))
+        except Exception:
+            inside = False
+        if inside and local.is_file():
+            super().do_GET()
+            return
+        self.serve_index()
 
     def do_POST(self) -> None:
         if self.path.startswith("/__bridge/"):
@@ -221,9 +303,63 @@ class NeoMDHandler(SimpleHTTPRequestHandler):
             return
         self.send_error(404)
 
+    # ----------------------------------------------------------------
+    # 把其余 REST 动词也交给反代（2.1.0 修复「登录成功但仓库不同步」）
+    #
+    # SimpleHTTPRequestHandler 只自带 do_GET / do_HEAD，
+    # 其余动词一律回 **501 Unsupported method**。
+    # 而前端同步引擎上传文档/清单用的是 PUT、删除用 DELETE、
+    # 局部更新用 PATCH —— 于是每一次同步都在第一次上传就失败：
+    #
+    #   同步失败：上传失败（HTTP 501）
+    #   → syncState 变 error，文档一篇都拉不下来
+    #   → 用户看到「登录成功但仓库还是空的」。
+    #
+    # 另外 Tauri / WinUI3 / Flutter 三个壳都是自己写的 HTTP 服务，
+    # 默认对所有方法放行，只有 Qt 版漏了这一层，才表现成「只有 Qt 不同步」。
+    # ----------------------------------------------------------------
+    def do_PUT(self) -> None:
+        self._proxy_or_404()
+
+    def do_DELETE(self) -> None:
+        self._proxy_or_404()
+
+    def do_PATCH(self) -> None:
+        self._proxy_or_404()
+
+    def do_HEAD(self) -> None:
+        # HEAD 走 GET 的路径判断，但不写响应体
+        if self.path.startswith("/api/"):
+            self.proxy_request()
+            return
+        if self.path in {"/", "/index.html"} or not (DIST_DIR / self.path.lstrip("/")).is_file():
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            return
+        super().do_HEAD()
+
+    def do_OPTIONS(self) -> None:
+        # 同源部署下浏览器一般不发预检；这里给一个通用响应，
+        # 便于诊断工具与外部联调。
+        self.send_response(204)
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Methods", "GET,POST,PUT,PATCH,DELETE,HEAD,OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "*")
+        self.end_headers()
+
+    def _proxy_or_404(self) -> None:
+        if self.path.startswith("/api/"):
+            self.proxy_request()
+            return
+        self.send_error(404)
+
     def serve_index(self) -> None:
         html = (DIST_DIR / "index.html").read_text(encoding="utf-8")
-        html = html.replace("<head>", "<head><script>" + BRIDGE_SCRIPT + "</script>", 1)
+        # 注入桥脚本时必须用替换过版本号的脚本，
+        # 否则页面里看到的 version 是占位符 __APP_VERSION__
+        script = BRIDGE_SCRIPT.replace("__APP_VERSION__", APP_VERSION)
+        html = html.replace("<head>", "<head><script>" + script + "</script>", 1)
         data = html.encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -236,7 +372,11 @@ class NeoMDHandler(SimpleHTTPRequestHandler):
             size = int(self.headers.get("Content-Length", "0"))
             args = json.loads(self.rfile.read(size).decode("utf-8"))
             method = urllib.parse.unquote(self.path.removeprefix("/__bridge/"))
-            value = bridge_call(method, args if isinstance(args, list) else [], self.dialogs)
+            # 桥参数既可能来自页面（数组），也可能来自诊断工具（对象）。
+            # 统一归一化成 list，避免对象请求被当成空参数或直接报错。
+            if isinstance(args, dict):
+                args = [args] if args else []
+            value = bridge_call(method, args, self.dialogs)
             self.send_json(200, {"ok": True, "value": value})
         except Exception as error:
             self.send_json(500, {"ok": False, "error": str(error) or error.__class__.__name__})
@@ -246,11 +386,53 @@ class NeoMDHandler(SimpleHTTPRequestHandler):
             body = None
             if self.command in {"POST", "PUT", "PATCH", "DELETE"}:
                 body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            # 除逐跳头（hop-by-hop）外，把客户端请求头**原样透传**给上游。
+            #
+            # 这里曾只转发 Content-Type，直接导致登录虽然返回 200，
+            # 但后续所有带 Authorization 的请求（/api/vaults、/api/storage/*）
+            # 全部被上游判成未登录而返回 401 —— 表现为「能登录但仓库不同步」。
+            # 鉴权头必须透传，否则登录形同虚设。
+            SKIP_REQUEST_HEADERS = {
+                "host",
+                "connection",
+                "keep-alive",
+                "proxy-authenticate",
+                "proxy-authorization",
+                "te",
+                "trailer",
+                "transfer-encoding",
+                "upgrade",
+                "content-length",  # 由 urllib 依据 body 自行计算
+            }
             headers = {"x-neomd-shell": "qt"}
-            if self.headers.get("Content-Type"):
-                headers["Content-Type"] = self.headers["Content-Type"]
+            for key, value in self.headers.items():
+                if key.lower() in SKIP_REQUEST_HEADERS:
+                    continue
+                headers[key] = value
+            # 反代自有标记优先级最高，避免被客户端伪造的同一头覆盖
+            headers["x-neomd-shell"] = "qt"
+            # ------------------------------------------------------------
+            # 强制上游**不要压缩**响应（2.1.0 修复「登录成功但仓库为空」）
+            #
+            # 原来把浏览器的 `Accept-Encoding: gzip` 原样透传给上游，
+            # 上游于是返回 gzip 压缩体；而下面写响应时又刻意跳过了
+            # `content-encoding` 头，结果浏览器收到的是
+            # 「没有任何编码标记的 gzip 字节」→ JSON.parse 直接失败。
+            #
+            # 用户侧表现正是：登录能成功（登录响应小，往往未压缩），
+            # 但 /api/vaults 这类大响应解析不出来 → 仓库列表 0 个 →
+            # 判定为「登录了但仓库不同步」。
+            #
+            # 这里显式要求 identity（不压缩），保证响应体是明文 JSON。
+            # 另三个壳都是在解码后转发，行为由此对齐。
+            # ------------------------------------------------------------
+            headers["Accept-Encoding"] = "identity"
+
             request = urllib.request.Request(API_ORIGIN + self.path, data=body, method=self.command, headers=headers)
-            with urllib.request.urlopen(request, timeout=30) as response:
+            # 显式禁用代理：本机 WinINET 系统代理曾被指向一个已关闭的本地端口，
+            # urllib 默认会读取它，导致上游请求直接失败（登录都过不去）。
+            # 反代目标固定为生产域名，直连更可靠。
+            with PROXYLESS_OPENER.open(request, timeout=30) as response:
                 payload = response.read()
                 self.send_response(response.status)
                 for key, value in response.headers.items():
@@ -282,6 +464,25 @@ class NeoMDServer:
 
     def start(self) -> None:
         self.thread.start()
+        # 写出 boot.json（2.1.0）。
+        #
+        # 其它三个壳都写这个文件，运维/诊断工具靠它找到本机服务端口，
+        # 而不必去 netstat 里按 PID 反查（打包版 PID 与子进程关系还更绕）。
+        # Qt 之前缺这一步，导致自动化验收只能猜端口，容易出现
+        # 「测到的是上一次残留进程」这类误判。
+        try:
+            (DATA_DIR / "boot.json").write_text(
+                json.dumps({
+                    "at": datetime.datetime.now().astimezone().isoformat(),
+                    "url": self.url,
+                    "env": "desktop",
+                    "version": APP_VERSION,
+                    "up": True,
+                }, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except Exception as error:
+            print(json.dumps({"event": "bootJsonError", "error": str(error)}), flush=True)
 
     def stop(self) -> None:
         self.server.shutdown(); self.server.server_close()
@@ -302,18 +503,71 @@ class MainWindow(QMainWindow):
         self.resize(1440, 940)
         icon = BUNDLE_ROOT / "icon-512.png"
         if icon.exists(): self.setWindowIcon(QIcon(str(icon)))
+
+        # ---------------- 标题栏合并（2.1.0）----------------
+        #
+        # 去掉系统标题栏，让 Web 前端自绘的 TabBar 成为唯一标题栏，
+        # 与 Electron 版的视觉一致（用户明确要求「标题栏与顶部标签栏合并」）。
+        # 保留系统边框能力：FramelessWindowHint 只隐藏标题栏，
+        # 窗口仍可移动/缩放（缩放由 Qt 原生边缘处理）。
+        self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
+        # 居中放置：无边框后系统不再自动居中
+        self._center_on_screen()
+
         self.view = QWebEngineView(self)
         self.view.setPage(LoggingPage(self.view))
         self.setCentralWidget(self.view)
         profile = QWebEngineProfile.defaultProfile()
         script = QWebEngineScript()
         script.setName("neomd-native-bridge")
-        script.setSourceCode(BRIDGE_SCRIPT)
+        script.setSourceCode(BRIDGE_SCRIPT.replace("__APP_VERSION__", APP_VERSION))
         script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
         script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
         profile.scripts().insert(script)
+
+        # 把窗口控制信号接到真正的窗口操作（HTTP 线程 → 主线程，线程安全）
+        WINDOW_BUS.minimizeReq.connect(self.showMinimized)
+        WINDOW_BUS.toggleReq.connect(self._toggle_maximize)
+        WINDOW_BUS.closeReq.connect(self.close)
+        WINDOW_BUS.startDragReq.connect(self._start_drag)
+        WINDOW_BUS.isMaximizedReq.connect(self._publish_maximized)
+
         self.view.loadFinished.connect(self._loaded)
         self.view.load(QUrl(server.url))
+
+    def _center_on_screen(self) -> None:
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            return
+        available = screen.availableGeometry()
+        width, height = 1440, 940
+        self.resize(width, height)
+        self.move(
+            available.x() + max(0, (available.width() - width) // 2),
+            available.y() + max(0, (available.height() - height) // 2),
+        )
+
+    def _toggle_maximize(self) -> None:
+        if self.isMaximized():
+            self.showNormal()
+        else:
+            self.showMaximized()
+        self._publish_maximized()
+
+    def _publish_maximized(self) -> None:
+        WINDOW_BUS._maximized = bool(self.isMaximized())
+
+    def _start_drag(self) -> None:
+        """
+        由页面顶部拖拽区触发原生窗口拖动。
+
+        浏览器控件不认 CSS 的 `-webkit-app-region: drag`，
+        所以页面会显式调 win.startDrag()，这里用 Qt 自带的系统移动
+        把拖动交给窗口管理器。
+        """
+        handle = self.windowHandle()
+        if handle is not None and hasattr(handle, "startSystemMove"):
+            handle.startSystemMove()
 
     @Slot(bool)
     def _loaded(self, ok: bool) -> None:

@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { NmIcon } from '@neomd/ui';
-import { measureControlsInset, onTitlebarDblClick } from '@/composables/useDesktopWindow';
+import {
+  measureControlsInset,
+  onTitlebarDblClick,
+  needsCustomWindowControls,
+  useWindowMaximizedState,
+  winControl,
+} from '@/composables/useDesktopWindow';
 
 export interface TabView {
   id: string;
@@ -37,6 +43,21 @@ const menu = ref<{ id: string; x: number; y: number } | null>(null);
 
 /** 右上角原生窗口按钮（最小化 / 最大化 / 关闭）占用的宽度，避免标签被压住 */
 const wcoInset = ref(measureControlsInset());
+/**
+ * 是否需要页面自绘窗口按钮。
+ *
+ * Electron 用 titleBarOverlay 由系统绘制，不需要；其余四个壳是无边框窗口，
+ * 系统不画按钮，必须由页面补上，否则用户没有最小化/最大化/关闭可用。
+ */
+const customControls = needsCustomWindowControls();
+
+/** 自绘最大化按钮要跟着真实窗口状态切换图标 */
+const maximized = useWindowMaximizedState();
+
+/** 自绘窗口按钮点击 */
+function doWinCtrl(action: 'minimize' | 'maximize' | 'close'): void {
+  void winControl(action);
+}
 
 function measureWcoInset(): void {
   wcoInset.value = measureControlsInset();
@@ -505,6 +526,39 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+
+      <!--
+        自绘窗口按钮（2.1.0）。
+        只有非 Electron 的四个壳需要：它们是无边框窗口，系统不再绘制
+        最小化/最大化/关闭。Electron 版由 titleBarOverlay 提供，这里不渲染。
+        尺寸与 Windows 原生按钮一致（46×32），保证用户手感不变。
+      -->
+      <div v-if="customControls" class="wctrl" @mousedown.stop @dblclick.stop>
+        <button class="wctrl__btn" title="最小化" aria-label="最小化" @click="doWinCtrl('minimize')">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M1 5h8" stroke="currentColor" stroke-width="1.1" />
+          </svg>
+        </button>
+        <button
+          class="wctrl__btn"
+          :title="maximized ? '向下还原' : '最大化'"
+          :aria-label="maximized ? '向下还原' : '最大化'"
+          @click="doWinCtrl('maximize')"
+        >
+          <svg v-if="!maximized" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <rect x="1.2" y="1.2" width="7.6" height="7.6" fill="none" stroke="currentColor" stroke-width="1.1" />
+          </svg>
+          <svg v-else width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <rect x="1" y="2.8" width="6.2" height="6.2" fill="none" stroke="currentColor" stroke-width="1.1" />
+            <path d="M2.8 2.8V1h6.2v6.2H7.2" fill="none" stroke="currentColor" stroke-width="1.1" />
+          </svg>
+        </button>
+        <button class="wctrl__btn wctrl__btn--close" title="关闭" aria-label="关闭" @click="doWinCtrl('close')">
+          <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+            <path d="M1.4 1.4l7.2 7.2M8.6 1.4L1.4 8.6" stroke="currentColor" stroke-width="1.1" />
+          </svg>
+        </button>
+      </div>
     </div>
 
     <Teleport to="body">
@@ -799,6 +853,41 @@ onBeforeUnmount(() => {
   height: 1px;
   background: var(--border);
   margin: 4px 2px;
+}
+
+/* ---------------- 自绘窗口按钮（非 Electron 壳，2.1.0） ---------------- */
+
+/*
+ * 尺寸刻意对齐 Windows 原生标题栏按钮：46×32。
+ * 这样从 Electron 版换到其它壳时，右上角的点击热区与视觉重心不变。
+ */
+.wctrl {
+  display: flex;
+  align-items: stretch;
+  flex: 0 0 auto;
+  margin-left: 4px;
+  /* 抵消 .titlebar 的 padding-top: 3px，让按钮贴住窗口上沿 */
+  margin-top: -3px;
+  height: 40px;
+}
+.wctrl__btn {
+  width: 46px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--fg-2);
+  border-radius: 0;
+  background: transparent;
+  flex: 0 0 auto;
+}
+.wctrl__btn:hover {
+  background: var(--bg-hover);
+  color: var(--fg);
+}
+/* 关闭按钮沿用 Windows 的红色悬停约定，降低误关代价 */
+.wctrl__btn--close:hover {
+  background: #c42b1c;
+  color: #fff;
 }
 
 .tabmenu {

@@ -79,4 +79,23 @@ app.use(createPinia());
 app.use(router);
 app.mount('#app');
 
+/*
+ * 标题栏拖拽回退（2.1.0）。
+ *
+ * Electron 会把 CSS 的 `-webkit-app-region: drag` 翻译成窗口拖动，
+ * 但另外四个桌面壳用的都是普通浏览器控件，不认识这个属性 ——
+ * 表现为「标题栏看得见、能点，就是按住拖不动窗口」。
+ * 这里给这些壳挂一个捕获阶段的 mousedown 监听，改走原生 `win.startDrag()`。
+ *
+ * 必须在 mount 之后安装：此时 document 已就绪，且不会拖慢首帧。
+ */
+void (async () => {
+  try {
+    const { installTitlebarDragFallback } = await import('./composables/useDesktopWindow');
+    installTitlebarDragFallback();
+  } catch {
+    /* 网页端 / 动态导入失败时静默跳过，不影响主流程 */
+  }
+})();
+
 export { router };

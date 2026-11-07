@@ -12,7 +12,7 @@ internal static class BridgeScript
 
     private const string Script = """
     (() => {
-      const VERSION = '2.0.0';
+      const VERSION = '2.1.0';
       function notImpl() { return Promise.reject(new Error('NOT_IMPLEMENTED')); }
 
       async function call(method, ...args) {
@@ -80,6 +80,9 @@ internal static class BridgeScript
         toggleMaximize: () => call('win.toggleMaximize'),
         minimize: () => call('win.minimize'),
         close: () => call('win.close'),
+        // 2.1.0：WebView2 不认 CSS 的 -webkit-app-region: drag，
+        // 页面在标题栏按下时改调它，由原生侧发起系统拖动。
+        startDrag: () => call('win.startDrag'),
       };
 
       const secrets = {

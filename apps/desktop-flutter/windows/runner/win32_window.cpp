@@ -134,8 +134,24 @@ bool Win32Window::Create(const std::wstring& title,
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
+  /*
+   * Titlebar merge (2.1.0).
+   *
+   * Previously WS_OVERLAPPEDWINDOW made the system draw a native title bar,
+   * so the OS title bar and the web tab bar became two separate rows.
+   * We drop WS_CAPTION (the title bar itself) but keep:
+   *   WS_THICKFRAME                    - resize borders, snap still work
+   *   WS_MAXIMIZEBOX / WS_MINIMIZEBOX  - system menu and taskbar behave the same
+   *   WS_SYSMENU                       - Alt+F4 and taskbar close still work
+   *
+   * After this the web TabBar is the only title bar. Window dragging is
+   * initiated by the page calling win.startDrag, which lands in
+   * WindowControl::startDrag and sends WM_NCLBUTTONDOWN/HTCAPTION.
+   */
+  const DWORD style = WS_OVERLAPPEDWINDOW & ~WS_CAPTION;
+
   HWND window = CreateWindow(
-      window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
+      window_class, title.c_str(), style,
       Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
       Scale(size.width, scale_factor), Scale(size.height, scale_factor),
       nullptr, nullptr, GetModuleHandle(nullptr), this);
@@ -143,6 +159,13 @@ bool Win32Window::Create(const std::wstring& title,
   if (!window) {
     return false;
   }
+
+  /*
+   * With the caption removed the client area moves up to the very top edge.
+   * Force the system to recompute the frame, otherwise a blank strip remains.
+   */
+  SetWindowPos(window, nullptr, 0, 0, 0, 0,
+               SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
 
   UpdateTheme(window);
 

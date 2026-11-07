@@ -37,6 +37,9 @@ dependencies:
   webview_windows: ^0.4.0
   shelf: ^1.4.3
   shelf_proxy: ^1.0.5
+  # 2.1.0：窗口控制（最小化/最大化/关闭/拖动）直接调 user32，
+  # 避免为几个 Win32 调用引入重量级窗口管理插件。
+  ffi: ^2.1.0
 
 dev_dependencies:
   flutter_test:

@@ -21,8 +21,41 @@ public sealed partial class ShellWindow : Window
         // 注册窗口句柄 + UI 调度队列，供 LocalBackend 的 dialog/win 桥使用
         RegisterHost();
 
+        // 标题栏合并（2.1.0）：把系统标题栏的绘制让给内容区，
+        // 由 Web 前端的 TabBar 充当唯一标题栏，与 Electron 版观感一致。
+        EnableTitleBarMerge();
+
         Closed += OnClosed;
         _ = InitializeAsync();
+    }
+
+    /// <summary>
+    /// 标题栏合并（2.1.0）。
+    ///
+    /// 用户明确要求「标题栏与编辑器的顶部标签栏合并」。WinUI 3 的官方入口是
+    /// `ExtendsContentIntoTitleBar = true`：内容延伸到标题栏区域，但**保留**
+    /// 右上角三个系统窗口按钮，以及贴边 / Aero Snap / 阴影。
+    ///
+    /// 关键：这里**不调用 SetTitleBar(...)** 去指定拖拽元素。
+    /// 原因是被设为 TitleBar 的元素会浮在 WebView 之上并吞掉鼠标事件，
+    /// 标签页与按钮就点不动了。改为：
+    ///   - 窗口内容铺满（ExtendsContentIntoTitleBar = true）；
+    ///   - 拖拽交给 Web 前端：`.nm-drag` 区域按下 → win.startDrag
+    ///     → WM_NCLBUTTONDOWN(HTCAPTION) → 系统拖动窗口。
+    /// 这样标题栏只剩一行（Web 的 TabBar），且交互完全正常。
+    ///
+    /// 必须在 RegisterHost() 之后调用：此时窗口句柄才可用。
+    /// </summary>
+    private void EnableTitleBarMerge()
+    {
+        try
+        {
+            ExtendsContentIntoTitleBar = true;
+        }
+        catch
+        {
+            /* 不支持时退回系统标题栏，功能不受影响 */
+        }
     }
 
     private void RegisterHost()

@@ -50,6 +50,15 @@ export interface NativeBridge {
     toggleMaximize(): Promise<boolean>;
     minimize(): Promise<void>;
     close(): Promise<void>;
+    /**
+     * 由页面顶部拖拽区调用，请原生侧执行一次窗口拖动。
+     *
+     * 为什么需要它：`-webkit-app-region: drag` **只有 Electron 认**。
+     * 另外四个壳（WebView2 / WebEngine / Flutter）都是普通浏览器控件，
+     * 会把该 CSS 当成未知属性忽略 —— 表现为「能点、但拖不动窗口」。
+     * 因此这些壳里改由这里显式发一个原生拖动请求。
+     */
+    startDrag?(): Promise<void>;
     onStateChange?(cb: (state: { maximized: boolean }) => void): void;
   };
   app?: {

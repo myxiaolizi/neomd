@@ -16,8 +16,8 @@ namespace NeoMD.WinUI3;
 
 public partial class App : Application
 {
-    /// <summary>应用版本，四个壳统一 2.0.0。</summary>
-    public const string AppVersion = "2.0.0";
+    /// <summary>应用版本，四个壳统一 2.1.0。</summary>
+    public const string AppVersion = "2.1.0";
 
     private Window? _window;
 

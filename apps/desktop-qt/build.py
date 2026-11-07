@@ -8,7 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 PROJECT = ROOT.parent.parent
 DIST_SOURCE = PROJECT / "apps" / "web" / "dist"
-RELEASE_ROOT = Path(r"C:\Data\BAC\neomd\releases\2.0.0\NeoMD-2.0.0-qt-x64")
+RELEASE_ROOT = Path(r"C:\Data\BAC\neomd\releases\2.1.0\NeoMD-2.1.0-qt-x64")
 BUILD_DIR = ROOT / "build"
 PYINSTALLER_DIST = BUILD_DIR / "pyinstaller-dist"
 

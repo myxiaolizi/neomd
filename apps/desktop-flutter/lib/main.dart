@@ -6,6 +6,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:webview_windows/webview_windows.dart';
 
+import 'window_control.dart';
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   runApp(const NeoMdFlutterApp());
@@ -43,7 +45,7 @@ const String _injectScript = r'''<script>
 
   window.NeoMD = {
     env: 'desktop',
-    version: '2.0.0',
+    version: '2.1.0',
     bridge: {
       fs: {
         readText: function (path) {
@@ -117,15 +119,18 @@ const String _injectScript = r'''<script>
         showItemInFolder: notImplemented
       },
       win: {
-        isMaximized: notImplemented,
-        toggleMaximize: notImplemented,
-        minimize: notImplemented,
-        close: notImplemented,
+        // 2.1.0：接上真实窗口控制。2.0.0 时这四个全是 NOT_IMPLEMENTED，
+        // 导致标题栏拖拽、双击最大化、最小化、关闭全部静默失效。
+        isMaximized: function () { return callBridge('win.isMaximized', {}); },
+        toggleMaximize: function () { return callBridge('win.toggleMaximize', {}); },
+        minimize: function () { return callBridge('win.minimize', {}); },
+        close: function () { return callBridge('win.close', {}); },
+        startDrag: function () { return callBridge('win.startDrag', {}); },
         onStateChange: function () {}
       },
       app: {
         version: function () {
-          return Promise.resolve('2.0.0');
+          return Promise.resolve('2.1.0');
         },
         onOpenFile: function (cb) {
           if (typeof cb === 'function') {
@@ -372,7 +377,26 @@ class LocalHostServer {
           result = vd;
           break;
         case 'app.version':
-          result = '2.0.0';
+          result = '2.1.0';
+          break;
+        case 'win.isMaximized':
+          result = windowControl().isMaximized();
+          break;
+        case 'win.toggleMaximize':
+          windowControl().toggleMaximize();
+          result = true;
+          break;
+        case 'win.minimize':
+          windowControl().minimize();
+          result = true;
+          break;
+        case 'win.close':
+          windowControl().close();
+          result = true;
+          break;
+        case 'win.startDrag':
+          windowControl().startDrag();
+          result = true;
           break;
         case 'metrics.report':
           _metrics.add(args);
@@ -416,6 +440,18 @@ class LocalHostServer {
       upReq.headers.set('host', 'md.zhengl.vip');
       upReq.headers.set('x-neomd-shell', 'flutter');
       upReq.headers.set('x-forwarded-host', req.headers.value('host') ?? '');
+      /*
+       * 强制上游不要压缩响应（2.1.0 修复「登录成功但仓库为空」）。
+       *
+       * 之前把浏览器的 accept-encoding: gzip 透传上去，上游回 gzip 体；
+       * 而下面回写响应时又跳过了 content-encoding 头（属于逐跳头），
+       * 于是浏览器拿到「无编码标记的 gzip 字节」→ JSON.parse 失败。
+       * /api/vaults 这种大响应必挂，登录（小响应）却能成功，
+       * 用户看到的就是「登录了但仓库不同步」。
+       *
+       * 要求 identity 后响应体是明文 JSON，与其它壳行为一致。
+       */
+      upReq.headers.set('accept-encoding', 'identity');
 
       final bodyBytes = await req.fold<List<int>>(<int>[], (prev, el) => prev..addAll(el));
       if (bodyBytes.isNotEmpty) {
