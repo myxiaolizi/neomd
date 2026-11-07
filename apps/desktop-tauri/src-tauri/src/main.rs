@@ -792,16 +792,48 @@ fn percent_decode(s: &str) -> String {
 }
 
 /// 起本地服务器，返回实际监听端口。
+///
+/// ## 为什么必须用「固定端口 + 小范围回退」而不是 `127.0.0.1:0`
+///
+/// 原实现绑 `127.0.0.1:0`，由系统随机分配端口。这带来一个**用户可见的严重问题**：
+/// 浏览器的 localStorage / IndexedDB 是按 **origin（协议+主机+端口）** 隔离的，
+/// 端口每次不同 ⇒ 每次启动都是全新 origin ⇒ **登录态、设置、界面偏好全部丢失**，
+/// 用户表现为「登录了但下次打开又要重新登录」「改过的设置没生效」。
+///
+/// 实测两个连续进程拿到 50681 与 64906，完全印证了这一点。
+///
+/// 因此改为：优先绑一个各壳专属的固定端口，保证 origin 稳定；
+/// 仅当该端口被占用（例如同时开了两份）才顺延，顺延只是临时降级，不影响主路径。
 fn start_server() -> u16 {
     let dist = Arc::new(web_dist());
     eprintln!("[neomd-tauri] web dist = {}", dist.display());
 
-    let server = tiny_http::Server::http("127.0.0.1:0").expect("bind 127.0.0.1:0 failed");
-    let port = server
-        .server_addr()
-        .to_ip()
-        .map(|a| a.port())
-        .expect("no port");
+    // 各壳用不同基端口，避免四版同时运行时互相抢
+    const BASE_PORT: u16 = 51337;
+    let mut bound = None;
+    for offset in 0..12u16 {
+        let candidate = BASE_PORT + offset;
+        match tiny_http::Server::http(format!("127.0.0.1:{candidate}")) {
+            Ok(s) => {
+                bound = Some((s, candidate));
+                break;
+            }
+            Err(_) => continue,
+        }
+    }
+    // 极端情况（12 个端口都被占）才退回随机端口，保证一定能启动
+    let (server, port) = bound.unwrap_or_else(|| {
+        let s = tiny_http::Server::http("127.0.0.1:0").expect("bind 127.0.0.1:0 failed");
+        let p = s.server_addr().to_ip().map(|a| a.port()).expect("no port");
+        (s, p)
+    });
+
+    // 写 boot.json 供自动化验收读取（与其它三壳保持一致）
+    let boot = serde_json::json!({ "url": format!("http://127.0.0.1:{port}/"), "port": port });
+    let _ = fs::write(
+        data_dir().join("boot.json"),
+        serde_json::to_string_pretty(&boot).unwrap_or_default(),
+    );
 
     thread::spawn(move || {
         for req in server.incoming_requests() {
@@ -817,6 +849,32 @@ fn start_server() -> u16 {
 // ---------------------------------------------------------------- main
 
 fn main() {
+    /*
+     * Keep the WebView2 user-data folder inside the portable directory.
+     *
+     * ## 2.1.0 fix
+     *
+     * By default WebView2 stores its profile under
+     * `%LOCALAPPDATA%\<identifier>\EBWebView`. Two problems with that for a
+     * "green"/portable build:
+     *
+     *  1. It writes outside the app folder, so the package is not actually
+     *     portable and uninstalling leaves junk behind.
+     *  2. Worse for this product, the login token and every setting live in
+     *     that profile. Users who move the folder to another machine (the whole
+     *     point of a portable build) arrive with no session at all.
+     *
+     * `WEBVIEW2_USER_DATA_FOLDER` is read by the WebView2 loader at creation
+     * time, so setting it here -- before `tauri::Builder` builds the webview --
+     * redirects the profile into `<exe>/data/webview2`.
+     */
+    let webview_data = data_dir().join("webview2");
+    let _ = fs::create_dir_all(&webview_data);
+    // Safe: called once at the very start of main, before any threads exist.
+    unsafe {
+        std::env::set_var("WEBVIEW2_USER_DATA_FOLDER", &webview_data);
+    }
+
     let port = start_server();
     let url = format!("http://127.0.0.1:{port}/");
     eprintln!("[neomd-tauri] serving {url}");

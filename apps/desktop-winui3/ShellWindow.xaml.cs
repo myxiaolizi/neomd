@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
@@ -116,7 +117,38 @@ public sealed partial class ShellWindow : Window
             _backend = new LocalBackend(root, "winui3");
             var baseUrl = _backend.Start();
 
-            await WebView.EnsureCoreWebView2Async();
+            /*
+             * Portable WebView2 profile (2.1.0 fix).
+             *
+             * The parameterless EnsureCoreWebView2Async() uses the default
+             * user-data folder under %LOCALAPPDATA%. A "green" (portable) build
+             * must not write outside its own directory, and more importantly it
+             * must be able to carry its login state between runs -- the cloud
+             * session lives in WebView2's cookie/localStorage store.
+             *
+             * Point the user-data folder at <exe>/data/webview2 so the profile
+             * travels with the folder and survives restarts.
+             */
+            var userDataFolder = Path.Combine(AppContext.BaseDirectory, "data", "webview2");
+            try
+            {
+                Directory.CreateDirectory(userDataFolder);
+            }
+            catch
+            {
+                // Fall back to the default folder when the directory is read-only.
+                userDataFolder = null;
+            }
+
+            if (!string.IsNullOrEmpty(userDataFolder))
+            {
+                var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+                await WebView.EnsureCoreWebView2Async(env);
+            }
+            else
+            {
+                await WebView.EnsureCoreWebView2Async();
+            }
 
             var settings = WebView.CoreWebView2.Settings;
             settings.AreDevToolsEnabled = true;

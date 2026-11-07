@@ -192,9 +192,54 @@ class LocalHostServer {
     await Directory(dataDir).create(recursive: true);
     distDir = _resolveDistDir(exeDir);
 
-    _server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    /*
+     * 固定端口（2.1.0 修复）。
+     *
+     * 原来绑端口 0 由系统随机分配，导致**每次启动 origin 都不同**。
+     * 而 localStorage 按 origin（协议+主机+端口）隔离，
+     * 于是登录态、设置、界面偏好每次启动全部丢失 ——
+     * 用户看到的就是「登录过但下次打开又要登录」「设置不生效」。
+     *
+     * 改为从壳专属基端口起顺延尝试，保证同机常规使用下 origin 稳定。
+     */
+    const basePort = 51338;
+    HttpServer? server;
+    Object? lastErr;
+    for (var offset = 0; offset < 12; offset++) {
+      try {
+        server = await HttpServer.bind(InternetAddress.loopbackIPv4, basePort + offset);
+        break;
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+    // 12 个端口全被占的极端情况：退回随机端口，保证仍能启动
+    server ??= await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    if (server == null) {
+      throw StateError('无法绑定本地端口：$lastErr');
+    }
+    _server = server;
     await File('$dataDir${Platform.pathSeparator}server-port.txt')
         .writeAsString('${_server!.port}', flush: true);
+    /*
+     * Also write data/boot.json so diagnostics and acceptance tooling can find
+     * the local endpoint the same way for every shell. Qt, Tauri and WinUI3 all
+     * publish boot.json; Flutter was the only one still exposing just a bare
+     * port, which forced read-only tooling to special-case it.
+     */
+    try {
+      final bootJson = {
+        'url': 'http://127.0.0.1:${_server!.port}/',
+        'port': _server!.port,
+        'env': 'desktop',
+        'version': '2.1.0',
+        'up': true,
+      };
+      await File('$dataDir${Platform.pathSeparator}boot.json')
+          .writeAsString(jsonEncode(bootJson), flush: true);
+    } catch (_) {
+      // Non-fatal: the app is fully functional without the diagnostic file.
+    }
     _server!.listen(_handleRequest, onError: (e) {});
     return _server!.port;
   }

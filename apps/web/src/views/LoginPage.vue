@@ -63,11 +63,11 @@ function backHome(): void {
     <div class="auth__bg" aria-hidden="true"></div>
 
     <header class="auth__nav">
-      <button class="auth__brand" @click="backHome">
+      <button class="auth__brand" type="button" @click="backHome">
         <span class="mark">N</span>
         <span>{{ APP_NAME }}</span>
       </button>
-      <button class="nm-btn nm-btn--ghost nm-btn--sm" @click="backHome">
+      <button class="nm-btn nm-btn--ghost nm-btn--sm" type="button" @click="backHome">
         <NmIcon name="chevronLeft" :size="14" />
         返回首页
       </button>
@@ -120,11 +120,11 @@ function backHome(): void {
         <div class="card__foot">
           <template v-if="mode === 'login'">
             还没有账号？
-            <button class="link" @click="mode = 'register'; localError = ''">立即注册</button>
+            <button class="link" type="button" @click="mode = 'register'; localError = ''">立即注册</button>
           </template>
           <template v-else>
             已有账号？
-            <button class="link" @click="mode = 'login'; localError = ''">返回登录</button>
+            <button class="link" type="button" @click="mode = 'login'; localError = ''">返回登录</button>
           </template>
         </div>
 
@@ -133,7 +133,7 @@ function backHome(): void {
 
       <p class="auth__tip">
         也可以不登录直接使用：
-        <button class="link" @click="router.push('/app')">进入本机编辑器</button>
+        <button class="link" type="button" @click="router.push('/app')">进入本机编辑器</button>
       </p>
     </main>
   </div>

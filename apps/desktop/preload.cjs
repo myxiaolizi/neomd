@@ -119,8 +119,27 @@ const bridge = {
   printToPdf: (html, title) => ipcRenderer.invoke('app:printToPdf', html, title),
 };
 
+/*
+ * 版本号来源（2.1.0 修复）。
+ *
+ * 原来读 `process.env.npm_package_version`，这个变量**只有通过 npm script
+ * 启动时**才存在。打包后的绿色版双击运行没有 npm 环境，
+ * 于是永远回退到硬编码的 '1.0.0' —— 用户在「关于」里看到的是错误版本。
+ *
+ * 改为：先用 `process.versions` 里的 Electron 注入值兜底链条——
+ * - 打包态：主进程通过 `additionalArguments` 传 `--neomd-version=2.1.0`
+ *   （见 main.cjs 的 webPreferences.additionalArguments）；
+ * - 开发态：退回 npm 变量；
+ * - 实在拿不到才用 '0.0.0'，避免伪装成某个具体版本。
+ */
+const versionFromArgv = (() => {
+  const hit = process.argv.find((a) => a.startsWith('--neomd-version='));
+  if (hit) return hit.slice('--neomd-version='.length);
+  return '';
+})();
+
 contextBridge.exposeInMainWorld('NeoMD', {
   env: 'desktop',
-  version: process.env.npm_package_version || '1.0.0',
+  version: versionFromArgv || process.env.npm_package_version || '0.0.0',
   bridge,
 });

@@ -65,8 +65,36 @@ class Cdp {
 
 killAll();
 await sleep(2000);
-// 完全重置数据目录，模拟真实首次安装
-fs.rmSync(path.join(DIR, 'data'), { recursive: true, force: true });
+/*
+ * Reset the per-user session data to simulate a real first install.
+ *
+ * Caution: `data/` is NOT purely session state. For Flutter it holds the
+ * application payload itself (app.so, icudtl.dat, fonts, shaders); wiping the
+ * whole folder leaves an exe that can no longer start at all. So delete the
+ * folder for shells where it is purely session state, and only remove the
+ * session subfolders for Flutter.
+ */
+const dataDir = path.join(DIR, 'data');
+const FLUTTER_ASSETS = new Set([
+  'app.so',
+  'icudtl.dat',
+  'fonts',
+  'packages',
+  'shaders',
+  'AssetManifest.bin',
+  'FontManifest.json',
+  'NativeAssetsManifest.json',
+  'NOTICES.Z',
+]);
+
+if (SHELL === 'flutter' && fs.existsSync(dataDir)) {
+  for (const entry of fs.readdirSync(dataDir)) {
+    if (FLUTTER_ASSETS.has(entry)) continue;
+    fs.rmSync(path.join(dataDir, entry), { recursive: true, force: true });
+  }
+} else {
+  fs.rmSync(dataDir, { recursive: true, force: true });
+}
 spawn(path.join(DIR, cfg.exe), cfg.args, { cwd: DIR, stdio: 'ignore' });
 let port = null;
 for (let i = 0; i < 45; i++) {

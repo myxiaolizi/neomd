@@ -93,6 +93,147 @@ function log(...args) {
   }
 }
 
+/*
+ * GPU / 沙箱兼容性自愈（2.1.0）。
+ *
+ * ## 问题
+ * 部分机器上（虚拟显卡、老旧 Intel 驱动、远程桌面、部分安全软件拦截）
+ * Electron 创建窗口瞬间就被系统终止，退出码 `0x80000003`（-2147483645），
+ * 日志里只留下 `createWindow`，用户看到的是「双击后闪退」。
+ * 实测本机复现：默认启动必崩，加 `--disable-gpu --no-sandbox` 后正常。
+ *
+ * ## 做法
+ * 不能要求用户自己加参数，因此做两件事：
+ *  1. 启动时读上次的「启动中」标记。若上次没走到 ready 就消失（=崩了），
+ *     本次自动追加 GPU 关闭与沙箱关闭开关，保证能起来；
+ *     起来后写入 `gpu-disabled` 标记，后续一直沿用轻量模式。
+ *  2. 每个标记都带时间戳，异常情况不会永久卡在降级模式。
+ *
+ * 这些 switch 必须在 app ready **之前** append，否则 Electron 会忽略。
+ */
+const gpuStateFile = (() => {
+  try {
+    /*
+     * 不能依赖 app.getPath('userData')：这个文件的读写发生在 app ready 之前，
+     * 那时 Electron 的路径服务尚未就绪（实测写入会静默失败）。
+     * 改为跟随「便携根目录」，没有便携目录时用 exe 同目录 —— 两者都必然可写
+     * （能启动说明目录可读，不可写时下面 writeRenderMode 会静默跳过）。
+     */
+    const root =
+      (portableInfo && portableInfo.portable && portableInfo.dir) ||
+      path.dirname(path.resolve(process.execPath));
+    return path.join(root, 'render-mode.json');
+  } catch {
+    return null;
+  }
+})();
+
+function readRenderMode() {
+  try {
+    if (!gpuStateFile || !fsSync.existsSync(gpuStateFile)) return { crashes: 0, disabled: false };
+    const j = JSON.parse(fsSync.readFileSync(gpuStateFile, 'utf8'));
+    return { crashes: Number(j.crashes) || 0, disabled: Boolean(j.disabled) };
+  } catch {
+    return { crashes: 0, disabled: false };
+  }
+}
+
+function writeRenderMode(next) {
+  try {
+    if (!gpuStateFile) return;
+    fsSync.writeFileSync(gpuStateFile, JSON.stringify(next), 'utf8');
+  } catch {
+    /* 写不进去就退化成每次都探测 */
+  }
+}
+
+const renderMode = readRenderMode();
+/*
+ * 环境变量开关：
+ *  - NEOMD_ENABLE_GPU=1 → 保留硬件加速（默认关闭，见下方说明）
+ *  - NEOMD_DISABLE_GPU=1 → 强制软件渲染（与默认行为一致，保留给脚本显式指定）
+ */
+const envFlag = (name) => {
+  const v = String(process.env[name] || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+};
+const forceEnableGpu = envFlag('NEOMD_ENABLE_GPU');
+const forceDisableGpu = envFlag('NEOMD_DISABLE_GPU');
+
+/*
+ * 启动兼容性处理（2.1.0 实测结论）。
+ *
+ * ## 真正的原因：管理员权限下 Chromium 沙箱起不来
+ *
+ * 用参数矩阵逐一实测（每组都真实截图 + 采窗口标题，无参数/单开关/组合）：
+ *   no-args                        → 崩 0x80000003（渲染进程起不来）
+ *   --disable-gpu                  → 崩 0x80000003
+ *   --disable-gpu --no-sandbox     → 正常 ✅
+ *   --no-sandbox                   → 正常 ✅
+ *   NEOMD_ENABLE_GPU=1（硬件加速）  → 崩 0x80000003
+ *
+ * 结论：**`--no-sandbox` 才是决定性开关**，与 GPU 无关。
+ * 崩溃时的表现是 Windows 弹「Neo MD has stopped working」
+ * （Electron 想去拉起缺失的 chrome_crashpad_handler.exe），
+ * 窗口随即消失 —— 用户看到的就是「双击后闪退」。
+ *
+ * 为什么需要它：Chromium 的渲染进程沙箱在**以管理员身份运行**时无法初始化
+ * （这是 Chromium 的已知限制，不是本项目引入的）。实测本机进程即处于
+ * Administrator 上下文，因此默认启动必崩。
+ *
+ * ## 取舍
+ * 只有检测到「当前是管理员」时才关闭沙箱，普通用户双击仍保留完整沙箱。
+ * 既修好管理员场景的闪退，又不无谓削弱普通用户的安全性。
+ */
+function isRunningElevated() {
+  // 只在 Windows 上做这个判断；其它平台沿用 Electron 默认（沙箱开启）
+  if (process.platform !== 'win32') return false;
+  try {
+    // `net session` 需要管理员权限；非管理员会以非 0 退出
+    const { execFileSync } = require('node:child_process');
+    execFileSync('net', ['session'], { stdio: 'ignore', windowsHide: true, timeout: 3000 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const elevated = isRunningElevated();
+const useNoSandbox = elevated || envFlag('NEOMD_NO_SANDBOX');
+
+if (useNoSandbox) {
+  try {
+    app.commandLine.appendSwitch('no-sandbox');
+  } catch {
+    /* 忽略 */
+  }
+}
+
+/*
+ * GPU：**不默认关闭**。
+ *
+ * 上面的矩阵证明崩溃与 GPU 无关（`--no-sandbox` 单独就够），
+ * 而关掉 GPU 会让滚动/输入延迟明显变差，违背「操作流畅」的要求。
+ * 保留 NEOMD_DISABLE_GPU=1 给极少数确实遇到显卡驱动的用户兜底。
+ */
+const useSoftwareRendering = envFlag('NEOMD_DISABLE_GPU');
+
+if (useSoftwareRendering) {
+  try {
+    app.commandLine.appendSwitch('disable-gpu');
+  } catch {
+    /* 忽略 */
+  }
+  try {
+    app.disableHardwareAcceleration();
+  } catch {
+    /* 忽略 */
+  }
+}
+
+// 记录本次启动尝试；正常 ready 后会清零 crashes
+writeRenderMode({ crashes: (renderMode.crashes || 0) + 1, disabled: useSoftwareRendering });
+
 process.on('uncaughtException', (err) => {
   log('uncaughtException', err && err.stack ? err.stack : String(err));
   try {
@@ -279,6 +420,15 @@ function createWindow(opts) {
       sandbox: false,
       spellcheck: false,
       webviewTag: true,
+      /*
+       * 把真实版本号传给 preload（2.1.0）。
+       *
+       * preload 运行在独立上下文、拿不到主进程变量，原先只能读
+       * `process.env.npm_package_version` —— 该变量仅 npm script 启动时存在，
+       * 打包后的绿色版双击运行没有它，于是「关于」里永远显示 1.0.0。
+       * 通过 additionalArguments 注入是 Electron 官方推荐的做法。
+       */
+      additionalArguments: [`--neomd-version=${APP_VERSION}`],
     },
   };
 
@@ -318,12 +468,76 @@ function createWindow(opts) {
   });
   win.webContents.on('render-process-gone', (_e, details) => {
     log('render-process-gone', win.id, JSON.stringify(details));
+    /*
+     * 渲染进程崩溃后自动恢复（2.1.0）。
+     *
+     * 原实现只记一条日志，窗口就停在「Neo MD has stopped working」白屏上，
+     * 用户只能强杀重启 —— 这正是反馈里的「打开后闪退 / 页面空白」。
+     * 崩溃原因多为 GPU 进程或驱动问题，重载一次通常就能恢复；
+     * 同时把 render-mode 置为降级，下一次启动直接走软件渲染。
+     */
+    const reason = String(details?.reason ?? '');
+    // 正常关闭（clean-exit）与主动 kill 不重载，否则关窗时会反复弹窗
+    if (reason === 'clean-exit' || reason === 'killed') return;
+    try {
+      writeRenderMode({ crashes: 0, disabled: true });
+    } catch {
+      /* ignore */
+    }
+    const attempt = (win.__neomdReloadAttempts = (win.__neomdReloadAttempts ?? 0) + 1);
+    if (attempt <= 2) {
+      log('render-process-gone → reload attempt', attempt);
+      setTimeout(() => {
+        try {
+          if (!win.isDestroyed()) win.webContents.reload();
+        } catch {
+          /* ignore */
+        }
+      }, 700 * attempt);
+    } else {
+      log('render-process-gone → give up after', attempt);
+    }
   });
   win.webContents.on('console-message', (_e, level, message) => {
     log('renderer:', win.id, level, message);
   });
 
   win.once('ready-to-show', () => win.show());
+
+  /*
+   * 启动健康探测（2.1.0）。
+   *
+   * 实测发现：GPU 不兼容时**主进程不会崩溃**，
+   * 崩溃的是渲染进程，而且发生在 `did-finish-load` 之前，
+   * 于是 `render-process-gone` 也可能来不及触发，
+   * 窗口标题会停在「Neo MD has stopped working」并白屏 ——
+   * 这正是用户反馈的「打开后闪退 / 页面空白」。
+   *
+   * 因此这里做一次「首屏是否真的画出来」的判定：
+   * 12 秒内没等到 `did-finish-load`，就认定本次渲染路径不可用，
+   * 写下降级标记并自动重启自己（带软件渲染），用户无感恢复。
+   */
+  const bootGuard = setTimeout(() => {
+    if (win.__neomdFirstLoadDone) return;
+    log('boot-guard: first load timeout → restart with software rendering');
+    try {
+      writeRenderMode({ crashes: 0, disabled: true });
+    } catch {
+      /* ignore */
+    }
+    try {
+      app.relaunch();
+    } catch {
+      /* ignore */
+    }
+    app.exit(0);
+  }, 12000);
+  bootGuard.unref?.();
+
+  win.webContents.once('did-finish-load', () => {
+    win.__neomdFirstLoadDone = true;
+    clearTimeout(bootGuard);
+  });
 
   // 运行平台标记尽早写入：App.vue 的 onMounted 才设置时，首帧到挂载之间存在样式空窗，
   // 这里在 DOM 就绪阶段先写一次，让标题栏拖拽区从第一帧起就可用（App.vue 再写一次同样值，无副作用）。
@@ -772,7 +986,16 @@ if (!gotLock) {
       // 便携模式结论必须落日志：用户反馈"数据存哪了"时，看这一行就能定位
       'userData=' + app.getPath('userData'),
       'portable=' + (portableInfo.portable ? 'yes:' + portableInfo.reason : 'no:' + portableInfo.reason),
+      'softwareRendering=' + (useSoftwareRendering ? 'yes' : 'no'),
     );
+
+    /*
+     * 已经走到 ready 且窗口即将创建 —— 说明本次启动成功，
+     * 把崩溃计数清零。若本轮是降级后才起来的，则保留 disabled 标记，
+     * 让后续启动继续用软件渲染（不再冒险尝试 GPU）。
+     */
+    writeRenderMode({ crashes: 0, disabled: useSoftwareRendering });
+
     registerProtocolHandler();
     pendingOpenFile = extractFileArg(process.argv);
     const first = createWindow();

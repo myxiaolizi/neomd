@@ -52,15 +52,52 @@ internal sealed class LocalBackend
 
     public string Start()
     {
-        // 随机空闲端口，只绑定回环地址（127.0.0.1）
-        using (var probe = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp))
+        /*
+         * 固定端口（2.1.0 fix）。
+         *
+         * Was: bind port 0 -> OS picks a random free port every launch.
+         * Problem: localStorage / IndexedDB are scoped by ORIGIN
+         * (scheme + host + PORT), so a new port means a brand new origin
+         * each run -> the login token and all settings are gone on restart.
+         * Users see it as "I logged in but it asks again next time".
+         *
+         * Now: try a shell-specific base port and a few successors so the
+         * origin stays stable; fall back to a random port only if all of
+         * them are taken (e.g. several instances side by side).
+         */
+        const int basePort = 51340;
+        var bound = false;
+        for (var offset = 0; offset < 12; offset++)
         {
-            probe.Bind(new IPEndPoint(IPAddress.Loopback, 0));
-            _port = ((IPEndPoint)probe.LocalEndPoint!).Port;
+            var candidate = basePort + offset;
+            try
+            {
+                _listener.Prefixes.Clear();
+                _listener.Prefixes.Add($"http://127.0.0.1:{candidate}/");
+                _listener.Start();
+                _port = candidate;
+                bound = true;
+                break;
+            }
+            catch (HttpListenerException)
+            {
+                // Port in use / not permitted: try the next one
+            }
+            catch (SocketException)
+            {
+            }
         }
 
-        _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
-        _listener.Start();
+        if (!bound)
+        {
+            using var probe = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+            probe.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+            _port = ((IPEndPoint)probe.LocalEndPoint!).Port;
+            _listener.Prefixes.Clear();
+            _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+            _listener.Start();
+        }
+
         _started = true;
         _loop = Task.Run(ListenLoop);
         return $"http://127.0.0.1:{_port}/";

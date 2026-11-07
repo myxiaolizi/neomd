@@ -50,15 +50,59 @@ function appRegionOf(el: Element): string {
 const maximized = ref(false);
 let maximizeSubscribed = false;
 
-/** 订阅一次窗口最大化状态，多个调用方共享同一份响应式状态 */
+/**
+ * 订阅一次窗口最大化状态，多个调用方共享同一份响应式状态。
+ *
+ * ## 为什么需要轮询兜底（2.1.0）
+ *
+ * 只有 Electron 与 Qt 的壳提供 `win.onStateChange` 主动推送。
+ * WinUI3 / Tauri / Flutter 的桥里**没有**这个事件，于是：
+ *   - 点「最大化」后窗口确实最大化了，
+ *   - 但按钮图标仍显示「最大化」（应收敛为「还原」），
+ *     用户会以为按钮没生效而反复点击。
+ *
+ * 桥里已有 `isMaximized()` 这个同步查询，因此这里加一条低频轮询：
+ * 只在窗口尺寸变化时（resize 事件）以及每 600ms 主动校准一次。
+ * 轮询成本极低（一次 JSON 往返），但彻底消除「状态不同步」的观感问题。
+ */
+let maximizePollTimer: ReturnType<typeof setInterval> | null = null;
+
 function ensureMaximizeSubscription(): void {
   if (maximizeSubscribed || !isDesktopShell) return;
   const win = getWinBridge();
   if (!win) return;
   maximizeSubscribed = true;
+
+  // 首选：壳能主动推送时直接用，零成本
   win.onStateChange?.((state) => {
     maximized.value = Boolean(state?.maximized);
   });
+
+  // 兜底：轮询查询（没有 onStateChange 的壳靠这条保持同步）
+  const sync = () => {
+    const w = getWinBridge();
+    if (!w?.isMaximized) return;
+    void Promise.resolve(w.isMaximized())
+      .then((v) => {
+        if (typeof v === 'boolean') maximized.value = v;
+      })
+      .catch(() => undefined);
+  };
+
+  if (!win.onStateChange) {
+    maximizePollTimer ??= setInterval(sync, 600);
+    // 用户缩放/最大化窗口时立刻校准一次，避免等到下一个轮询周期
+    globalThis.addEventListener?.('resize', sync, { passive: true });
+  }
+  sync();
+}
+
+/** 供测试/卸载时停止轮询，避免热更新后残留多个定时器 */
+export function stopMaximizePolling(): void {
+  if (maximizePollTimer) {
+    clearInterval(maximizePollTimer);
+    maximizePollTimer = null;
+  }
 }
 
 /**

@@ -29,10 +29,11 @@ const CHROME = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
 const CDP_PORT = 9455;
 
 const SHELLS = [
-  { name: 'tauri', dir: 'NeoMD-2.1.0-tauri-x64', exe: 'NeoMD.exe' },
-  { name: 'qt', dir: 'NeoMD-2.1.0-qt-x64', exe: 'NeoMD.exe' },
-  { name: 'winui3', dir: 'NeoMD-2.1.0-winui3-x64', exe: 'NeoMD.WinUI3.exe' },
-  { name: 'flutter', dir: 'NeoMD-2.1.0-flutter-x64', exe: 'neomd_flutter.exe' },
+  { name: 'electron', dir: 'NeoMD-2.1.0-electron-x64', exe: 'Neo MD.exe', args: [] },
+  { name: 'tauri', dir: 'NeoMD-2.1.0-tauri-x64', exe: 'NeoMD.exe', args: [] },
+  { name: 'qt', dir: 'NeoMD-2.1.0-qt-x64', exe: 'NeoMD.exe', args: ['--no-sandbox'] },
+  { name: 'winui3', dir: 'NeoMD-2.1.0-winui3-x64', exe: 'NeoMD.WinUI3.exe', args: [] },
+  { name: 'flutter', dir: 'NeoMD-2.1.0-flutter-x64', exe: 'neomd_flutter.exe', args: [] },
 ];
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -167,8 +168,20 @@ async function startShell(shell) {
   }
 
   const env = { ...process.env };
+  /*
+   * 必须清掉 ELECTRON_RUN_AS_NODE（2.1.0 排查结论）。
+   *
+   * 该变量会让 Electron 二进制以**纯 Node.js 模式**启动：
+   * 不创建任何窗口、不加载 app、立刻以 0 退出。
+   * 从带该变量的终端（很多 Node/Electron 工具链会设置它）启动
+   * 「Neo MD.exe」，用户看到的就是「双击后闪退」。
+   *
+   * 这是环境变量污染，不是程序缺陷；但启动子进程时必须隔离，
+   * 否则验收会误判成产品 bug。
+   */
   delete env.ELECTRON_RUN_AS_NODE;
-  const proc = spawn(exePath, [], { cwd: dir, env, stdio: 'ignore' });
+  // 各壳启动参数不同（Qt 冻结版必须 --no-sandbox），这里用壳定义里声明的 args
+  const proc = spawn(exePath, shell.args ?? [], { cwd: dir, env, stdio: 'ignore' });
 
   for (let i = 0; i < 40; i++) {
     await sleep(700);

@@ -428,7 +428,28 @@ class NeoMDHandler(SimpleHTTPRequestHandler):
             # ------------------------------------------------------------
             headers["Accept-Encoding"] = "identity"
 
-            request = urllib.request.Request(API_ORIGIN + self.path, data=body, method=self.command, headers=headers)
+            # ------------------------------------------------------------
+            # 阻止 urllib 凭空补 Content-Type（2.1.0 修复裸 DELETE 415）
+            #
+            # 实测直连上游同一个 URL：
+            #   不带 Content-Type                                -> 401（正常进入鉴权分支）
+            #   Content-Type: ""（空值）                         -> 415
+            #   Content-Type: application/x-www-form-urlencoded  -> 415
+            #
+            # 即上游 Fastify 只要**看到** Content-Type 就按它解析，空值也不算缺省。
+            # 而 CPython 的 AbstractHTTPHandler.do_request_ 在
+            # `request.data is not None` 且没有 Content-Type 时会自动补
+            # `application/x-www-form-urlencoded` —— 这正是桌面端「删除/同步
+            # 偶尔 415、网页端却正常」的根因。
+            #
+            # 正确修法：无请求体时把 data 传 None（而不是 b"")，
+            # urllib 就不会补这个头，请求与直连上游完全一致。
+            # ------------------------------------------------------------
+            request_data = body
+            if body is not None and len(body) == 0:
+                request_data = None
+
+            request = urllib.request.Request(API_ORIGIN + self.path, data=request_data, method=self.command, headers=headers)
             # 显式禁用代理：本机 WinINET 系统代理曾被指向一个已关闭的本地端口，
             # urllib 默认会读取它，导致上游请求直接失败（登录都过不去）。
             # 反代目标固定为生产域名，直连更可靠。
@@ -455,7 +476,28 @@ class NeoMDHandler(SimpleHTTPRequestHandler):
 class NeoMDServer:
     def __init__(self, dialogs: DialogBridge) -> None:
         handler = type("ConfiguredNeoMDHandler", (NeoMDHandler,), {"dialogs": dialogs})
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        # 固定端口（2.1.0 修复）。
+        #
+        # 原来绑 ("127.0.0.1", 0) 让系统随机分配端口，意味着**每次启动 origin 都变**。
+        # 浏览器 localStorage/IndexedDB 按 origin（协议+主机+端口）隔离，
+        # 端口一变，登录态与全部设置就都读不到了 —— 用户表现是
+        # 「登录过下次还要登录」「改了设置没生效」。
+        #
+        # 改为从 Qt 专属基端口起顺延尝试；只有极端情况（12 个端口全占）才退回随机，
+        # 保证既能稳定复用 origin，又不会因端口冲突起不来。
+        base_port = 51339
+        last_error: Exception | None = None
+        for offset in range(12):
+            try:
+                self.server = ThreadingHTTPServer(("127.0.0.1", base_port + offset), handler)
+                break
+            except OSError as error:
+                last_error = error
+        else:
+            try:
+                self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+            except OSError as error:
+                raise RuntimeError(f"无法绑定本地端口：{last_error or error}") from error
         self.thread = threading.Thread(target=self.server.serve_forever, name="neomd-http", daemon=True)
 
     @property
@@ -489,6 +531,16 @@ class NeoMDServer:
 
 
 class LoggingPage(QWebEnginePage):
+    """把页面 console 转发到 stdout，便于运维与自动化验收排错。
+
+    额外支持传入自定义 `QWebEngineProfile`（2.1.0）：
+    默认的 `QWebEnginePage(parent)` 会挂到内存 profile 上，
+    那样 localStorage 不会落盘，登录态无法跨重启保留。
+    """
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+
     def javaScriptConsoleMessage(self, level: Any, message: str, line_number: int, source_id: str) -> None:
         print(json.dumps({"event": "console", "level": int(level.value), "message": message, "line": line_number, "source": source_id}), flush=True)
         super().javaScriptConsoleMessage(level, message, line_number, source_id)
@@ -517,13 +569,47 @@ class MainWindow(QMainWindow):
         self.view = QWebEngineView(self)
         self.view.setPage(LoggingPage(self.view))
         self.setCentralWidget(self.view)
-        profile = QWebEngineProfile.defaultProfile()
+
+        # ---------------- 持久化 profile（2.1.0 关键修复）----------------
+        #
+        # 原来用 `QWebEngineProfile.defaultProfile()`，那是**内存 profile**：
+        # cookie、localStorage、IndexedDB 全部只存在于进程内，进程一退出就没了。
+        # 用户看到的就是最典型的抱怨——
+        #   「明明登录成功了，下次打开又要重新登录」
+        #   「改过的设置、字号、主题，重启后全变回去了」
+        # 而且因为每次都是干净状态，也就永远拿不到「上次的仓库」。
+        #
+        # 改为把 profile 的存储路径指到 exe 同级 data/ 下（绿色版语义：
+        # 不写注册表、不污染 %APPDATA%），并在析构时清理，
+        # 使登录态与设置在重启后仍然保留。
+        #
+        # 注意：QWebEngineProfile 必须比 QWebEnginePage 活得久，
+        # 因此挂在 self 上（而不是局部变量），否则页面会用到已销毁的 profile。
+        profile_dir = DATA_DIR / "webengine"
+        try:
+            profile_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        self._profile = QWebEngineProfile("neomd", self)
+        self._profile.setPersistentStoragePath(str(profile_dir / "storage"))
+        self._profile.setCachePath(str(profile_dir / "cache"))
+        # 允许 localStorage / cookie 持久化（默认值在不同 Qt 版本里不一致，显式声明更稳）
+        try:
+            self._profile.setPersistentCookiesPolicy(
+                QWebEngineProfile.PersistentCookiesPolicy.ForcePersistentCookies
+            )
+        except AttributeError:
+            # 老版本 Qt 没有该枚举时忽略，storage 路径已足够
+            pass
+
+        self.view.setPage(LoggingPage(self._profile, self.view))
+
         script = QWebEngineScript()
         script.setName("neomd-native-bridge")
         script.setSourceCode(BRIDGE_SCRIPT.replace("__APP_VERSION__", APP_VERSION))
         script.setInjectionPoint(QWebEngineScript.InjectionPoint.DocumentCreation)
         script.setWorldId(QWebEngineScript.ScriptWorldId.MainWorld)
-        profile.scripts().insert(script)
+        self._profile.scripts().insert(script)
 
         # 把窗口控制信号接到真正的窗口操作（HTTP 线程 → 主线程，线程安全）
         WINDOW_BUS.minimizeReq.connect(self.showMinimized)

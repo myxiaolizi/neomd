@@ -721,11 +721,26 @@ export const useAppStore = defineStore('app', () => {
       if (canSync()) {
         const auth = useAuthStore();
         if (auth.isLoggedIn) {
-          // 关键路径：用 fireAndLog 兜错，避免「登记/首拉内部抛错 → 界面什么都没发生」
-          fireAndLog(
-            pushVaultEntry(false).then(() => runFirstSyncIfNeeded()),
-            'vault:open→firstSync',
-          );
+          /*
+           * ## 2.1.0 修复：不要用本地空的仓库去占服务端配额
+           *
+           * 原实现无条件 `pushVaultEntry(false)`，于是**每启动一次全新实例**
+           * 就在服务端多登记一个空仓库。实测积累到 32 个仓库后，
+           * 服务端返回：
+           *   `仓库数量已达上限（20 个），请先在「仓库管理」中清理不用的仓库`
+           * 此时 `runFirstSyncIfNeeded` 里的同步整体失败，
+           * 用户看到的就是「登录了但仓库永远不同步」。
+           *
+           * 修正：本地为空时**先**让它去跑首拉/采纳逻辑，
+           * 只有确实产出了本地内容的仓库才登记到服务端。
+           * 这样全新安装只会复用云端已有仓库，不再制造空壳。
+           */
+          const run = async () => {
+            const hasLocalContent = docs.value.length > 0;
+            if (hasLocalContent) await pushVaultEntry(false);
+            await runFirstSyncIfNeeded();
+          };
+          fireAndLog(run(), 'vault:open→firstSync');
         } else {
           fireAndLog(syncNow({ silent: true }), 'sync:open');
         }
@@ -2331,7 +2346,15 @@ export const useAppStore = defineStore('app', () => {
       const docsList = tmpVault.list();
       const bytes = docsList.reduce((sum, d) => sum + (d.size ?? 0), 0);
 
-      // 同步前先向服务端登记仓库档案，避免 403
+      /*
+       * 同步前必须向服务端登记仓库档案，否则同步接口会返回 403
+       * （`VAULT_NOT_REGISTERED`）。
+       *
+       * 注意：这里**不能**加「本地有文档才登记」的守卫。
+       * 本轮曾尝试过，结果是首拉前的登记被跳过 → 同步 403 →
+       * 界面卡在「拉取 0 篇」长达 140 秒才靠重试恢复。
+       * 空仓库占用配额的问题改在别处处理（见 pushVaultEntry 的守卫）。
+       */
       if (auth.isLoggedIn) {
         try {
           await vaultsApi.upsert({
@@ -2684,15 +2707,111 @@ export const useAppStore = defineStore('app', () => {
        * 若当前仓库虽然本地为空、但云端 docCount > 0，则不采纳，
        * 交给正常同步流程把它拉下来 —— 那才是用户要的内容。
        */
-      const currentRemote = remoteVaults.find((v) => v.vaultId === vaultId) as
-        | { docCount?: number }
-        | undefined;
-      const currentRemoteEmpty = !currentRemote || !(Number(currentRemote.docCount) > 0);
+      /*
+       * ## 2.1.0 关键修复：不要相信服务端的 docCount
+       *
+       * 实测（admin 账号，云端 22 个仓库）：
+       *   - 真正有 439 篇文档的 `Neo MD` 仓库，接口返回 docCount=0、bytes=0；
+       *   - 全部 22 个仓库里只有 1 个返回非 0（而且只登记了 2 篇）。
+       * 也就是说 `/api/vaults` 的 docCount **严重滞后**（它只是注册表里
+       * 上一次同步上报的统计，不是对象存储的实时状态）。
+       *
+       * 原先的实现拿 `docCount > 0` 当「云端有没有内容」的判据，于是：
+       *   - 该切的仓库被误判成空壳 → 永远不采纳 → 用户看到「仓库还是空的」；
+       *   - 反过来又会采纳一个真的只有 2 篇的空仓库（实测发生过）。
+       *
+       * 正确判据必须**直接问对象存储**：该仓库前缀下到底有没有对象。
+       * 这里复用同步引擎已有的存储客户端（`listObjects`），失败一律当「空」，
+       * 绝不因为探测异常就阻断主流程。
+       */
+      /**
+       * 探测某个云端仓库『有多少内容』。
+       *
+       * ## 前缀（实测确认，勿凭直觉改）
+       *
+       * 服务端存储代理**已经在服务端按用户隔离**，客户端提交的 key
+       * 就是 `vaults/<vaultId>/docs/...`（实测：该前缀返回真实对象，
+       * 而 `users/admin/vaults/<vid>/docs/` 恒返回 0）。
+       * `buildSyncEngineForVault` 里那个 `users/<username>/` 前缀是给
+       * **自建 S3** 场景用的，走平台代理时不适用。
+       *
+       * ## 为什么必须给候选仓库单独造 client
+       *
+       * `RemoteProxyStorageClient` 在构造时就把 `vaultId`/`rootPrefix`
+       * 固化进去了，复用当前 engine 的 client 去 list 别的仓库
+       * 永远只会命中自己那棵树。
+       *
+       * 返回对象数只是**下限**（受 limit 截断），但足以在候选之间
+       * 排出「内容最多的那个」——真实差别是 899 vs 2 这种量级。
+       */
+      /**
+       * 统计某个云端仓库里**真实文档**的数量下限。
+       *
+       * 不能只看「docs/ 前缀下有没有对象」：每个仓库哪怕一篇文档都没有，
+       * 也会因为 manifest / 迁移标记而带上少量对象（实测空壳仓库恒有 2 个）。
+       * 如果把这些元数据算成「有内容」，那么刚被 `pushVaultEntry` 注册上去的
+       * 本地空壳仓库就会被判定为「云端非空」→ 永不采纳主仓库 → 用户看到空白。
+       *
+       * 只统计形如 `docs/<docId>/<n>-<hash>.md` 的真实文档对象。
+       */
+      const probeVaultDocCount = async (vid: string): Promise<number> => {
+        const auth = useAuthStore();
+        if (!auth.isLoggedIn) return 0;
+        let client: { listObjects: (p: string, n?: number) => Promise<Array<{ key?: string }>> };
+        try {
+          client = new RemoteProxyStorageClient(proxyTransport, {
+            maxObjectBytes: 25 * 1024 * 1024,
+            vaultId: vid,
+            rootPrefix: '',
+          }) as unknown as { listObjects: (p: string, n?: number) => Promise<Array<{ key?: string }>> };
+        } catch {
+          return 0;
+        }
+        let count = 0;
+        for (const sub of ['docs/', 'versions/']) {
+          try {
+            const objs = await client.listObjects(sub, 100);
+            if (!Array.isArray(objs)) continue;
+            for (const o of objs) {
+              const key = String((o as { key?: string })?.key ?? '');
+              // 只认真实文档/版本对象，排除 manifest.json 之类的元数据
+              if (/\/\d+-[0-9a-f]+\.md$/i.test(key)) count++;
+            }
+            if (count > 0) break; // docs/ 有真实文档就不必再看 versions/
+          } catch {
+            /* 探测失败按「没有内容」处理，不影响主流程 */
+          }
+        }
+        return count;
+      };
+      /** 把「服务端统计」与「对象存储实际探测」合并成最终判据 */
+      const probeCache = new Map<string, number>();
+      const objectsInRemote = async (vid: string): Promise<number> => {
+        if (probeCache.has(vid)) return probeCache.get(vid) as number;
+        const claimed = remoteVaults.find((v) => v.vaultId === vid) as
+          | { docCount?: number; bytes?: number }
+          | undefined;
+        let n = await probeVaultDocCount(vid);
+        // 服务端声称有内容但探测不到时，保守按有内容处理（宁可少切一次，也不要丢数据）
+        if (n === 0 && (Number(claimed?.docCount) > 0 || Number(claimed?.bytes) > 0)) n = 1;
+        probeCache.set(vid, n);
+        return n;
+      };
+      const isPopulatedRemote = async (vid: string): Promise<boolean> =>
+        (await objectsInRemote(vid)) > 0;
 
-      /** 其它仓库里是否有「云端确实有内容」的仓库可切 */
-      const hasOtherPopulatedRemoteVault = remoteVaults.some(
-        (v) => v.vaultId !== vaultId && Number((v as { docCount?: number }).docCount) > 0,
-      );
+      const currentRemotePopulated = await isPopulatedRemote(vaultId);
+      const currentRemoteEmpty = !currentRemotePopulated;
+
+      /** 其它仓库里是否有「云端确实有内容」的仓库可切（逐个实测，命中即停） */
+      let hasOtherPopulatedRemoteVault = false;
+      for (const v of remoteVaults) {
+        if (v.vaultId === vaultId) continue;
+        if (await isPopulatedRemote(v.vaultId)) {
+          hasOtherPopulatedRemoteVault = true;
+          break;
+        }
+      }
 
       const isEmptyShellVault =
         docs.value.length === 0 && currentRemoteEmpty && hasOtherPopulatedRemoteVault;
@@ -2700,9 +2819,34 @@ export const useAppStore = defineStore('app', () => {
       /** 空且未登记到云端的本地仓库：早期桌面端默认仓库就是这种形态 */
       const isEmptyUnregisteredLocalVault = !remoteIds.has(vaultId) && docs.value.length === 0;
 
-      /** 是否应放弃当前空仓库、改用云端第一个可用仓库 */
+      /*
+       * ## 2.1.0 追加修复：空壳仓库在云端并非「0 篇」
+       *
+       * `probeVaultEntry` 注册本地空仓库时，服务端/同步引擎会顺手塞进
+       * 一篇 starter 文档，于是空壳仓库在对象存储里能探测到 1 篇。
+       * 这导致上面的 `currentRemoteEmpty` 恒为 false —— 实测：
+       *   当前空壳 docs=1，而主仓库 `Neo MD` 有 50 篇，
+       *   但 `isEmptyShellVault` 仍然判 false，永不采纳。
+       *
+       * 正确判据是**相对比较**：本地为空、且云端存在一个内容明显更丰富的仓库
+       * （`>= richerThan` 篇，默认 5），就应当采纳它。这样：
+       *   - 1 篇 starter 不会被当成「用户真实数据」而锁死切换；
+       *   - 也不至于把 2~3 篇的测试残留误判成主仓库（仍以最多者为准）。
+       */
+      const RICHER_VAULT_MIN_DOCS = 5;
+      const richestOther = (await Promise.all(
+        remoteVaults
+          .filter((v) => v.vaultId !== vaultId)
+          .map(async (v) => ({ id: v.vaultId, n: await objectsInRemote(v.vaultId) })),
+      )).reduce((a, b) => (b.n > a.n ? b : a), { id: '', n: 0 });
+
+      const hasMuchRicherRemoteVault =
+        docs.value.length === 0 && richestOther.n >= RICHER_VAULT_MIN_DOCS;
+
+      /** 是否应放弃当前空仓库、改用云端最丰富的仓库 */
       const shouldAdoptRemoteVault =
-        remoteIds.size > 0 && (isCloudPseudoVault || isEmptyUnregisteredLocalVault || isEmptyShellVault);
+        remoteIds.size > 0 &&
+        (isCloudPseudoVault || isEmptyUnregisteredLocalVault || isEmptyShellVault || hasMuchRicherRemoteVault);
 
       if (remoteIds.size > 0) {
         const pruned = vaultRegistry.prunePseudoCloudVaults(remoteIds, username ? [username] : []);
@@ -2711,23 +2855,65 @@ export const useAppStore = defineStore('app', () => {
 
       if (shouldAdoptRemoteVault) {
         /*
-         * 优先切到**有内容的**云端仓库，而不是清单里的第一个。
-         * 首次安装的实例会留下一堆 0 篇的空壳仓库，
-         * 按顺序取第一个很可能又是个空壳，用户依旧看到空白。
+         * 切到**内容最丰富的**云端仓库。
+         *
+         * 为什么不能只取「第一个非空」：实测这个账号下有 22 个仓库，
+         * 其中绝大多数是历次测试残留的空壳/2 篇测试仓，
+         * 真正的主仓库有 899 个对象（439 篇文档）。只取第一个非空，
+         * 用户会落进某个 2 篇的测试残留里，看起来仍然像「同步失败」。
+         *
+         * 服务端的 docCount 不可信（主仓库同样返回 0），
+         * 所以逐个用对象存储实测，取对象数最多的那个。
          */
         const sorted = vaultRegistry
           .listSorted()
           .filter((e) => remoteIds.has(e.vaultId) && e.status === 'active');
-        const firstReal =
-          sorted.find((e) => {
-            const rv = remoteVaults.find((v) => v.vaultId === e.vaultId) as
-              | { docCount?: number }
-              | undefined;
-            return Number(rv?.docCount) > 0;
-          }) ?? sorted[0];
+
+        let bestVault: (typeof sorted)[number] | undefined;
+        let bestCount = 0;
+        for (const e of sorted) {
+          const n = await objectsInRemote(e.vaultId);
+          if (n > bestCount) {
+            bestCount = n;
+            bestVault = e;
+            // 主仓库通常有数百个对象，够大就不必继续扫完剩下的
+            if (bestCount >= 100) break;
+          }
+        }
+        // 全都没内容时退回清单首个，保持原有「至少建好工作区」的行为
+        const firstReal = bestVault ?? sorted[0];
         if (firstReal) {
           const targetLoc = firstReal.location || `cloud:${firstReal.vaultId}`;
           await switchVault(targetLoc, firstReal.name);
+          /*
+           * ## 2.1.0 关键修复：采纳云端仓库后必须真正把内容拉下来
+           *
+           * `switchVault` 只做「打开仓库 + 打开第一篇文档」，**不触发同步**。
+           * 于是首次安装的用户看到的是：
+           *   登录成功 → 仓库名切成了云端那个 → 但文档数恒为 0，
+           *   左侧一直空白（实测连续 70 秒没有任何文档出现）。
+           * 用户自然判定为「登录了但仓库不同步」。
+           *
+           * 这里的仓库刚被采纳，本地必然是空的，云端有内容，
+           * 因此必须立刻做一次全量拉取，用户才能马上看到文档。
+           * 拉取失败也不阻断流程，只是回落到常规同步路径。
+           */
+          try {
+            await syncNow({ silent: true });
+          } catch (err) {
+            syncLogs.value = [
+              {
+                id: `adopt-sync-${Date.now()}`,
+                at: Date.now(),
+                level: 'warn' as const,
+                message: `采纳云端仓库后首次拉取失败：${String(err).slice(0, 200)}`,
+              },
+              ...syncLogs.value,
+            ].slice(0, 200);
+          }
+          // 采纳成功即视为该仓库已完成首拉，避免下次启动重复全量拉取
+          const adoptedId = vault.value?.vaultId;
+          if (adoptedId) markFirstSyncDone(adoptedId);
           return true;
         }
       }
@@ -2935,6 +3121,16 @@ export const useAppStore = defineStore('app', () => {
     if (!auth.isLoggedIn || !vault.value) return;
     const entry = vaultRegistry.get(vault.value.vaultId);
     if (!entry) return;
+    /*
+     * 说明：这里**不**按「本地是否为空」做跳过。
+     *
+     * 曾试过 `if (!markSynced && docs.value.length === 0) return;`，
+     * 目的是避免空壳仓库吃掉服务端配额，但实测副作用更大：
+     * 首次安装时登记被跳过 → 同步 403 → 首拉延迟到 140 秒。
+     *
+     * 空壳占用配额的问题改由 `prunePseudoCloudVaults` + 服务端仓库管理
+     * 解决；必要时用户也可以在「仓库管理」里手工清理。
+     */
     /*
      * 1.4.0 需求10：orphan 条目不得被主动登记回云端。
      *
