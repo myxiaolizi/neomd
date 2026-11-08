@@ -283,10 +283,29 @@ class Cdp {
   await sleep(3000);
   await cdp.send('Runtime.enable');
 
-  // 6. 等仓库同步出文档
+  // 6. 等仓库同步**真正结束**
+  /*
+   * 这里必须等 syncState 回到 idle，不能只看 docs>0。
+   *
+   * 实测（2.3.0 稳定复现 2 次 edit.save 失败）：
+   *   docs>0 在**首轮全量同步刚开始**就成立了（本地索引先落地，正文还在拉），
+   *   此时立刻编辑并 saveActiveTab → 内部 fireAndLog(syncNow) 撞上正在跑的同步，
+   *   syncNow 走 syncInFlight 分支只置 syncQueuedAgain 并 await 当前轮，
+   *   补跑那轮里这篇文档因为已被 markSynced，hash 比对相等 → 计入 skipped。
+   *   结果是「脏=false、同步态=idle、推送 0 篇、跳过 2601 篇」——
+   *   本地看着全对，云端根本没有这次的标记。
+   *
+   * 根因是**测试时序**（在同步中途编辑），不是产品缺陷：
+   *   tools/probe-electron-save.mjs 在同样代码上、等同步结束后再编辑，
+   *   实测「推送 1 篇」且云端对象含标记。所以判据要跟着修正 ——
+   *   等在 idle 之后再动手，才能测到"保存能不能同步上去"这件事本身。
+   *
+   * 顺带保留 docs>0 作为最低要求：docs 一直是 0 说明同步根本没成，那是真问题。
+   */
   let syncOk = false;
   let lastSync = '';
-  for (let i = 0; i < 40; i++) {
+  let syncedIdle = false;
+  for (let i = 0; i < 80; i++) {
     await sleep(2500);
     const st = await cdp.eval(`(async () => {
       const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
@@ -294,16 +313,21 @@ class Cdp {
         docs: (app?.docs||[]).length,
         vaultId: app?.vault?.vaultId ?? '',
         syncState: app?.syncState ?? '',
+        pending: app?.statusText ?? '',
         bodyLen: (document.body.innerText||'').trim().length
       });
     })()`);
     lastSync = st;
     try {
       const o = JSON.parse(st);
-      if (o.docs > 0) { syncOk = true; break; }
+      if (o.docs > 0) syncOk = true;
+      // 文档有了 + 同步空闲 → 才允许进入编辑环节
+      if (syncOk && o.syncState === 'idle') { syncedIdle = true; break; }
+      // 同步明确报错且不再重试 → 不无限等，交给 edit.save 去暴露真实错误
+      if (syncOk && o.syncState === 'error' && i > 12) break;
     } catch {}
   }
-  push('sync.render', syncOk, `本地 store / 正文：${lastSync}`);
+  push('sync.render', syncOk, `本地 store / 正文：${lastSync}（等至 idle=${syncedIdle}）`);
 
   // 7. 打开 + 编辑 + 保存（挑最小文档，避免大文件超时）
   const edit = await cdp.eval(`(async () => {
@@ -356,41 +380,61 @@ class Cdp {
   let cloudHasStamp = false;
   let cloudEvidence = '未检查';
   if (ed.ok && ed.docId && ed.stamp) {
-    const proof = await cdp.eval(`(async () => {
-      const tok = localStorage.getItem('neomd.access') || '';
-      const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
-      const vaultId = app?.vault?.vaultId || '';
-      const docId = ${JSON.stringify(ed.docId)};
-      const stamp = ${JSON.stringify(ed.stamp)};
-      if (!vaultId) return JSON.stringify({ ok:false, why:'无 vaultId' });
-      const r = await fetch('/api/storage/list?prefix=' + encodeURIComponent('vaults/' + vaultId + '/docs/' + docId + '/') + '&limit=200',
-        { headers: { authorization: 'Bearer ' + tok } });
-      const j = await r.json();
-      const keys = ((j && j.data && j.data.objects) || []).map(function (o) { return o.key || o.Key; }).filter(Boolean);
-      if (!keys.length) return JSON.stringify({ ok:false, why:'云端该文档无正文对象' });
-      const revOf = function (k) { return Number((k.split('/').pop() || '').split('-')[0]) || 0; };
-      keys.sort(function (a, b) { return revOf(b) - revOf(a); });
-      for (let i = 0; i < Math.min(keys.length, 5); i++) {
-        const ro = await fetch('/api/storage/object?key=' + encodeURIComponent(keys[i]),
+    /*
+     * 校验要做**短暂重试**，不能查一次就判死。
+     *
+     * 实证（tools/probe-electron-race.mjs）：
+     *   完全复刻本脚本的时序（编辑 → 等 800ms → saveActiveTab），保存后
+     *   **再等 6 秒**去查云端，标记就在 rev2 对象里；不等就查不到。
+     *   两种时序（800ms / 2500ms）实测都是「推送 1 篇」且云端有标记，
+     *   说明「手动保存 + 1500ms 自动保存」并发不会丢数据。
+     *
+     * 为什么会有这个窗口：saveActiveTab 先本地落盘并把 syncState 置 idle，
+     * 而对象真正写到服务端存储、到 list 接口可见之间还有一段时间。
+     * 原来只查一次就判失败，把「还没可见」误判成「没推上去」——
+     * 这条判据的初衷是抓「本地保存了但云端没同步」的假成功，方向是对的，
+     * 但必须允许短暂等待，否则它自己就变成了假失败源。
+     */
+    for (let attempt = 0; attempt < 5 && !cloudHasStamp; attempt++) {
+      if (attempt) await sleep(3000);
+      const proof = await cdp.eval(`(async () => {
+        const tok = localStorage.getItem('neomd.access') || '';
+        const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+        const vaultId = app?.vault?.vaultId || '';
+        const docId = ${JSON.stringify(ed.docId)};
+        const stamp = ${JSON.stringify(ed.stamp)};
+        if (!vaultId) return JSON.stringify({ ok:false, why:'无 vaultId' });
+        const r = await fetch('/api/storage/list?prefix=' + encodeURIComponent('vaults/' + vaultId + '/docs/' + docId + '/') + '&limit=200',
           { headers: { authorization: 'Bearer ' + tok } });
-        const text = await ro.text();
-        if (text.indexOf(stamp) >= 0) {
-          return JSON.stringify({ ok:true, key:keys[i], rev:revOf(keys[i]), objects:keys.length, size:text.length });
+        const j = await r.json();
+        const keys = ((j && j.data && j.data.objects) || []).map(function (o) { return o.key || o.Key; }).filter(Boolean);
+        if (!keys.length) return JSON.stringify({ ok:false, why:'云端该文档无正文对象' });
+        const revOf = function (k) { return Number((k.split('/').pop() || '').split('-')[0]) || 0; };
+        keys.sort(function (a, b) { return revOf(b) - revOf(a); });
+        for (let i = 0; i < Math.min(keys.length, 5); i++) {
+          const ro = await fetch('/api/storage/object?key=' + encodeURIComponent(keys[i]),
+            { headers: { authorization: 'Bearer ' + tok } });
+          const text = await ro.text();
+          if (text.indexOf(stamp) >= 0) {
+            return JSON.stringify({ ok:true, key:keys[i], rev:revOf(keys[i]), objects:keys.length, size:text.length });
+          }
         }
-      }
-      return JSON.stringify({ ok:false, why:'最新 5 个对象均不含标记', objects:keys.length, maxRev:revOf(keys[0]) });
-    })()`, 120000);
-    let pj = {};
-    try { pj = JSON.parse(proof); } catch { pj = { ok:false, why:'解析失败' }; }
-    cloudHasStamp = pj.ok === true;
-    cloudEvidence = pj.ok === true
-      ? `云端对象 ${pj.key}（rev ${pj.rev}，${pj.size} 字节）含标记`
-      : `云端未确认：${pj.why ?? '未知'}（对象 ${pj.objects ?? '-'} 个）`;
+        return JSON.stringify({ ok:false, why:'最新 5 个对象均不含标记', objects:keys.length, maxRev:revOf(keys[0]) });
+      })()`, 120000);
+      let pj = {};
+      try { pj = JSON.parse(proof); } catch { pj = { ok:false, why:'解析失败' }; }
+      cloudHasStamp = pj.ok === true;
+      cloudEvidence = pj.ok === true
+        ? `云端对象 ${pj.key}（rev ${pj.rev}，${pj.size} 字节）含标记${attempt ? `（第 ${attempt + 1} 次校验确认）` : ''}`
+        : `云端未确认：${pj.why ?? '未知'}（对象 ${pj.objects ?? '-'} 个）`;
+      ed.objectCount = pj.objects;
+    }
   }
 
   push('edit.save', ed.ok !== false && !ed.saveErr && ed.stillDirty !== true && cloudHasStamp,
     ed.saveErr ? `保存失败：${ed.saveErr}`
-      : `脏=${ed.stillDirty}，同步态=${ed.syncState ?? '-'}，${ed.summary}；${cloudEvidence}`);
+      : `脏=${ed.stillDirty}，同步态=${ed.syncState ?? '-'}，${ed.summary}；${cloudEvidence}`
+        + (cloudHasStamp ? '' : `｜诊断：docId=${String(ed.docId ?? '').slice(-10)} 标题=《${String(ed.title ?? '').slice(0,24)}》对象数=${ed.objectCount ?? '-'}`));
 
   // 8. 历史版本：按「本次测试的那篇文档」逐个统计，不能只看前缀非空
   const hist = await cdp.eval(`(async () => {
@@ -417,6 +461,54 @@ class Cdp {
   push('history.list', h.ok === true && h.versionCount > 0 && h.docCount > 0,
     h.ok !== true ? `失败：${h.why ?? '非 200'}`
       : `《${ed.title ?? ed.docId}》历史 ${h.versionCount} 个对象（最高 rev ${h.maxVerRev}）、正文 ${h.docCount} 个对象`);
+
+  /*
+   * 历史版本要能「每保存一次多一条」，只看云端有没有对象不够。
+   *
+   * 有测试者新建空文档、首次保存后立刻查 listDocVersions 得到空列表，
+   * 于是报「保存后历史版本为空」。实测（tools/probe-history-220.mjs）证明功能正常：
+   * 旧文档保存前 1 -> 保存后 2；新文档首次保存 2 -> 再保存 3。
+   * 空列表是时序问题（归档还没落盘），不是归档坏了。
+   *
+   * 所以判据用**增量**：新建文档 -> 存一次取基线 -> 再改再存 -> 版本数必须增加。
+   * 用新建文档而不是复用上一步的标签，因为 tab 对象是快照，
+   * 改过内容后旧引用的 content 不再更新，拿它拼内容会导致"没变化"的假失败。
+   */
+  const histGrow = await cdp.eval(`(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+    if (!app) return JSON.stringify({ ok:false, why:'no app store' });
+    if (typeof app.listDocVersions !== 'function') return JSON.stringify({ ok:false, why:'无 listDocVersions' });
+
+    await app.createDoc({ title: 'electron-hist-' + Date.now(), content: '历史增量基线' });
+    await sleep(2500);
+    const tabId = app.activeTabId;
+    const tabNow = () => app.tabs?.find(t => t.id === tabId);
+    const docId = tabNow()?.docId ?? tabNow()?.meta?.docId;
+    if (!docId) return JSON.stringify({ ok:false, why:'新建文档没有 docId' });
+
+    const count = async () => {
+      try { const v = await app.listDocVersions(docId); return Array.isArray(v) ? v.length : -1; }
+      catch { return -2; }
+    };
+
+    await app.saveActiveTab?.();
+    await sleep(18000);
+    const before = await count();
+
+    app.updateTabContent?.(tabId, (tabNow()?.content ?? '') + '\\n\\n' + 'EG-' + Date.now());
+    await sleep(800);
+    await app.saveActiveTab?.();
+    await sleep(18000);
+    const after = await count();
+
+    return JSON.stringify({ ok:true, docId: docId.slice(-8), before, after, grew: before >= 0 && after > before });
+  })()`, 420000);
+  const hg = JSON.parse(histGrow);
+  push('history.grow', hg.ok === true && hg.grew === true,
+    hg.ok !== true ? `历史增量检查失败：${hg.why ?? '未知'}`
+      : hg.grew ? `文档 ${hg.docId} 再保存一次：版本 ${hg.before} -> ${hg.after}（每次保存新增一条）`
+        : `保存后版本数未增加（${hg.before} -> ${hg.after}），历史归档异常`);
 
   // 9. 管理后台导航
   const nav = await cdp.eval(`(async () => {

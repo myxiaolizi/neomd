@@ -26,7 +26,7 @@ use std::thread;
 use std::time::UNIX_EPOCH;
 
 const UPSTREAM: &str = "https://md.zhengl.vip";
-const APP_VERSION: &str = "2.2.0";
+const APP_VERSION: &str = "2.3.0";
 
 // ---------------------------------------------------------------- 路径解析
 

@@ -110,6 +110,22 @@ async function testShell(name, spec) {
   const exe = path.join(dir, spec.exe);
   if (!fs.existsSync(exe)) return { name, ok: false, why: 'exe missing after unzip' };
 
+  /*
+   * 绿色版语义：解压后用户数据必须落在**包目录内**，不能写系统 AppData。
+   *
+   * Electron 壳曾经踩过：zip 里放不进空目录，于是解压后没有 data/，
+   * portable.cjs 判定"未启用便携模式"，把 15.1 MB 用户数据（登录态、
+   * Local Storage、窗口位置）写进了 %APPDATA%\@neomd\desktop。
+   * 换机器或换个解压位置就等于"仓库和登录都丢了"，与绿色版定位冲突。
+   *
+   * 现在打包会在 Electron 包里落 portable.txt 标记。这里在启动**之前**
+   * 先记录 AppData 目录的状态，启动后再比一次，证明它没有被新建/写入。
+   */
+  const appDataDir = path.join(process.env.APPDATA ?? '', '@neomd', 'desktop');
+  const appDataBefore = fs.existsSync(appDataDir) ? fs.statSync(appDataDir).mtimeMs : 0;
+  const portableMarker = path.join(dir, 'portable.txt');
+  const hasPortableMarker = fs.existsSync(portableMarker);
+
   const env = { ...process.env };
   delete env.ELECTRON_RUN_AS_NODE;
   const proc = spawn(exe, spec.args, { cwd: dir, env, stdio: 'ignore' });
@@ -266,15 +282,32 @@ async function testShell(name, spec) {
   try { proc.kill(); } catch {}
   try { execFileSync('taskkill', ['/F', '/FI', `IMAGENAME eq ${spec.exe}`, '/T'], { stdio: 'ignore' }); } catch {}
   await sleep(2000);
+
+  /*
+   * 绿色版语义复核（拿实测数据说话，不看代码注释）：
+   *   - 包内是否真的生成了 data/（用户数据落在包内 = 绿色版行为）
+   *   - %APPDATA%\@neomd\desktop 的 mtime 是否被这次启动改动（= 污染了系统）
+   *
+   * Electron 是重点：它默认走 AppData，只有包里带 portable.txt 或
+   * 预置 data/ 才改成便携。其余四壳本来就写本地 data/，这里一并核实。
+   * 注意 Electron 无 boot.json，所以「包内出现 data/」对它尤其关键。
+   */
+  const dataAfter = fs.existsSync(path.join(dir, 'data'));
+  const appDataAfter = fs.existsSync(appDataDir) ? fs.statSync(appDataDir).mtimeMs : 0;
+  const appDataTouched = appDataAfter !== appDataBefore;
+  const portableOk = dataAfter && !appDataTouched;
+
   fs.rmSync(work, { recursive: true, force: true });
 
   let r;
   try { r = JSON.parse(render); } catch { r = {}; }
-  const ok = r.text > 50 && r.nodes >= 1 && r.inj && login === 'ok' && docs > 0;
+  const ok = r.text > 50 && r.nodes >= 1 && r.inj && login === 'ok' && docs > 0 && portableOk;
   return {
     name, ok,
     text: r.text, inj: r.inj, ver: r.ver, login, docs, vaultId,
-    why: ok ? '' : `text=${r.text} inj=${r.inj} login=${login} docs=${docs}`,
+    portable: { dataAfter, appDataTouched, hasPortableMarker },
+    why: ok ? '' : `text=${r.text} inj=${r.inj} login=${login} docs=${docs}` +
+      (portableOk ? '' : ` portable(data=${dataAfter} appdataTouched=${appDataTouched})`),
   };
 }
 

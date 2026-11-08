@@ -1,6 +1,6 @@
 {
   "productName": "Neo MD",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "identifier": "vip.zhengl.neomd.tauri",
   "build": {
     "frontendDist": "../webdist"
@@ -9,7 +9,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Neo MD 2.2.0",
+        "title": "Neo MD 2.3.0",
         "width": 1440,
         "height": 940,
         "minWidth": 880,

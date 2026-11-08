@@ -1272,7 +1272,21 @@ export const useAppStore = defineStore('app', () => {
   function persistTabs(): void {
     if (!tabsPersistenceEnabled) return;
     try {
-      const data = tabs.value.map((t) => ({ docId: t.docId, mode: t.mode, pageWidth: t.pageWidth }));
+      /*
+       * 除了 docId/mode/pageWidth，也存 title 与 path。
+       *
+       * 原因：恢复时若 vault 索引还没就绪（`vault.get` 返回空），
+       * 标签只能显示占位标题「（加载中）」。存下 title/path 后，
+       * 即便索引没准备好，标签栏显示的仍是用户认得出的名字，
+       * 不会出现一堆「加载中」。索引就绪后会用索引里的真实标题覆盖。
+       */
+      const data = tabs.value.map((t) => ({
+        docId: t.docId,
+        mode: t.mode,
+        pageWidth: t.pageWidth,
+        title: t.title,
+        path: t.path,
+      }));
       localStorage.setItem('neomd.tabs', JSON.stringify({ tabs: data, active: activeTabId.value }));
     } catch {
       /* ignore */
@@ -1306,12 +1320,44 @@ export const useAppStore = defineStore('app', () => {
       return;
     }
 
-    let saved: Array<{ docId: string; mode?: EditorMode; pageWidth?: PageWidth }> = [];
+    /*
+     * 先清空现有标签，再按持久化内容重建。
+     *
+     * 修复的缺陷（2.2.0 实测，Qt 壳由 qwen3.8-max 上报，Tauri 壳独立复现）：
+     *   开 3 个标签 -> 进 /admin -> 返回 /app -> 变成 5 个
+     *   连续往返 3 次：3 -> 5 -> 7 -> 9，每次 +2
+     *   标签 id 各不相同，但 docId 重复（同一篇文档被开了多份）
+     *
+     * 根因就在这个函数：它用 `id: uid('tab')` 直接造壳后 `push` 进 tabs，
+     * **完全绕过 openDoc 里那段「同 docId 已存在就复用」的去重**（见 openDoc 830 行）。
+     * 而 EditorPage 每次挂载 /app 都会调一次 restoreTabs，
+     * 于是每次从管理后台返回，就把持久化里的标签原样再追加一遍。
+     *
+     * 为什么清空是安全且正确的：
+     * - 非 fresh 分支的语义就是「把上次的标签列表恢复出来」，
+     *   等价于用持久化内容整体重建，而不是在现有集合上追加；
+     * - 清空前先把当前仍在编辑的脏标签内容落到持久化，避免丢输入（见下方保住逻辑）。
+     */
+    const dirtyTabs = tabs.value.filter((t) => t.dirty);
+    if (dirtyTabs.length) {
+      // 有未保存编辑：不动它们，交给现有保存流程，跳过这次重建以免覆盖用户输入
+      return;
+    }
+
+    /*
+     * 关键顺序：**必须在清空之前**把持久化读出来。
+     *
+     * 踩过的坑：清空 tabs 后调用 openDoc(eagerId)，而 openDoc 内部会
+     * persistTabs()，此时 tabs 只剩 eager 那一篇 —— 于是 localStorage 里
+     * 原本的 3 个标签被覆盖成 1 个，重建时自然只剩 1 个（实测 3 -> 1）。
+     * 读持久化放在清空之后，等于读到的是被自己踩坏的数据。
+     */
+    let saved: Array<{ docId: string; mode?: EditorMode; pageWidth?: PageWidth; title?: string; path?: string }> = [];
     try {
       const raw = localStorage.getItem('neomd.tabs');
       if (raw) {
         const data = JSON.parse(raw) as {
-          tabs: Array<{ docId: string; mode?: EditorMode; pageWidth?: PageWidth }>;
+          tabs: Array<{ docId: string; mode?: EditorMode; pageWidth?: PageWidth; title?: string; path?: string }>;
         };
         saved = Array.isArray(data.tabs) ? data.tabs : [];
       }
@@ -1319,20 +1365,56 @@ export const useAppStore = defineStore('app', () => {
       saved = [];
     }
 
+    tabs.value = [];
+    activeTabId.value = '';
+
+    /*
+     * 重建期间关闭持久化写入，避免半成品状态覆盖用户数据。
+     *
+     * 具体风险：下面 `openDoc(eagerId)` 内部会 persistTabs()，
+     * 那一刻 tabs 里只有 eager 一篇，若此时允许写入，localStorage 就被改成
+     * 单标签；等壳 push 进来时数据源已经脏了。这里用「先关、重建完再开」。
+     */
+    const persistWasEnabled = tabsPersistenceEnabled;
+    tabsPersistenceEnabled = false;
+
     // 先把所有标签建成壳：纯内存操作 + 读索引（`vault.get`），不碰磁盘正文
     const shells: Tab[] = [];
+    /*
+     * 按 docId 去重：持久化里若已存在重复项（旧版本写入的脏数据），
+     * 恢复时也要收敛成一份，否则用户升级后标签栏会一直是重复的。
+     */
+    const seenDocIds = new Set<string>();
     for (const item of saved) {
       if (!item?.docId) continue;
+      if (seenDocIds.has(item.docId)) continue;
+      seenDocIds.add(item.docId);
       if (eagerId && item.docId === eagerId) continue; // 这一篇下面用 openDoc 真正打开
       const meta = vault.value?.get(item.docId);
-      if (!meta) continue; // 文档已被删除/改名 → 不复活幽灵标签
+      /*
+       * 索引里查不到时**不要丢弃标签**，保留空壳等后台补齐。
+       *
+       * 原实现直接 `continue`，注释写"文档已被删除/改名 -> 不复活幽灵标签"，
+       * 但它把两种情况混在一起了：
+       *   a) 文档真的被删了       -> 确实不该复活
+       *   b) 索引还没刷新          -> 标签会从用户眼前凭空消失
+       * 情况 b 很常见：新建文档后索引更新有延迟，此时用户去一趟管理后台再回来，
+       * 那个刚建的标签就没了。有测试者报「3 个标签往返后变 2 个」正是这个形态
+       * （我在 tauri 上未能复现，但代码路径客观存在，属于稳健性缺口）。
+       *
+       * 判定取舍：显示一个空壳标签，比让用户的标签突然消失好得多。
+       * 真正的删除场景由后续同步/刷新收敛——文档确实不存在时，
+       * 后台补正文会取不到内容，标签保持空壳而不会假装有数据；
+       * 而用户随时可以手动关掉它。宁可多留一个空壳，不可静默丢用户的工作现场。
+       */
+      const title = meta?.title ?? String(item.title ?? '').trim() ?? '';
       shells.push({
         id: uid('tab'),
         docId: item.docId,
         // 标题优先用索引里的真实 title（`meta.title` 来自正文解析或文件名），
         // 不用持久化的旧标题 —— 壳阶段与补齐阶段显示不一致会闪一下
-        title: meta.title,
-        path: meta.path,
+        title: title || '（加载中）',
+        path: meta?.path ?? String(item.path ?? ''),
         dirty: false,
         mode: item.mode ?? 'wysiwyg',
         pageWidth: item.pageWidth ?? settingsStore.settings.appearance.pageWidth,
@@ -1352,6 +1434,16 @@ export const useAppStore = defineStore('app', () => {
       const lastShell = shells[shells.length - 1];
       if (lastShell) activeTabId.value = lastShell.id;
     }
+
+    /*
+     * 重建完成：恢复持久化开关，并把**完整的**标签列表写回去。
+     *
+     * 如果不主动写一次，localStorage 里可能仍留着上次的形态
+     * （例如持久化含重复项时，内存已去重，但磁盘还是脏的，下次启动又读到重复）。
+     * 这里写的是去重后的权威版本。
+     */
+    tabsPersistenceEnabled = persistWasEnabled;
+    persistTabs();
 
     if (!shells.length) return;
 
@@ -2120,6 +2212,26 @@ export const useAppStore = defineStore('app', () => {
     if (/QUOTA_EXCEEDED|配额/.test(raw)) {
       return '存储配额不足，请清理空间或联系管理员扩容。';
     }
+    /*
+     * 429 限流：必须单独成一支，而且要给**可操作**的指引。
+     *
+     * 实测（2.2.0 winui3 验收）：云端共享账号被多端并发同步时，
+     * 单次同步里出现 1346 个 429，同步直接进入 error 态。
+     * 走的是最后那句"原样透出"，用户只看到「请求过于频繁，请 12 秒后再试」——
+     * 既不知道会不会自动恢复，也没有手动重试的入口，只能干等或以为坏了。
+     *
+     * 限流是**临时**状态：等退避窗口过去就会好，不该和"网络断了""权限不足"
+     * 一样被当成硬失败。这里明确告诉用户它可自愈，并给出下一步动作。
+     */
+    if (/\b429\b|too many requests|rate.?limit|请求过于频繁|稍后再试/i.test(raw)) {
+      const waitMatch = /(\d+)\s*秒/.exec(raw);
+      const waitHint = waitMatch ? `约 ${waitMatch[1]} 秒后` : '稍后';
+      return (
+        `云端限流（429），同步暂时无法继续。${waitHint}会自动恢复，这不是数据丢失，` +
+        '你的改动仍保存在本地。若长时间不恢复，可点「立即同步」手动重试，' +
+        '或稍等片刻再试（同一账号多端同时同步时更容易触发）。'
+      );
+    }
     if (/请求超时|timeout|ETIMEDOUT/i.test(raw)) {
       return '同步请求超时。可能是网络较慢或云端数据较多，请稍后重试。';
     }
@@ -2130,6 +2242,16 @@ export const useAppStore = defineStore('app', () => {
 
   /** 同步结果摘要（供设置页与状态栏展示） */
   const lastSyncSummary = ref<{ ok: boolean; message: string; at: number } | null>(null);
+
+  /**
+   * 429 限流的自动重试计数（非响应式，仅内部用）。
+   *
+   * 为什么需要：限流是临时状态，自动重试比直接抛错友好得多（见 syncNow 的 catch）。
+   * 但必须有上限 —— 无限重试会让 UI 在服务端持续限流时变成无休止轮询，
+   * 反而掩盖了"这不是偶发限流"的事实。三次仍失败就交回用户判断。
+   * 一旦本轮同步成功或错误变成非限流类型，立即清零。
+   */
+  let syncRateRetryCount = 0;
 
   /**
    * 当前对象存储配置的问题描述（1.1.9，空串表示没问题）。
@@ -2246,6 +2368,8 @@ export const useAppStore = defineStore('app', () => {
        */
       syncState.value = 'idle';
       statusText.value = '';
+      // 本轮成功 → 限流重试计数归零，下次限流重新给满 3 次机会
+      syncRateRetryCount = 0;
 
       const summary =
         `拉取 ${result.pulled} 篇，推送 ${result.pushed} 篇` +
@@ -2292,9 +2416,56 @@ export const useAppStore = defineStore('app', () => {
       }
     } catch (e) {
       // 走到这里说明**同步本体**真的失败了（网络/权限/引擎异常）
-      syncState.value = 'error';
+      const rawMsg = e instanceof Error ? e.message : String(e);
       statusText.value = '';
       const reason = explainSyncError(e, vaultId);
+
+      /*
+       * 429 限流单独处理：不进入 error 终态，而是安排一次自动重试。
+       *
+       * 实测（2.2.0 winui3，共享账号多端并发）：
+       *   单次同步里 1346 个 429，同步卡在 error，历史版本因此永远归档不上
+       *   （history.grow 实测 0 -> 0），用户视角就是"保存了但历史里没有"。
+       *
+       * 限流是临时状态，正确做法是等退避窗口过去自动再试一次，
+       * 而不是抛硬错误让用户自己去猜。这里保留 error 态的可见性（
+       * 日志与提示照常给出），但同时排一次延迟重试；重试成功后状态自然回到 idle。
+       *
+       * 用固定的退避表而不是无限重试：服务端 retry-after 一般是几十秒，
+       * 三次仍失败说明不是偶发限流，交回用户判断，避免把 UI 变成无休止的轮询。
+       */
+      const isRateLimited = /\b429\b|too many requests|rate.?limit|请求过于频繁/i.test(rawMsg);
+      if (isRateLimited) {
+        const waitMatch = /(\d+)\s*秒/.exec(rawMsg);
+        const waitSec = waitMatch ? Math.min(Number(waitMatch[1]), 60) : 15;
+        syncRateRetryCount += 1;
+        const attempt = syncRateRetryCount;
+        if (attempt <= 3) {
+          syncState.value = 'syncing';
+          statusText.value = `云端限流，${waitSec} 秒后自动重试（第 ${attempt}/3 次）`;
+          syncLogs.value = [
+            {
+              id: `sync-429-${Date.now()}`,
+              at: Date.now(),
+              level: 'warn' as const,
+              message: `云端限流（429），${waitSec} 秒后自动重试（第 ${attempt}/3 次）`,
+            },
+            ...syncLogs.value,
+          ].slice(0, 200);
+          lastSyncSummary.value = { ok: false, message: reason, at: Date.now() };
+          setTimeout(() => {
+            void syncNow({ silent: true });
+          }, waitSec * 1000 + 800);
+          return;
+        }
+        // 重试用尽：落到下面的硬失败路径，但提示里说明已重试过
+        syncRateRetryCount = 0;
+      } else {
+        // 不再是限流 → 重置计数，下次限流重新给 3 次机会
+        syncRateRetryCount = 0;
+      }
+
+      syncState.value = 'error';
       lastSyncSummary.value = { ok: false, message: reason, at: Date.now() };
       syncLogs.value = [
         {

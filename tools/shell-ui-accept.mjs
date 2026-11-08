@@ -822,6 +822,80 @@ for (const shell of shells) {
     );
 
     /*
+     * 历史版本：不能只看云端有没有对象，还要证明**每保存一次就多一条**。
+     *
+     * 这一项来自一次被判成缺陷的反馈：有测试者新建空文档 -> 首次保存 ->
+     * 立刻 `listDocVersions` -> 空 —— 于是报「保存后历史版本为空」。
+     * 但那不是缺陷：
+     *   1. saveActiveTab 归档的是**保存前的旧内容**，新建的空文档首次保存时
+     *      "旧内容"本身是空的，这一条是否入档取决于实现，不能当唯一判据；
+     *   2. 版本列表还要等同步落盘，立刻查会读到空。
+     *
+     * 实测（tools/probe-history-220.mjs，Electron 2.2.0）：
+     *   旧文档   保存前 1 条 -> 保存后 2 条
+     *   新文档   首次保存 2 条 -> 再保存 3 条
+     * 也就是说功能正常，且"每次保存 +1"这个语义成立。
+     *
+     * 所以这里用**增量**做判据：再保存一次，版本数必须增加。
+     * 用增量而不是绝对值，既能抓住"归档坏了"，又不受首次保存边界情况影响。
+     */
+    const hv = await cdp.eval(`(async () => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+      if (!app) return JSON.stringify({ ok:false, why:'no app store' });
+      if (typeof app.listDocVersions !== 'function') {
+        return JSON.stringify({ ok:false, why:'store 上没有 listDocVersions 方法' });
+      }
+
+      /*
+       * 用**本轮新建的文档**做增量验证，不能复用上一步 edit.save 的标签：
+       * - 那个标签的 content 已经被写过，且保存状态已尘埃落定；
+       * - 更要紧的是 tab 对象是快照，updateTabContent 之后旧引用里的 content 不再更新，
+       *   拿它拼新内容会拼出一个"没变化"的文本，保存自然不产生新版本 —— 这是探针 bug，
+       *   不是产品缺陷（probe-history-220 每轮重新 find 就不会出现）。
+       */
+      const title = 'accept-hist-' + Date.now();
+      await app.createDoc({ title, content: '历史增量基线' });
+      await sleep(2500);
+
+      const tabId = app.activeTabId;
+      const tabNow = () => app.tabs?.find(t => t.id === tabId);
+      const docId = tabNow()?.docId ?? tabNow()?.meta?.docId;
+      if (!docId) return JSON.stringify({ ok:false, why:'新建文档没有 docId' });
+
+      const count = async () => {
+        try { const v = await app.listDocVersions(docId); return Array.isArray(v) ? v.length : -1; }
+        catch (e) { return -2; }
+      };
+
+      // 新建后先保存一次，作为基线（首次保存的归档语义有边界情况，不计入增量）
+      await app.saveActiveTab?.();
+      await sleep(18000);
+      const before = await count();
+
+      // 再写一次并保存，版本必须新增
+      const mark = 'HISTV-' + Date.now();
+      app.updateTabContent?.(tabId, (tabNow()?.content ?? '') + '\\n\\n' + mark);
+      await sleep(800);
+      await app.saveActiveTab?.();
+      await sleep(18000);
+      const after = await count();
+
+      return JSON.stringify({ ok:true, docId: docId.slice(-8), before, after,
+        grew: before >= 0 && after > before });
+    })()`, 420000);
+    const hvo = JSON.parse(hv);
+    rep.push(
+      'history.grow',
+      hvo.ok === true && hvo.grew === true,
+      hvo.ok !== true
+        ? `历史版本增量检查失败：${hvo.why ?? '未知'}`
+        : hvo.grew
+          ? `文档 ${hvo.docId} 再保存一次：版本 ${hvo.before} -> ${hvo.after}（每次保存新增一条）`
+          : `保存后版本数未增加（${hvo.before} -> ${hvo.after}），历史归档异常`,
+    );
+
+    /*
      * 快捷键：既要能触发，也不能互相抢占。
      *
      * 这一项来自真实事故：云端历史设置里 editor.code 与 app.toggleMode 都绑定
@@ -1014,6 +1088,423 @@ for (const shell of shells) {
       sao.ok !== true
         ? `设置生效检查失败：${sao.why ?? '未知'}`
         : `字号 ${sao.from} -> ${sao.to}：改草稿时不立即写库=${sao.draftOnly}，点「保存」后 store=${sao.storeAfter}、localStorage=${sao.lsAfter}${sao.committed ? '（已生效）' : '（**未生效**）'}`,
+    );
+
+    /*
+     * 窄窗不横向溢出：窗口能拖到的最小宽度是合法使用范围，在这个范围内出现
+     * 整页横向滚动、或状态栏右侧控件被裁到视口外，就是真实缺陷。
+     *
+     * 实测来源（2.2.0，Electron 与 Tauri 两个模型各自独立复现）：
+     *   800px 时 scrollWidth=810（溢出 10px）
+     *   760px 时 scrollWidth=810（溢出 50px），溢出元素是 .statusbar__right
+     * 根因：.statusbar__right 未设 flex-shrink，而 .statusbar__left 是 flex:1，
+     * 两者把状态栏撑到内容宽度 810px，导致整页横向溢出。
+     *
+     * 修复后本项要求 720/760/800 三个宽度都 overflow<=0 且无元素越界。
+     * 之所以连 720 一起测：那是 Electron 窗口允许拖到的最小宽度，
+     * 也就是用户真的会遇到的场景，不能只测宽松尺寸。
+     */
+    const narrow = await cdp.eval(`(async () => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const probe = () => {
+        const de = document.documentElement;
+        const vw = window.innerWidth;
+        let offscreen = 0;
+        for (const el of document.querySelectorAll('*')) {
+          const b = el.getBoundingClientRect();
+          if (b.width === 0 && b.height === 0) continue;
+          if (b.right > vw + 1) offscreen += 1;
+        }
+        return { vw, scrollWidth: de.scrollWidth, overflow: de.scrollWidth - vw, offscreen };
+      };
+      const rows = [];
+      // 直接用视口改写测宽（不依赖窗口管理器），测的是布局而不是窗口 API
+      for (const w of [500, 600, 700, 720, 800, 900]) {
+        window.resizeTo?.(w, window.outerHeight || 800);
+        await sleep(900);
+        const r = probe();
+        rows.push({ target: w, ...r });
+      }
+      const bad = rows.filter(r => r.overflow > 0 || r.offscreen > 0);
+      return JSON.stringify({ rows, bad });
+    })()`, 180000);
+    /*
+     * 用 CDP 的 Emulation 改视口比 window.resizeTo 可靠（后者在部分壳里被
+     * 窗口管理器忽略）。这里补一次真实的视口覆盖测量。
+     */
+    const narrowEmu = [];
+    /*
+     * 量之前先切回某个**文档标签**，
+     * 并且覆盖 flutter 报告过的极窄档（500px）。
+     *
+     * flutter 壳实测 700/500px 时 scrollWidth=794 > innerWidth，约 94px 溢出，
+     * 怀疑有内容区最小宽度。我在 tauri 上 720px 测得 overflow=0，
+     * 差距可能来自"低于某个宽度才触发"或"壳不同"。
+     * 所以放宽测量区间到 500/600/700，把这条也纳入判据：
+     * 只要整页出现横向滚动就算失败 —— 那意味着有内容永远看不到。
+     */
+    try {
+      await cdp.eval(`(async () => {
+        const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+        const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+        const docTab = (app?.tabs || []).find(t => t.docId || t.meta?.docId);
+        if (docTab) { app.activeTabId = docTab.id; await sleep(1500); }
+        return 'ok';
+      })()`, 60000);
+      await sleep(1200);
+    } catch {}
+    for (const w of [500, 600, 700, 720, 800, 900]) {
+      try {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: w, height: 800, deviceScaleFactor: 1, mobile: false });
+        /*
+         * 改视口后必须等布局真正稳定再量。
+         *
+         * 上一版只 sleep 900ms 就量，报了 14 个 offscreen —— 但独立探针
+         * (tools/probe-offscreen-720.mjs) 在同样 720px 下实测 count=0、
+         * zoomctl 右边界 634 < 720 完全可达。差别就在测量时机：
+         * flex 重排、字体度量、滚动条出现都会引起二次布局，量早了会读到
+         * 过渡态坐标。这里改为连续两次读数一致才采信，避免把抖动当缺陷。
+         */
+        let prev = null;
+        let stable = null;
+        for (let attempt = 0; attempt < 6; attempt++) {
+          await sleep(700);
+          const r = await cdp.eval(`(() => {
+            const de = document.documentElement;
+            const vw = window.innerWidth;
+            let offscreen = 0;
+            for (const el of document.querySelectorAll('*')) {
+              const b = el.getBoundingClientRect();
+              if (b.width === 0 && b.height === 0) continue;
+              if (b.right > vw + 1) offscreen += 1;
+            }
+            return JSON.stringify({ vw, scrollWidth: de.scrollWidth, overflow: de.scrollWidth - vw, offscreen });
+          })()`);
+          const cur = JSON.parse(r);
+          if (prev && prev.overflow === cur.overflow && prev.offscreen === cur.offscreen) { stable = cur; break; }
+          prev = cur;
+        }
+        narrowEmu.push({ target: w, ...(stable ?? prev) });
+      } catch (e) {
+        narrowEmu.push({ target: w, err: String(e).slice(0, 80) });
+      }
+    }
+    try { await cdp.send('Emulation.clearDeviceMetricsOverride'); } catch {}
+
+    /*
+     * 判据只看「整页是否横向滚动」，不看"有没有元素右边界超出视口"。
+     *
+     * 为什么：overflow=0 意味着 documentElement 没有横向滚动，
+     * 那些越界元素是被某个 overflow:hidden 祖先**有意裁剪**掉的
+     * （例如状态栏左侧文字在很窄时省略、装饰性渐变块伸出容器）。
+     * 这类裁剪恰恰是响应式布局的正确做法，把它们算缺陷会造成永远修不完的误报：
+     *   - flutter 壳 500px 实测 overflow=0 但 offscreen=2，被判 FAIL；
+     *   - 独立探针在同样 720px 下 count=0、zoomctl 完全可达（right=634<720）。
+     * 真正影响用户的是「出现横向滚动条 -> 有内容永远看不到」，
+     * 以及「可交互控件被裁到点不到」。所以判据改为：
+     *   overflow>0  => 失败（整页能横向滚）
+     *   offscreen>0 但 overflow=0 => 看是否存在"未被裁剪且可交互"的越界控件，
+     *                                有才算失败（用户点不到），否则通过。
+     */
+    const narrowBad = narrowEmu.filter((r) => r.err || r.overflow > 0);
+    let reachableProblems = 0;
+    if (!narrowBad.length) {
+      // 没有滚动但有越界元素时，再确认一次是否存在"点不到的控件"
+      try {
+        const worst = narrowEmu.reduce((a, b) => ((b.offscreen ?? 0) > (a.offscreen ?? 0) ? b : a), narrowEmu[0] ?? {});
+        if ((worst?.offscreen ?? 0) > 0) {
+          await cdp.send('Emulation.setDeviceMetricsOverride', { width: worst.target, height: 800, deviceScaleFactor: 1, mobile: false });
+          await sleep(1200);
+          const chk = await cdp.eval(`(() => {
+            const vw = window.innerWidth;
+            let bad = 0;
+            for (const el of document.querySelectorAll('*')) {
+              const b = el.getBoundingClientRect();
+              if (b.width === 0 && b.height === 0) continue;
+              if (b.right <= vw + 1) continue;
+              if (!el.closest('button, a, input, select, [role="button"], .st, [tabindex]')) continue;
+              // 被 overflow 祖先裁剪掉的不算"点不到"（用户本来也看不到它）
+              let clipped = false;
+              let p = el.parentElement;
+              while (p) {
+                const cs = getComputedStyle(p);
+                if (cs.overflow !== 'visible' || cs.overflowX !== 'visible') {
+                  if (p.getBoundingClientRect().right <= vw + 1) { clipped = true; break; }
+                }
+                p = p.parentElement;
+              }
+              if (!clipped) bad += 1;
+            }
+            return String(bad);
+          })()`);
+          reachableProblems = Number(chk) || 0;
+        }
+      } catch {}
+      try { await cdp.send('Emulation.clearDeviceMetricsOverride'); } catch {}
+    }
+    if (reachableProblems > 0) narrowBad.push({ target: '交互可达性', overflow: 0, offscreen: reachableProblems });
+    /*
+     * offscreen 数不为 0 时，把具体元素打出来再判定，不要只报一个数字。
+     *
+     * 独立探针在 720px 下实测 count=0，而这里稳定测量仍报 offscreen=14，
+     * 差异只能来自页面状态不同（探针先 openDoc，这里停在验收流程后的状态）。
+     * 靠猜没用，直接把越界元素、所属类名、是否被裁剪祖先裁掉、是否可交互
+     * 全部取出来，才能分清"被合理裁剪的装饰元素"和"用户点不到的真控件"。
+     */
+    let narrowDetail = null;
+    if (narrowBad.length > 0) {
+      try {
+        await cdp.send('Emulation.setDeviceMetricsOverride', { width: 720, height: 800, deviceScaleFactor: 1, mobile: false });
+        await sleep(1200);
+        /*
+         * 只在**编辑器视图**下量窄窗溢出。
+         *
+         * 前几轮这一步是在设置标签页还开着的时候跑的，越界元素是
+         * button.settings__nav-item（设置页自己的左侧导航），与"状态栏被裁切"
+         * 完全不是一件事；混合统计会把已修好的问题继续报成失败。
+         *
+         * 设置页是整页滚动容器，它内部的导航项越界不影响状态栏可达性 ——
+         * 那是另一个布局域。先把标签切回文档再测，测的才是本次要保证的东西。
+         */
+        await cdp.eval(`(async () => {
+          const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+          const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+          const docTab = (app?.tabs || []).find(t => t.docId || t.meta?.docId);
+          if (docTab) { app.activeTabId = docTab.id; await sleep(1500); }
+          return 'ok';
+        })()`, 60000);
+        await sleep(1200);
+        const d = await cdp.eval(`(() => {
+          const vw = window.innerWidth;
+          const rows = [];
+          for (const el of document.querySelectorAll('*')) {
+            const b = el.getBoundingClientRect();
+            if (b.width === 0 && b.height === 0) continue;
+            if (b.right <= vw + 1) continue;
+            let clippedBy = null;
+            let p = el.parentElement;
+            while (p) {
+              const cs = getComputedStyle(p);
+              if (cs.overflow !== 'visible' || cs.overflowX !== 'visible') {
+                const pb = p.getBoundingClientRect();
+                if (pb.right <= vw + 1) { clippedBy = String(p.className || p.tagName).slice(0, 36); break; }
+              }
+              p = p.parentElement;
+            }
+            rows.push({
+              tag: el.tagName.toLowerCase(),
+              cls: (typeof el.className === 'string' ? el.className : '').trim().slice(0, 46),
+              over: Math.round(b.right - vw),
+              clippedBy,
+              interactive: !!el.closest('button, a, input, select, [role="button"], .st, [tabindex]'),
+              text: (el.innerText || '').trim().slice(0, 18),
+            });
+          }
+          rows.sort((a,b) => b.over - a.over);
+          return JSON.stringify({
+            vw, count: rows.length,
+            reachableProblems: rows.filter(r => r.interactive && !r.clippedBy).length,
+            rows: rows.slice(0, 10),
+          });
+        })()`);
+        narrowDetail = JSON.parse(d);
+      } catch {}
+      try { await cdp.send('Emulation.clearDeviceMetricsOverride'); } catch {}
+    }
+    rep.push(
+      'layout.narrow',
+      narrowBad.length === 0,
+      narrowBad.length === 0
+        ? `500/600/700/720/800/900px 均无横向溢出（${narrowEmu.map((r) => r.target + 'px:' + r.overflow).join(' ')}）`
+        : `窄窗横向溢出：${narrowBad.map((r) => `${r.target}px overflow=${r.overflow ?? '?'} offscreen=${r.offscreen ?? '?'}`).join('; ')}` +
+          (narrowDetail
+            ? `；720px 越界 ${narrowDetail.count} 个，其中未被裁剪且可交互 ${narrowDetail.reachableProblems} 个` +
+              (narrowDetail.rows.length ? `，最高越界 ${narrowDetail.rows[0].tag}.${narrowDetail.rows[0].cls}(+${narrowDetail.rows[0].over}px)` : '')
+            : ''),
+    );
+    if (narrowDetail && narrowDetail.rows.length) {
+      // 附到报告里，便于人工判断这些元素是否真的影响可用性
+      rep.detail = rep.detail ?? {};
+      rep.detail.narrowOffscreen = narrowDetail;
+    }
+
+    /*
+     * 管理后台往返：标签页既不能重复增长，也不能丢失。
+     *
+     * 实测缺陷（2.2.0，Qt 壳由 qwen3.8-max 上报，Tauri 壳独立复现并已修复）：
+     *   开 3 个标签 -> 进 /admin -> 返回 /app -> 5 个 -> 7 个 -> 9 个
+     *   标签 id 不同但 docId 重复，即同一篇文档被反复开成多个标签。
+     * 根因在 restoreTabs：它用 uid('tab') 直接造壳后 push，绕过了 openDoc 的
+     * 「同 docId 复用」去重，而每次挂载 /app 都会调一次 restoreTabs。
+     *
+     * 修复时必须同时守住两侧，所以这里**两个方向都断言**：
+     *   - 不能增长（重复开标签）
+     *   - 不能变少（清空后没正确重建 -> 用户标签"消失"）
+     * 只测"不增长"会漏掉后一种：第一版修复就踩了坑，重复没了但 3 个标签
+     * 被覆盖成 1 个，从"多出来"变成"全丢了"。
+     */
+    const tabsRT = await cdp.eval(`(async () => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+      if (!app) return JSON.stringify({ ok:false, why:'no app store' });
+      for (let i = 0; i < 20 && (app.docs || []).length === 0; i++) await sleep(2000);
+
+      const snap = () => {
+        const tabs = app.tabs || [];
+        const docIds = tabs.map(t => t.docId ?? t.meta?.docId).filter(Boolean);
+        const dupeDocIds = docIds.filter((d, i) => docIds.indexOf(d) !== i);
+        /*
+         * 身份用 docId 判定，**不能用 tab.id**。
+         *
+         * restoreTabs 重建标签时用 uid('tab') 生成新 id（id 是会话内标识，
+         * 跨重建本来就会变）。第一版按 id 比对，于是 7 个标签被误报成"全丢了"。
+         * 用户视角的"同一个标签"是同一篇文档，所以这里按 docId 对齐；
+         * 设置标签没有 docId，单独用 isSettings 标记。
+         */
+        return { count: tabs.length, dupeDocIds,
+          tabs: tabs.map(t => {
+            const rawDocId = String(t.docId ?? t.meta?.docId ?? '');
+            return {
+              docId: rawDocId.slice(-10),
+              title: String(t.title ?? '').slice(0, 18),
+              /*
+               * 设置面板的识别：标题是「设置」，或 docId 以 settings 开头。
+               * 必须用**未截断**的 rawDocId 判断 —— 截断后 settings__ 这类前缀
+               * 会变形，前缀匹配就失手了（第一版栽在这）。
+               */
+              isSettings: String(t.title ?? '') === '设置' || /^settings/i.test(rawDocId),
+            };
+          }),
+        };
+      };
+
+      const aos = (app.docs || []);
+      /*
+       * 造 3 个**互不相同**的文档标签。
+       *
+       * 不能直接 slice(0,3) 后逐个 openDoc：验收前面的步骤已经开过某些文档，
+       * openDoc 对同 docId 会复用已有标签（那是正确行为），于是实际新增可能
+       * 少于 3 个。第一版就因此把基线算成 4、往返后 3，误报"标签丢失"。
+       * 这里显式跳过已打开的 docId，保证造出确定数量的标签再测往返。
+       */
+      const opened = new Set((app.tabs || []).map(t => t.docId ?? t.meta?.docId).filter(Boolean));
+      let added = 0;
+      for (const d of aos) {
+        if (added >= 3) break;
+        if (opened.has(d.docId)) continue;
+        await app.openDoc(d.docId);
+        await sleep(1600);
+        opened.add(d.docId);
+        added += 1;
+      }
+      const baseline = snap();
+
+      for (let round = 1; round <= 3; round++) {
+        history.pushState({}, '', '/admin');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        await sleep(2800);
+        history.pushState({}, '', '/app');
+        window.dispatchEvent(new PopStateEvent('popstate'));
+        await sleep(2800);
+      }
+      const after = snap();
+
+      return JSON.stringify({ ok:true, baseline, after,
+        grew: after.count > baseline.count,
+        shrank: after.count < baseline.count,
+        dupes: after.dupeDocIds });
+    })()`, 420000);
+    const rt = JSON.parse(tabsRT);
+    /*
+     * 判据用的是「往返前后是否一致」，不是与某个期望数量比较。
+     * 用户标签数是用户自己的状态，测试不应该假定它必须是 3；
+     * 要保证的是**往返动作本身不改变它**（不增、不减、不重复）。
+     */
+    /*
+     * 只比较**文档标签**，不把「设置」算进来。
+     *
+     * 设置是插入标签栏的临时面板（SETTINGS_TAB_ID），不属于持久化的文档标签集：
+     * 它没有 docId，persistTabs 写的是 `{docId, mode, pageWidth}` 列表，天然不含它。
+     * 所以从后台返回后设置面板关闭、数量 7->6，是**正确行为**，不是"标签丢失"。
+     * 第一版把设置算进总数，于是每次都被这条误报钉住。
+     */
+    const docOnly = (t) => !t.isSettings;
+    const rtLost = (rt.baseline?.tabs ?? []).filter(docOnly).filter(
+      (b) => !(rt.after?.tabs ?? []).some((a) => a.docId === b.docId),
+    );
+    const baselineDocs = (rt.baseline?.tabs ?? []).filter(docOnly).length;
+    const afterDocs = (rt.after?.tabs ?? []).filter(docOnly).length;
+    rep.push(
+      'tabs.adminRoundTrip',
+      rt.ok === true && afterDocs === baselineDocs && (rt.dupes || []).length === 0,
+      rt.ok !== true
+        ? `标签往返检查失败：${rt.why ?? '未知'}`
+        : `3 次 /admin 往返：文档标签 ${baselineDocs} -> ${afterDocs}` +
+          `${afterDocs > baselineDocs ? '（**重复增长**）' : ''}${afterDocs < baselineDocs ? '（**标签丢失**）' : ''}` +
+          `${(rt.dupes || []).length ? `，重复 docId ${rt.dupes.length} 个` : '，无重复'}` +
+          `${rtLost.length ? `，消失：${rtLost.map((t) => `${t.title}[${t.docId}]`).join(' / ')}` : ''}`,
+    );
+
+    /*
+     * 设置 action 的入参防护。
+     *
+     * 实测缺陷（2.2.0 Flutter 壳，qwen3.8-max 上报）：
+     *   updateAppearance('dark') 传字符串时，展开运算把字符串按索引拆成
+     *   {0:'d',1:'a',2:'r',3:'k'}，混进 appearance 并持久化到
+     *   localStorage['neomd.settings.v1']，污染用户设置。
+     *
+     * 修法是在 updateAppearance / updateLayout 入口加普通对象校验。
+     * 这一项同时断言两件事，缺一不可：
+     *   - 错误入参不能写库（挡住脏数据）
+     *   - 正常对象仍要生效（不能防过头把功能挡死）
+     */
+    const guard = await cdp.eval(`(async () => {
+      const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+      const pinia = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia;
+      if (!pinia) return JSON.stringify({ ok:false, why:'no pinia' });
+      let st = null;
+      for (const [, s] of pinia._s) {
+        if (s && typeof s === 'object' && (s.settings || typeof s.updateAppearance === 'function')) { st = s; break; }
+      }
+      if (!st) return JSON.stringify({ ok:false, why:'没找到设置 store' });
+      if (typeof st.updateAppearance !== 'function') return JSON.stringify({ ok:false, why:'没有 updateAppearance' });
+
+      const digits = (o) => Object.keys(o || {}).filter(k => /^\\d+$/.test(k));
+      const lsDigits = () => {
+        try {
+          const raw = localStorage.getItem('neomd.settings.v1');
+          if (!raw) return 0;
+          const j = JSON.parse(raw);
+          return digits(j?.appearance).length + digits(j?.layout).length;
+        } catch { return 0; }
+      };
+
+      const before = st.settings?.appearance?.fontSize;
+      // 三种错误类型都试一遍
+      try { st.updateAppearance('dark'); } catch {}
+      try { st.updateAppearance(['x','y']); } catch {}
+      try { st.updateAppearance(null); } catch {}
+      try { st.updateLayout && st.updateLayout('narrow'); } catch {}
+      await sleep(1200);
+      const dirtyMem = digits(st.settings?.appearance).length + digits(st.settings?.layout).length;
+      const dirtyLs = lsDigits();
+
+      // 正常对象必须生效
+      st.updateAppearance({ fontSize: (before ?? 16) === 17 ? 16 : 17 });
+      await sleep(900);
+      const applied = st.settings?.appearance?.fontSize !== before;
+
+      return JSON.stringify({ ok:true, dirtyMem, dirtyLs, applied, before, after: st.settings?.appearance?.fontSize });
+    })()`, 180000);
+    const gd = JSON.parse(guard);
+    rep.push(
+      'settings.guard',
+      gd.ok === true && gd.dirtyMem === 0 && gd.dirtyLs === 0 && gd.applied === true,
+      gd.ok !== true
+        ? `入参防护检查失败：${gd.why ?? '未知'}`
+        : gd.dirtyMem === 0 && gd.dirtyLs === 0
+          ? `错误入参（字符串/数组/null）均被挡住，未产生数字键脏数据；正常对象仍生效（字号 ${gd.before} -> ${gd.after}）`
+          : `**脏数据未挡住**：内存数字键 ${gd.dirtyMem} 个、localStorage ${gd.dirtyLs} 个`,
     );
 
     // 8. 控制台错误收集

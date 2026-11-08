@@ -4603,15 +4603,47 @@ const tabBarTabs = computed(() =>
   font-size: 11px;
   color: var(--fg-3);
   flex: 0 0 auto;
+  /*
+   * 窄窗必须能收缩，否则整页出现横向滚动。
+   *
+   * 实测缺陷（2.2.0，Electron 与 Tauri 两个模型独立复现）：
+   *   窗口宽 800px 时 documentElement.scrollWidth=810（溢出 10px）
+   *   窗口宽 760px 时 scrollWidth=810（溢出 50px）
+   * 溢出的是 .statusbar__right（含缩放控件）—— 它没设 flex-shrink，
+   * 默认按内容宽度撑开，而 .statusbar__left 又是 flex:1 抢占剩余空间，
+   * 两者叠加把状态栏撑到内容宽度 810px，于是整个页面横向溢出。
+   *
+   * 修法：容器允许收缩 + 两侧都可收缩 + 关键控件不压缩。
+   * min-width:0 是 flex 子项能收缩到内容宽度以下的关键（默认 min-width:auto 会阻止收缩）。
+   */
+  min-width: 0;
+  overflow: hidden;
 }
 .statusbar__left,
 .statusbar__right {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 .statusbar__left {
-  flex: 1;
+  flex: 1 1 auto;
+  /* 左侧是字数/位置等信息，窄窗时可以省略，优先保住右侧的可操作控件 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.statusbar__right {
+  flex: 0 1 auto;
+  /*
+   * 右侧放缩放/视图切换等**必须能点到**的控件，所以要收缩但不能被裁掉。
+   * 用 flex-shrink:1 允许在极窄时压缩、
+   * 配合内部控件 white-space:nowrap + flex-shrink:0，保证按钮本身不被压变形。
+   */
+  justify-content: flex-end;
+}
+.statusbar__right > * {
+  flex-shrink: 0;
 }
 .st {
   display: inline-flex;

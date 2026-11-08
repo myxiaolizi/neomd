@@ -1301,7 +1301,34 @@ export const useSettingsStore = defineStore('settings', () => {
     return GLOBAL_APPEARANCE_FIELDS.some((f) => (patch as Record<string, unknown>)[f] !== undefined);
   }
 
+  /**
+   * 只接受「普通对象」的 patch。
+   *
+   * 实测缺陷（2.2.0 Flutter 壳，qwen3.8-max 上报）：
+   *   调用 updateAppearance('dark')（传字符串而不是对象）时，
+   *   展开运算 `{...'dark'}` 会把字符串按**索引**展开成
+   *   `{0:'d',1:'a',2:'r',3:'k'}`，于是 appearance 里混进 4 个数字键，
+   *   并被 persist 写进 localStorage['neomd.settings.v1']，污染用户设置。
+   *
+   * 正常 UI 路径不会这么传（页面总是传对象），但插件、脚本、以及未来重构时
+   * 的笔误都可能触发。这类"错参造成静默数据污染"最难排查，所以在入口挡住：
+   * 非普通对象直接忽略并告警，绝不写库。
+   *
+   * 用 isPlainObject 而不是 `typeof patch === 'object'`：后者对数组、
+   * Date、null 都成立，仍会漏进脏数据。
+   */
+  function isPlainObject(v: unknown): v is Record<string, unknown> {
+    if (v === null || typeof v !== 'object') return false;
+    if (Array.isArray(v)) return false;
+    const proto = Object.getPrototypeOf(v);
+    return proto === Object.prototype || proto === null;
+  }
+
   function updateAppearance(patch: Partial<Settings['appearance']>): void {
+    if (!isPlainObject(patch)) {
+      console.warn('[settings] updateAppearance 需要普通对象，已忽略：', typeof patch);
+      return;
+    }
     const next = { ...settings.value.appearance, ...patch };
     // 当用户切换明暗外观（light / dark / system）时，若当前主题预设的 mode 与目标明暗不一致，
     // 自动切换到匹配的默认浅色（daylight）或深色（midnight）主题预设，确保点击立即生效。
@@ -1342,6 +1369,11 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   function updateLayout(patch: Partial<Settings['layout']>): void {
+    // 与 updateAppearance 同理：非普通对象展开会产生数字键脏数据（见该函数注释）
+    if (!isPlainObject(patch)) {
+      console.warn('[settings] updateLayout 需要普通对象，已忽略：', typeof patch);
+      return;
+    }
     settings.value.layout = { ...settings.value.layout, ...patch };
     /*
      * 这里**不**置「脏标记」。布局是否与云端一致由 `captureLocalLayoutOverrides()`

@@ -79,9 +79,40 @@ function clean(dir, key) {
     fs.rmSync(path.join(data, e), { recursive: true, force: true });
     removed.push(e);
   }
-  // an empty data/ is still useful: it opts Electron into portable mode
   if (key !== 'flutter') fs.mkdirSync(data, { recursive: true });
   return removed;
+}
+
+/**
+ * 让「绿色版」真的绿色。
+ *
+ * Electron 壳的 portable.cjs 只在三种情况下才把 userData 放到 exe 同级的
+ * data/：环境变量 NEOMD_PORTABLE=1、存在 portable.txt 标记、或 data/ 目录已存在。
+ * 默认（DEFAULT_PORTABLE=false）走 %APPDATA%\@neomd\desktop。
+ *
+ * 2.2.0 实测踩到的坑：zip 里**放不进空目录**，`data/` 存在于本地发布目录但
+ * 没进压缩包。用户解压后同级没有 data/，于是 15.1 MB 用户数据（登录态、
+ * 窗口位置、Local Storage）写进了 %APPDATA% —— 换台机器或换个解压位置就
+ * 等于"仓库和登录态丢了"，这与绿色版语义直接冲突。另外四壳都把数据写在
+ * 本地 data/，只有 Electron 例外，属实现与定位不一致。
+ *
+ * 修法：在包里落一个 portable.txt 标记文件（产品原生支持，内容不解析）。
+ * 用文件而不是空目录，是因为空目录在 zip/压缩工具里普遍会被丢弃。
+ */
+function ensurePortableMarker(dir, key) {
+  if (key !== 'electron') return false;
+  const marker = path.join(dir, 'portable.txt');
+  if (fs.existsSync(marker)) return false;
+  fs.writeFileSync(
+    marker,
+    [
+      '这个文件让 Neo MD 绿色版把用户数据存放在本目录的 data/ 下，而不是系统 AppData。',
+      '存在即生效，内容不会被解析，删掉它就会退回 %APPDATA%\\@neomd\\desktop。',
+      '',
+    ].join('\r\n'),
+    'utf8',
+  );
+  return true;
 }
 
 fs.mkdirSync(OUT, { recursive: true });
@@ -97,6 +128,7 @@ for (const s of SHELLS) {
     continue;
   }
   const removed = clean(dir, s.key);
+  const addedMarker = ensurePortableMarker(dir, s.key);
   const zip = path.join(OUT, `${s.dir}.zip`);
   fs.rmSync(zip, { force: true });
 
@@ -105,7 +137,8 @@ for (const s of SHELLS) {
   try {
     execFileSync('powershell.exe', ['-NoProfile', '-Command', ps], { stdio: 'pipe', timeout: 900000 });
     const mb = (fs.statSync(zip).size / 1024 / 1024).toFixed(1);
-    console.log(`${s.key.padEnd(9)} cleaned=[${removed.join(',')}] zip=${mb}MB`);
+    const extra = addedMarker ? ' +portable.txt' : '';
+    console.log(`${s.key.padEnd(9)} cleaned=[${removed.join(',')}]${extra} zip=${mb}MB`);
     ok += 1;
   } catch (e) {
     console.log(`${s.key.padEnd(9)} zip FAILED ${String(e).slice(0, 200)}`);
