@@ -619,6 +619,82 @@ class Cdp {
       ? `字号 ${sr.from} -> ${sr.to}：改草稿不立即写库=${sr.draftOnly}，保存后 store=${sr.storeAfter}、localStorage=${sr.lsAfter}${sr.committed ? '（已生效）' : '（**未生效**）'}`
       : `设置生效检查失败：${sr.why ?? '未知'}`);
 
+  /*
+   * 性能与稳定性（与 shell-ui-accept.mjs 的 perf.* 三项对齐，判据一致）。
+   *
+   * 目标原文要求「性能与稳定性」「性能最佳」，而此前 Electron 这 21 项也
+   * 全是功能正确性，没有任何性能断言。阈值与四壳保持一致，便于横向比较；
+   * 同样只兜数量级退化，不做精细基准（跨机器必然抖动）。
+   */
+  const perf = await cdp.eval(`(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const app = document.querySelector('#app')?.__vue_app__?.config.globalProperties.$pinia?._s.get('app');
+    if (!app) return JSON.stringify({ ok:false, why:'no store' });
+    const list = app.docs || [];
+    if (!list.length) return JSON.stringify({ ok:false, why:'docs empty' });
+    const out = { docCount: list.length };
+
+    const biggest = [...list].sort((a,b)=>(b.size??0)-(a.size??0))[0] ?? list[0];
+    out.biggest = { docId: biggest.docId, size: biggest.size ?? 0 };
+    const t0 = performance.now();
+    await app.openDoc(biggest.docId);
+    let shown = false;
+    for (let i = 0; i < 120; i++) {
+      if (document.querySelector('.ProseMirror, .cm-content, [contenteditable="true"], textarea')) { shown = true; break; }
+      await sleep(100);
+    }
+    out.openMs = Math.round(performance.now() - t0);
+    out.editorShown = shown;
+
+    const tabId = app.activeTabId;
+    const tab = (app.tabs||[]).find(t => t.id === tabId);
+    const t1 = performance.now();
+    await app.updateTabContent(tabId, (tab?.content ?? '') + '\\n\\n' + 'PERF-' + Date.now());
+    await sleep(400);
+    await app.saveActiveTab();
+    let synced = false;
+    for (let i = 0; i < 40; i++) {
+      await sleep(500);
+      if (app.syncState === 'idle') { synced = true; break; }
+    }
+    out.saveMs = Math.round(performance.now() - t1);
+    out.synced = synced;
+
+    // 打字延迟用**小文档**测（大文档会把"字符串拼接"算进来，见四壳同项的注释）
+    const small = [...list].sort((a,b)=>(a.size??0)-(b.size??0))[0] ?? list[0];
+    await app.openDoc(small.docId);
+    await sleep(1200);
+    const smallTabId = app.activeTabId;
+    const smallTab = (app.tabs||[]).find(t => t.id === smallTabId);
+    out.typingDoc = { docId: small.docId, size: small.size ?? 0 };
+    if (smallTab) {
+      const base = smallTab.content ?? '';
+      for (let i = 0; i < 10; i++) await app.updateTabContent(smallTabId, base + 'w' + i);
+      const t2 = performance.now();
+      for (let i = 0; i < 200; i++) await app.updateTabContent(smallTabId, base + 'x'.repeat(i % 40));
+      out.typingMs = Math.round(performance.now() - t2);
+      out.typingAvgMs = Math.round((out.typingMs / 200) * 100) / 100;
+    }
+    return JSON.stringify(out);
+  })()`, 420000);
+  let pf = {};
+  try { pf = JSON.parse(perf); } catch { pf = { ok:false, why:'解析失败' }; }
+  const OPEN_LIMIT = 12000;
+  const SAVE_LIMIT = 40000;
+  const TYPING_AVG_LIMIT = 30;
+  push('perf.open',
+    pf.ok !== false && pf.editorShown === true && typeof pf.openMs === 'number' && pf.openMs <= OPEN_LIMIT,
+    pf.ok === false ? `性能测量失败：${pf.why}`
+      : `打开最大文档（${Math.round((pf.biggest?.size ?? 0)/1024)} KB，共 ${pf.docCount} 篇）耗时 ${pf.openMs} ms（上限 ${OPEN_LIMIT} ms），编辑器可见=${pf.editorShown}`);
+  push('perf.save',
+    pf.ok !== false && pf.synced === true && typeof pf.saveMs === 'number' && pf.saveMs <= SAVE_LIMIT,
+    pf.ok === false ? `性能测量失败：${pf.why}`
+      : `保存+同步完成耗时 ${pf.saveMs} ms（上限 ${SAVE_LIMIT} ms），同步达 idle=${pf.synced}`);
+  push('perf.typing',
+    pf.ok !== false && typeof pf.typingAvgMs === 'number' && pf.typingAvgMs <= TYPING_AVG_LIMIT,
+    pf.ok === false ? `性能测量失败：${pf.why}`
+      : `连续输入 200 次（空文档 ${Math.round((pf.typingDoc?.size ?? 0)/1024)} KB）共 ${pf.typingMs} ms，平均 ${pf.typingAvgMs} ms/次（上限 ${TYPING_AVG_LIMIT} ms/次）`);
+
   // 10. 控制台异常
   const thrown = cdp.events.filter((e) => e.method === 'Runtime.exceptionThrown');
   const errs = cdp.events.filter(

@@ -50,6 +50,30 @@ const SESSION_STATE = new Set([
   'server-port.txt',
   'runtime-probe.json',
   'logs',
+  /*
+   * Chrome 调试缓存目录。
+   *
+   * 实测事故：2.2.0 的 tauri 包 7 MB，而 2.3.0 只有 3.7 MB。拆开对比发现
+   * 前者混进了 `data/chrome-cdp-tmp/` —— **358 个文件、约 3.3 MB** 的
+   * Chrome 用户数据（BrowserMetrics、component_crx_cache、Cache_Data、
+   * CrashpadMetrics…）。
+   *
+   * 来源：某些验收/探针脚本为了在无 CDP 的壳上驱动页面，会起一个外部 Chrome，
+   * 并把 `--user-data-dir` 指到壳目录下的 data/chrome-cdp-tmp（为了和壳的
+   * 数据放一起便于清理）。跑完没删，打包就把它一起收进去了。
+   *
+   * 危害不只是体积：
+   *   1. 这是**本机测试残留**，跟产品功能无关，绿色版里根本不该有；
+   *   2. 里面可能残留缓存的页面资源、扩展组件清单，属于测试环境泄漏；
+   *   3. 用户解压后会看到一个莫名其妙的 chrome-cdp-tmp 目录，像是被污染过。
+   *
+   * 所以列入清理白名单，并在下面额外按前缀兜底（见 clean()）。
+   */
+  'chrome-cdp-tmp',
+  'chrome-profile',
+  'chrome-debug-profile',
+  'chrome-temp-a',
+  '.tmp-cdp-profile',
 ]);
 
 /**
@@ -75,7 +99,21 @@ function clean(dir, key) {
   const removed = [];
   for (const e of fs.readdirSync(data)) {
     if (key === 'flutter' && FLUTTER_KEEP.has(e)) continue;
-    if (!SESSION_STATE.has(e)) continue;
+    /*
+     * 精确名单 + 前缀兜底两道闸。
+     *
+     * 只靠精确名单很脆弱：下一个人写探针时换个名字（chrome-tmp、edge-cdp…），
+     * 又会静默混进包里，而且**体积变化不明显时根本发现不了** ——
+     * 2.2.0 那次就是因为 7 MB 看着也"合理"才一直没被察觉。
+     *
+     * 兜底规则只针对测试工具链的产物（chrome/edge/cdp/profile/tmp/.tmp 开头），
+     * 不碰任何产品自己的目录，避免误删运行时资源。
+     */
+    const looksLikeToolResidue =
+      /^(chrome|edge|cdp|msedge|playwright|puppeteer)/i.test(e) ||
+      /(^|[-_.])(tmp|temp|profile|userdata|cdp)([-_.]|$)/i.test(e) ||
+      e.startsWith('.tmp');
+    if (!SESSION_STATE.has(e) && !looksLikeToolResidue) continue;
     fs.rmSync(path.join(data, e), { recursive: true, force: true });
     removed.push(e);
   }
